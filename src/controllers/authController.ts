@@ -32,7 +32,21 @@ export const loginUser = async (req: Request, res: Response) => {
     if (!validPassword) return res.status(401).send('Invalid pw');
 
     const token = jwt.sign({ userId: user.id, role: user.role }, `${process.env.JWT_SECRET}`, { expiresIn: '1h' });
-    res.status(200).json({ token });
+    res.status(200).json({ token,  user: {
+      email: user.email,
+      role: user.role,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      image: user.image,
+      phoneNumber: user.phoneNumber,
+      businessAddress: user.businessAddress,
+      businessDescription: user.businessDescription,
+      businessIndustry: user.businessIndustry,
+      website1: user.website1,
+      website2: user.website2,
+      tags: user.tags,
+      attributes: user.attributes,
+    }, });
   } catch (error: unknown) {
     if (error instanceof Error) {
         res.status(500).send(error.message); // Safely access the message property
