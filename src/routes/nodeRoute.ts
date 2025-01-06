@@ -3,7 +3,7 @@ import { getNode, createNode, deleteNodeByChatId, handleIncomingMessage, webhook
     getNodesByChatId,
     getNodesByChatName,
     updateNode,
-    deleteNode, getPaginatedChatbots} from '../controllers/nodeController';
+    deleteNode, getPaginatedChatbots, updateChatFlow} from '../controllers/nodeController';
 import { validateRequest } from '../middlewares/errorHandler';
 import { nodeValidation } from '../utils/joiSchemas';
 import { authorizeRole } from '../middlewares/roleAuthorization';
@@ -21,4 +21,6 @@ router.get('/by-chat-name/:chatName', authorizeRole(['BOTCREATOR', 'SUPERADMIN']
 router.put('/:id', authorizeRole(['BOTCREATOR', 'SUPERADMIN']), updateNode); // Update node
 router.delete('/node/:id', authorizeRole(['SUPERADMIN']), deleteNode);
 router.get('/chatbots', getPaginatedChatbots);
+router.put('/chatflow/:chatId', updateChatFlow); // Update chat flow
+
 export default router;

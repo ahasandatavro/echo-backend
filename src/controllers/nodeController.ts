@@ -335,3 +335,90 @@ export const getPaginatedChatbots = async (req:Request, res:Response) => {
     res.status(500).json({ message: 'Failed to fetch chatbots' });
   }
 };
+
+
+
+export const updateChatFlow = async (req: Request, res: Response) => {
+  const { chatId: chatIdParam } = req.params;
+  const chatIdNumber = parseInt(chatIdParam, 10);
+
+  if (isNaN(chatIdNumber)) {
+    return res.status(400).json({ error: 'Invalid chatId parameter. Must be a number.' });
+  }
+
+  const { nodes, edges } = req.body;
+
+  try {
+    // Validate if the chatbot exists
+    const chatbot = await prisma.chatbot.findUnique({
+      where: { id: chatIdNumber },
+    });
+
+    if (!chatbot) {
+      return res.status(404).json({ error: 'Chatbot not found' });
+    }
+
+    // Use a transaction to update nodes and edges atomically
+    await prisma.$transaction([
+      // Delete existing edges first to avoid foreign key constraint violations
+      prisma.edge.deleteMany({
+        where: { chatId: chatIdNumber },
+      }),
+      // Delete existing nodes after edges have been removed
+      prisma.node.deleteMany({
+        where: { chatId: chatIdNumber },
+      }),
+
+      // Create new nodes
+      ...nodes.map((node: any) =>
+        prisma.node.create({
+          data: {
+            chatId: chatIdNumber,
+            nodeId: node.id,
+            type: node.type,
+            data: node.data,
+            positionX: node.position.x,
+            positionY: node.position.y,
+          },
+        })
+      ),
+    ]);
+
+    // Fetch all the newly created nodes to map their `id` values
+    const createdNodes = await prisma.node.findMany({
+      where: { chatId: chatIdNumber },
+    });
+
+    // Create new edges
+    const edgeCreationPromises = edges.map((edge: any) => {
+      const sourceNode = createdNodes.find((node) => node.nodeId === edge.source);
+      const targetNode = createdNodes.find((node) => node.nodeId === edge.target);
+
+      if (!sourceNode || !targetNode) {
+        throw new Error(
+          `Invalid edge connection: source (${edge.source}) or target (${edge.target}) node not found.`
+        );
+      }
+
+      return prisma.edge.create({
+        data: {
+          chatId: chatIdNumber,
+          sourceId: sourceNode.id, // Use the integer ID from the Node table
+          targetId: targetNode.id, // Use the integer ID from the Node table
+        },
+      });
+    });
+
+    await prisma.$transaction(edgeCreationPromises);
+
+    res.status(200).json({ message: 'Chat flow updated successfully' });
+  } catch (error: unknown) {
+    console.error(error);
+
+    if (error instanceof Error) {
+      return res.status(500).json({ error: error.message });
+    }
+
+    res.status(500).json({ error: 'Failed to update chat flow' });
+  }
+};
