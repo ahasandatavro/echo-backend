@@ -36,24 +36,40 @@ export const getNode = async (req: Request, res: Response) => {
 };
 
 export const deleteNodeByChatId = async (req: Request, res: Response) => {
-//   const { chat_id } = req.params;
-//   try {
-//     const deleteResult = await prisma.node.deleteMany({
-//       where: { chatId: chat_id },
-//     });
+  const { chat_id } = req.params;
 
-//     if (deleteResult.count === 0) {
-//       return res.status(404).send('No nodes found with the specified chat_id');
-//     }
-//     res.status(200).send(`Nodes with chat_id ${chat_id} deleted successfully.`);
-//   } catch (error: unknown) {
-//     if (error instanceof Error) {
-//         res.status(500).send(error.message); // Safely access the message property
-//     } else {
-//         res.status(500).send('An unknown error occurred.');
-//     }
-// }
+  try {
+    const chatId = parseInt(chat_id, 10);
 
+    if (isNaN(chatId)) {
+      return res.status(400).json({ error: 'Invalid chatId parameter' });
+    }
+
+    // Delete edges associated with the chatId
+    const deletedEdges = await prisma.edge.deleteMany({
+      where: { chatId },
+    });
+
+    // Delete nodes associated with the chatId
+    const deletedNodes = await prisma.node.deleteMany({
+      where: { chatId },
+    });
+
+    // Optionally delete the chatbot itself (if applicable)
+    const deletedChatbot = await prisma.chatbot.delete({
+      where: { id: chatId },
+    });
+
+    res.status(200).json({
+      message: `Successfully deleted data for chatId: ${chatId}`,
+      deletedEdges: deletedEdges.count,
+      deletedNodes: deletedNodes.count,
+      deletedChatbot,
+    });
+  } catch (error) {
+    console.error('Error deleting data by chatId:', error);
+    res.status(500).json({ error: 'Failed to delete data by chatId' });
+  }
 };
 
 export const webhookVerification =async (req: Request, res: Response) => {
@@ -196,16 +212,41 @@ export const createChatFlow = async (req: Request, res: Response) => {
 // Fetch nodes by Chatbot ID
 export const getNodesByChatId = async (req: Request, res: Response) => {
   const { chatId } = req.params;
-
   try {
+    const chatbot = await prisma.chatbot.findUnique({
+      where: { id: parseInt(chatId) },
+    });
+
+    if (!chatbot) {
+      return res.status(404).json({ error: 'Chatbot not found' });
+    }
+
     const nodes = await prisma.node.findMany({
       where: { chatId: parseInt(chatId) },
     });
-    res.status(200).json(nodes);
+
+    const edges = await prisma.edge.findMany({
+      where: { chatId: parseInt(chatId) },
+    });
+
+    res.status(200).json({
+      chatbot,
+      nodes,
+      edges,
+    });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Failed to fetch nodes by chatId' });
+    console.error('Error fetching chat flow details:', error);
+    res.status(500).json({ error: 'Failed to fetch chat flow details' });
   }
+  // try {
+  //   const nodes = await prisma.node.findMany({
+  //     where: { chatId: parseInt(chatId) },
+  //   });
+  //   res.status(200).json(nodes);
+  // } catch (error) {
+  //   console.error(error);
+  //   res.status(500).json({ error: 'Failed to fetch nodes by chatId' });
+  // }
 };
 
 // Fetch nodes by Chatbot Name

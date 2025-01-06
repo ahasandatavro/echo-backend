@@ -14,9 +14,9 @@ router.post('/', authorizeRole(['BOTCREATOR','SUPERADMIN']), validateRequest(nod
 router.get('/', getNode);
 router.get('/webhook', handleIncomingMessage);
 router.post('/webhook', webhookVerification);
-router.delete('/:chat_id', authorizeRole(['SUPERADMIN']), deleteNodeByChatId);
+router.delete('/chatbot/:chat_id', deleteNodeByChatId);
 router.post('/chatflow', authorizeRole(['BOTCREATOR', 'SUPERADMIN']), createChatFlow); // Create full flow
-router.get('/chatbot/:chatId', authorizeRole(['BOTCREATOR', 'SUPERADMIN']), getNodesByChatId); // Get nodes by chatId
+router.get('/chatbot/:chatId', getNodesByChatId); // Get nodes by chatId
 router.get('/by-chat-name/:chatName', authorizeRole(['BOTCREATOR', 'SUPERADMIN']), getNodesByChatName); // Get nodes by chatName
 router.put('/:id', authorizeRole(['BOTCREATOR', 'SUPERADMIN']), updateNode); // Update node
 router.delete('/node/:id', authorizeRole(['SUPERADMIN']), deleteNode);
