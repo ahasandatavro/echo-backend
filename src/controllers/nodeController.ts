@@ -2,57 +2,57 @@ import { Request, Response } from 'express';
 import { prisma } from '../models/prismaClient';
 import axios from 'axios';
 export const createNode = async (req: Request, res: Response) => {
-  const { chatId, nodeId, data } = req.body;
-  try {
-    const node = await prisma.node.create({
-      data: { chatId, nodeId, data },
-    });
-    res.status(201).json(node);
-  } catch (error: unknown) {
-    if (error instanceof Error) {
-        res.status(500).send(error.message); // Safely access the message property
-    } else {
-        res.status(500).send('An unknown error occurred.');
-    }
-}
+//   const { chatId, nodeId, data } = req.body;
+//   try {
+//     const node = await prisma.node.create({
+//       data: { chatId, nodeId, data },
+//     });
+//     res.status(201).json(node);
+//   } catch (error: unknown) {
+//     if (error instanceof Error) {
+//         res.status(500).send(error.message); // Safely access the message property
+//     } else {
+//         res.status(500).send('An unknown error occurred.');
+//     }
+// }
 
 };
 
 export const getNode = async (req: Request, res: Response) => {
-  const { chatId, id } = req.query;
-  try {
-    const nodes = await prisma.node.findMany({
-      where: chatId ? { chatId: String(chatId) } : { id: Number(id) },
-    });
-    res.status(200).json(nodes);
-  } catch (error: unknown) {
-    if (error instanceof Error) {
-        res.status(500).send(error.message); // Safely access the message property
-    } else {
-        res.status(500).send('An unknown error occurred.');
-    }
-}
+//   const { chatId, id } = req.query;
+//   try {
+//     const nodes = await prisma.node.findMany({
+//       where: chatId ? { chatId: String(chatId) } : { id: Number(id) },
+//     });
+//     res.status(200).json(nodes);
+//   } catch (error: unknown) {
+//     if (error instanceof Error) {
+//         res.status(500).send(error.message); // Safely access the message property
+//     } else {
+//         res.status(500).send('An unknown error occurred.');
+//     }
+// }
 
 };
 
 export const deleteNodeByChatId = async (req: Request, res: Response) => {
-  const { chat_id } = req.params;
-  try {
-    const deleteResult = await prisma.node.deleteMany({
-      where: { chatId: chat_id },
-    });
+//   const { chat_id } = req.params;
+//   try {
+//     const deleteResult = await prisma.node.deleteMany({
+//       where: { chatId: chat_id },
+//     });
 
-    if (deleteResult.count === 0) {
-      return res.status(404).send('No nodes found with the specified chat_id');
-    }
-    res.status(200).send(`Nodes with chat_id ${chat_id} deleted successfully.`);
-  } catch (error: unknown) {
-    if (error instanceof Error) {
-        res.status(500).send(error.message); // Safely access the message property
-    } else {
-        res.status(500).send('An unknown error occurred.');
-    }
-}
+//     if (deleteResult.count === 0) {
+//       return res.status(404).send('No nodes found with the specified chat_id');
+//     }
+//     res.status(200).send(`Nodes with chat_id ${chat_id} deleted successfully.`);
+//   } catch (error: unknown) {
+//     if (error instanceof Error) {
+//         res.status(500).send(error.message); // Safely access the message property
+//     } else {
+//         res.status(500).send('An unknown error occurred.');
+//     }
+// }
 
 };
 
@@ -141,3 +141,156 @@ export const handleIncomingMessage=async (req: Request, res: Response) =>{
     res.sendStatus(403);
   }
 }
+
+export const createChatFlow = async (req: Request, res: Response) => {
+  const { chatBotName, nodes, edges } = req.body;
+
+  try {
+    const chatbot = await prisma.chatbot.create({
+      data: {
+        name: chatBotName,
+        description: "Generated flow",
+        status: "ACTIVE",
+      },
+    });
+
+    const createdNodes = await prisma.$transaction(
+      nodes.map((node: any) =>
+        prisma.node.create({
+          data: {
+            chatId: chatbot.id,
+            nodeId: node.id,
+            type: node.type,
+            data: node.data,
+            positionX: node.position.x,
+            positionY: node.position.y,
+          },
+        })
+      )
+    );
+
+    const createdEdges = await prisma.$transaction(
+      edges.map((edge: any) =>
+        prisma.edge.create({
+          data: {
+            chatId: chatbot.id,
+            sourceId: createdNodes.find((n) => n.nodeId === edge.source)?.id,
+            targetId: createdNodes.find((n) => n.nodeId === edge.target)?.id,
+          },
+        })
+      )
+    );
+
+    res.status(201).json({
+      message: 'Chat flow created successfully',
+      chatbot,
+      nodes: createdNodes,
+      edges: createdEdges,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to create chat flow' });
+  }
+};
+
+// Fetch nodes by Chatbot ID
+export const getNodesByChatId = async (req: Request, res: Response) => {
+  const { chatId } = req.params;
+
+  try {
+    const nodes = await prisma.node.findMany({
+      where: { chatId: parseInt(chatId) },
+    });
+    res.status(200).json(nodes);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to fetch nodes by chatId' });
+  }
+};
+
+// Fetch nodes by Chatbot Name
+export const getNodesByChatName = async (req: Request, res: Response) => {
+  const { chatName } = req.params;
+
+  try {
+    const chatbot = await prisma.chatbot.findFirst({
+      where: { name: chatName },
+    });
+
+    if (!chatbot) {
+      return res.status(404).json({ error: 'Chatbot not found' });
+    }
+
+    const nodes = await prisma.node.findMany({
+      where: { chatId: chatbot.id },
+    });
+    res.status(200).json(nodes);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to fetch nodes by chatName' });
+  }
+};
+
+// Update a specific node
+export const updateNode = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { data, position } = req.body;
+
+  try {
+    const updatedNode = await prisma.node.update({
+      where: { id: parseInt(id) },
+      data: { data, positionX: position.x, positionY: position.y },
+    });
+    res.status(200).json(updatedNode);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to update node' });
+  }
+};
+
+// Delete a specific node
+export const deleteNode = async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  try {
+    await prisma.node.delete({
+      where: { id: parseInt(id) },
+    });
+    res.status(200).json({ message: 'Node deleted successfully' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to delete node' });
+  }
+};
+
+export const getPaginatedChatbots = async (req:Request, res:Response) => {
+  try {
+    // Extract and cast query parameters
+    const page = parseInt(req.query.page as string, 10) || 1;
+    const limit = parseInt(req.query.limit as string, 10) || 10;
+
+    // Calculate the offset
+    const offset = (page - 1) * limit;
+
+    // Fetch chatbots with pagination
+    const chatbots = await prisma.chatbot.findMany({
+      skip: offset,
+      take: limit,
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    // Get total count for pagination metadata
+    const total = await prisma.chatbot.count();
+
+    res.status(200).json({
+      chatbots,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    });
+  } catch (error) {
+    console.error('Error fetching chatbots:', error);
+    res.status(500).json({ message: 'Failed to fetch chatbots' });
+  }
+};

@@ -8,18 +8,73 @@ datasource db {
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  password  String
-  role      Role     @default(USER)
-  createdAt DateTime @default(now())
+  id                  Int      @id @default(autoincrement())
+  email               String   @unique
+  password            String
+  role                Role     @default(USER)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  clientId            String?  // Optional
+  image               String?  // Optional
+  firstName           String?  // Optional
+  lastName            String?  // Optional
+  phoneNumber         String?  // Optional
+  about               String?  // Optional
+  businessAddress     String?  // Optional
+  businessDescription String?  // Optional
+  contactEmail        String?  // Optional
+  businessIndustry    String?  // Optional
+  website1            String?  // Optional
+  website2            String?  // Optional
+  tags                String[]  // Optional
+  attributes          Json?    // Optional
+  chatbots            Chatbot[] // One-to-many relation
+}
+
+model Chatbot {
+  id               Int      @id @default(autoincrement())
+  name             String
+  description      String?
+  triggered        Boolean? @default(false)
+  stepsFinished    Int?
+  finished         Boolean? @default(false)
+  startNodeId      Int?     @unique
+  startNode        Node?    @relation("StartNode", fields: [startNodeId], references: [id])
+  ownerId          Int?
+  owner            User?    @relation(fields: [ownerId], references: [id])
+  nodes            Node[]   @relation("ChatbotNodes") // One-to-many relation
+  edges            Edge[]   @relation("ChatbotEdges") // One-to-many relation
+  status           Status   @default(ACTIVE)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }
 
 model Node {
-  id      Int    @id @default(autoincrement())
-  chatId  String
-  nodeId  String
-  data    Json
+  id         Int     @id @default(autoincrement())
+  chatId     Int
+  chatbot    Chatbot @relation("ChatbotNodes", fields: [chatId], references: [id])
+  startChatbot Chatbot? @relation("StartNode") // Opposite relation for startNode
+  nodeId     String
+  data       Json
+  type       String
+  positionX  Float
+  positionY  Float
+  edgesOut   Edge[]  @relation("SourceNode") // One-to-many for outgoing edges
+  edgesIn    Edge[]  @relation("TargetNode") // One-to-many for incoming edges
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Edge {
+  id        Int      @id @default(autoincrement())
+  chatId    Int
+  chatbot   Chatbot  @relation("ChatbotEdges", fields: [chatId], references: [id])
+  sourceId  Int
+  source    Node     @relation("SourceNode", fields: [sourceId], references: [id])
+  targetId  Int
+  target    Node     @relation("TargetNode", fields: [targetId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 enum Role {
@@ -27,4 +82,9 @@ enum Role {
   ANALYST
   USER
   BOTCREATOR
+}
+
+enum Status {
+  ACTIVE
+  INACTIVE
 }
