@@ -162,14 +162,25 @@ export const createChatFlow = async (req: Request, res: Response) => {
   const { chatBotName, nodes, edges } = req.body;
 
   try {
+    // Check for existing chatbot names and append a unique suffix if necessary
+    let uniqueChatBotName = chatBotName;
+    let suffix = 1;
+
+    while (await prisma.chatbot.findFirst({ where: { name: uniqueChatBotName } })) {
+      uniqueChatBotName = `${chatBotName}_${suffix}`;
+      suffix++;
+    }
+
+    // Create the chatbot with the unique name
     const chatbot = await prisma.chatbot.create({
       data: {
-        name: chatBotName,
+        name: uniqueChatBotName,
         description: "Generated flow",
         status: "ACTIVE",
       },
     });
 
+    // Create nodes
     const createdNodes = await prisma.$transaction(
       nodes.map((node: any) =>
         prisma.node.create({
@@ -185,6 +196,7 @@ export const createChatFlow = async (req: Request, res: Response) => {
       )
     );
 
+    // Create edges
     const createdEdges = await prisma.$transaction(
       edges.map((edge: any) =>
         prisma.edge.create({
@@ -208,6 +220,57 @@ export const createChatFlow = async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to create chat flow' });
   }
 };
+
+// export const createChatFlow = async (req: Request, res: Response) => {
+//   const { chatBotName, nodes, edges } = req.body;
+
+//   try {
+//     const chatbot = await prisma.chatbot.create({
+//       data: {
+//         name: chatBotName,
+//         description: "Generated flow",
+//         status: "ACTIVE",
+//       },
+//     });
+
+//     const createdNodes = await prisma.$transaction(
+//       nodes.map((node: any) =>
+//         prisma.node.create({
+//           data: {
+//             chatId: chatbot.id,
+//             nodeId: node.id,
+//             type: node.type,
+//             data: node.data,
+//             positionX: node.position.x,
+//             positionY: node.position.y,
+//           },
+//         })
+//       )
+//     );
+
+//     const createdEdges = await prisma.$transaction(
+//       edges.map((edge: any) =>
+//         prisma.edge.create({
+//           data: {
+//             chatId: chatbot.id,
+//             sourceId: createdNodes.find((n) => n.nodeId === edge.source)?.id,
+//             targetId: createdNodes.find((n) => n.nodeId === edge.target)?.id,
+//           },
+//         })
+//       )
+//     );
+
+//     res.status(201).json({
+//       message: 'Chat flow created successfully',
+//       chatbot,
+//       nodes: createdNodes,
+//       edges: createdEdges,
+//     });
+//   } catch (error) {
+//     console.error(error);
+//     res.status(500).json({ error: 'Failed to create chat flow' });
+//   }
+// };
 
 // Fetch nodes by Chatbot ID
 export const getNodesByChatId = async (req: Request, res: Response) => {
