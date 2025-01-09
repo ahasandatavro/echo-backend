@@ -8,7 +8,7 @@ import passport from 'passport';
 import dotenv, { config } from 'dotenv';
 import "./config/passportConfig";
 import multer from "multer";
-import AWS from "aws-sdk";
+import {s3} from "./config/s3Config"
 dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -17,13 +17,7 @@ const upload = multer({
 });
 
 // Configure AWS S3 for DigitalOcean Spaces
-const s3 = new AWS.S3({
-  endpoint: new AWS.Endpoint(process.env.DO_SPACES_ENDPOINT || ""),
-  accessKeyId: process.env.DO_SPACES_KEY|| "",
-  secretAccessKey: process.env.DO_SPACES_SECRET|| "",
-  region: process.env.DO_SPACES_REGION|| "",
-  s3ForcePathStyle: true,
-});
+
 app.use(cors());
 app.use(bodyParser.json({limit: '50mb'}));
 app.use(bodyParser.urlencoded({limit: "50mb", extended: true, parameterLimit:50000}));

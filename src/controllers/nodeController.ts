@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../models/prismaClient';
 import axios from 'axios';
+import {s3} from '../config/s3Config'
 export const createNode = async (req: Request, res: Response) => {
 //   const { chatId, nodeId, data } = req.body;
 //   try {
@@ -35,6 +36,24 @@ export const getNode = async (req: Request, res: Response) => {
 
 };
 
+
+const deleteFileFromSpace = async (key: string) => {
+  try {
+    const params = {
+      Bucket: process.env.DO_SPACES_BUCKET!,
+      Key: key,
+    };
+
+    // Ensure `promise` is available
+    const result = await s3.deleteObject(params).promise();
+    console.log(`File deleted: ${key}`);
+    return result;
+  } catch (error) {
+    console.error(`Failed to delete file: ${key}`, error);
+    throw new Error("Failed to delete file");
+  }
+};
+
 export const deleteNodeByChatId = async (req: Request, res: Response) => {
   const { chat_id } = req.params;
 
@@ -42,8 +61,51 @@ export const deleteNodeByChatId = async (req: Request, res: Response) => {
     const chatId = parseInt(chat_id, 10);
 
     if (isNaN(chatId)) {
-      return res.status(400).json({ error: 'Invalid chatId parameter' });
+      return res.status(400).json({ error: "Invalid chatId parameter" });
     }
+
+    // Fetch all nodes associated with the chatId
+    const nodes = await prisma.node.findMany({
+      where: { chatId },
+    });
+
+    // Extract URLs from node data
+    const fileUrls: string[] = [];
+    nodes.forEach((node) => {
+      const nodeData = node.data as {
+        message_data?: {
+          messages: Array<{
+            type: string;
+            message: {
+              url?: string;
+            };
+          }>;
+        };
+      };
+    
+      if (nodeData?.message_data?.messages) {
+        nodeData.message_data.messages.forEach((message) => {
+          if (
+            message.type === "image" ||
+            message.type === "video" ||
+            message.type === "audio" ||
+            message.type === "document"
+          ) {
+            const url = message.message?.url;
+            if (url) fileUrls.push(url);
+          }
+        });
+      }
+    });
+    
+
+    // Convert URLs to keys (remove the base URL)
+    const keys = fileUrls.map((url) =>
+      url.replace(`${process.env.DO_SPACES_ENDPOINT}/${process.env.DO_SPACES_BUCKET}/`, "")
+    );
+
+    // Delete files from DigitalOcean Spaces
+    await Promise.all(keys.map((key) => deleteFileFromSpace(key)));
 
     // Delete edges associated with the chatId
     const deletedEdges = await prisma.edge.deleteMany({
@@ -65,13 +127,13 @@ export const deleteNodeByChatId = async (req: Request, res: Response) => {
       deletedEdges: deletedEdges.count,
       deletedNodes: deletedNodes.count,
       deletedChatbot,
+      deletedFiles: keys.length,
     });
   } catch (error) {
-    console.error('Error deleting data by chatId:', error);
-    res.status(500).json({ error: 'Failed to delete data by chatId' });
+    console.error("Error deleting data by chatId:", error);
+    res.status(500).json({ error: "Failed to delete data by chatId" });
   }
 };
-
 export const webhookVerification =async (req: Request, res: Response) => {
   try {
     const { entry } = req.body;
