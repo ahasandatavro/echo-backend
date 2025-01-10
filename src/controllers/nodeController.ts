@@ -266,6 +266,7 @@ export const createChatFlow = async (req: Request, res: Response) => {
             chatId: chatbot.id,
             sourceId: createdNodes.find((n) => n.nodeId === edge.source)?.id,
             targetId: createdNodes.find((n) => n.nodeId === edge.target)?.id,
+            sourceHandle: edge.sourceHandle || null,
           },
         })
       )
@@ -530,6 +531,7 @@ export const updateChatFlow = async (req: Request, res: Response) => {
           chatId: chatIdNumber,
           sourceId: sourceNode.id, // Use the integer ID from the Node table
           targetId: targetNode.id, // Use the integer ID from the Node table
+          sourceHandle: edge.sourceHandle || null,
         },
       });
     });

@@ -65,17 +65,20 @@ model Node {
   updatedAt  DateTime @updatedAt
 }
 
+
 model Edge {
-  id        Int      @id @default(autoincrement())
-  chatId    Int
-  chatbot   Chatbot  @relation("ChatbotEdges", fields: [chatId], references: [id])
-  sourceId  Int
-  source    Node     @relation("SourceNode", fields: [sourceId], references: [id])
-  targetId  Int
-  target    Node     @relation("TargetNode", fields: [targetId], references: [id])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           Int      @id @default(autoincrement())
+  chatId       Int
+  chatbot      Chatbot  @relation("ChatbotEdges", fields: [chatId], references: [id])
+  sourceId     Int
+  source       Node     @relation("SourceNode", fields: [sourceId], references: [id])
+  targetId     Int
+  target       Node     @relation("TargetNode", fields: [targetId], references: [id])
+  sourceHandle String?  // Optional source handle for branching
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
+
 
 enum Role {
   SUPERADMIN
