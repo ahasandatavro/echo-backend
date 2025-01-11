@@ -31,3 +31,5 @@ If you want to use the proxies, please create an `.env` file and define the corr
 ### :wrench: Improvements
 
 If you are experiencing issues with this project or have suggestions on how to improve it, do not hesitate to create a new ticket in [Github issues](https://github.com/OvidijusParsiunas/deep-chat/issues) and we will look into it as soon as possible.
+
+//remote changed to zilochat
