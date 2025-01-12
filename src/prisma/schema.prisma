@@ -44,6 +44,7 @@ model Chatbot {
   owner            User?    @relation(fields: [ownerId], references: [id])
   nodes            Node[]   @relation("ChatbotNodes") // One-to-many relation
   edges            Edge[]   @relation("ChatbotEdges") // One-to-many relation
+  keywords         Keyword[]
   status           Status   @default(ACTIVE)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -79,6 +80,27 @@ model Edge {
   updatedAt    DateTime @updatedAt
 }
 
+model Keyword {
+  id           Int         @id @default(autoincrement())
+  value        String      @unique // Keyword value (e.g., "test keyword")
+  chatbotId    Int?         // Relation to Chatbot
+  chatbot      Chatbot?     @relation(fields: [chatbotId], references: [id])
+  textId       Int?        // Optional relation to text material
+  text         TextMaterial? @relation(fields: [textId], references: [id])
+  matchType    MatchType   // Type of matching (Fuzzy, Exact, Contains)
+  fuzzyPercent Int?        // Fuzzy matching percentage (optional)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+}
+
+model TextMaterial {
+  id         Int       @id @default(autoincrement())
+  name       String    // Name of the text material
+  content    String    // Content of the text material
+  keywords     Keyword[] 
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+}
 
 enum Role {
   SUPERADMIN
@@ -91,3 +113,10 @@ enum Status {
   ACTIVE
   INACTIVE
 }
+
+enum MatchType {
+  FUZZY
+  EXACT
+  CONTAINS
+}
+

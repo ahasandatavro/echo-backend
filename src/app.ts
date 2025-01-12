@@ -1,14 +1,17 @@
-import express, { Request, Response } from 'express';
-import bodyParser from 'body-parser';
-import cors from 'cors';
-import nodeRoutes from './routes/nodeRoute';
-import authRoutes from './routes/authRoute';
-import { authenticateJWT } from './utils/jwtUtils';
-import passport from 'passport';
-import dotenv, { config } from 'dotenv';
+import express, { Request, Response } from "express";
+import bodyParser from "body-parser";
+import cors from "cors";
+import nodeRoutes from "./routes/nodeRoute";
+import authRoutes from "./routes/authRoute";
+import webhookRoutes from "./routes/webhookRoute";
+import textMaterialRoutes from "./routes/textMaterialRoute";
+import keywordRoutes from "./routes/keywordRoute";
+//import { authenticateJWT } from "./utils/jwtUtils";
+import passport from "passport";
+import dotenv, { config } from "dotenv";
 import "./config/passportConfig";
 import multer from "multer";
-import {s3} from "./config/s3Config"
+import { s3 } from "./config/s3Config";
 dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -16,17 +19,24 @@ const upload = multer({
   storage: multer.memoryStorage(),
 });
 
-// Configure AWS S3 for DigitalOcean Spaces
-
 app.use(cors());
-app.use(bodyParser.json({limit: '50mb'}));
-app.use(bodyParser.urlencoded({limit: "50mb", extended: true, parameterLimit:50000}));
-app.use(bodyParser.text({ limit: '200mb' }));
+app.use(bodyParser.json({ limit: "50mb" }));
+app.use(
+  bodyParser.urlencoded({
+    limit: "50mb",
+    extended: true,
+    parameterLimit: 50000,
+  })
+);
+app.use(bodyParser.text({ limit: "200mb" }));
 app.use(express.json());
 app.use(passport.initialize());
-app.use('/auth', authRoutes);
-app.use('/nodes', authenticateJWT, nodeRoutes);
-app.use('/nodes', nodeRoutes);
+app.use("/auth", authRoutes);
+// app.use('/nodes', authenticateJWT, nodeRoutes);
+app.use("/nodes", nodeRoutes);
+app.use("/webhook", webhookRoutes);
+app.use("/textMaterials",textMaterialRoutes);
+app.use('/keyword',keywordRoutes);
 app.post("/upload", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
