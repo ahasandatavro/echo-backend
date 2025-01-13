@@ -99,7 +99,8 @@ model Conversation {
   recipient    String    // WhatsApp user ID or phone number
   chatbotId    Int       // Associated chatbot ID
   chatbot      Chatbot   @relation(fields: [chatbotId], references: [id])
-  lastNodeId   String?   // The last processed node's ID
+  lastNodeId   Int?   // The last processed node's ID
+  currentNodeId  Int 
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 }
