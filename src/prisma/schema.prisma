@@ -45,6 +45,7 @@ model Chatbot {
   nodes            Node[]   @relation("ChatbotNodes") // One-to-many relation
   edges            Edge[]   @relation("ChatbotEdges") // One-to-many relation
   keywords         Keyword[]
+  conversations    Conversation[]
   status           Status   @default(ACTIVE)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -92,6 +93,17 @@ model Keyword {
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 }
+
+model Conversation {
+  id           Int       @id @default(autoincrement())
+  recipient    String    // WhatsApp user ID or phone number
+  chatbotId    Int       // Associated chatbot ID
+  chatbot      Chatbot   @relation(fields: [chatbotId], references: [id])
+  lastNodeId   String?   // The last processed node's ID
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
 
 model TextMaterial {
   id         Int       @id @default(autoincrement())
