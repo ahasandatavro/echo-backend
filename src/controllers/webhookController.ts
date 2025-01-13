@@ -1,3 +1,4 @@
+
 import { Request, Response } from 'express';
 import { prisma } from '../models/prismaClient';
 import axios from 'axios';
@@ -43,12 +44,11 @@ export const webhookVerification = async (req: Request, res: Response) => {
         const message = change.value?.messages?.[0];
         const recipient = message?.from;
 
-        // Check if it's a button reply
+        // Handle button reply
         if (message?.interactive?.button_reply) {
           const buttonId = message.interactive.button_reply.id;
           console.log(`User clicked button: ${buttonId}`);
 
-          // Find the chatbotId based on recipient (e.g., conversation context)
           const conversation = await prisma.conversation.findFirst({
             where: { recipient },
           });
@@ -60,10 +60,10 @@ export const webhookVerification = async (req: Request, res: Response) => {
             });
 
             if (chatbotData) {
-              // Find the next node based on buttonId
               const selectedEdge = chatbotData.edges.find(
                 (edge) => edge.sourceHandle === buttonId
               );
+
               const nextNodeId = selectedEdge
                 ? chatbotData.nodes.find((node) => node.id === selectedEdge.targetId)?.nodeId
                 : null;
@@ -153,7 +153,7 @@ const processNode = async (nodeId: string, nodes: any[], edges: any[], recipient
 
       if (messageData && messageData.length > 0) {
         for (const message of messageData) {
-          await sendMessage(recipient, message.message);
+          await sendMessage(recipient, message);
         }
       }
 
@@ -187,7 +187,7 @@ const processNode = async (nodeId: string, nodes: any[], edges: any[], recipient
   }
 };
 
-
+// Send a message
 const sendMessage = async (recipient: string, message: any) => {
   try {
     const url = `${metaWhatsAppAPI.baseURL}/${metaWhatsAppAPI.phoneNumberId}/messages`;
@@ -196,17 +196,33 @@ const sendMessage = async (recipient: string, message: any) => {
       to: recipient,
     };
 
-    if (typeof message === 'string') {
-      // Handle text message
-      payload.type = 'text';
-      payload.text = { body: message };
-    } else if (message.url) {
-      // Handle image message
-      payload.type = 'image';
-      payload.image = {
-        link: message.url,
-        caption: message.caption || '', // Optional caption
-      };
+   if (message) {
+      // Handle different media types
+      switch (message.type) {
+        case 'text':
+          payload.type = 'text';
+          payload.text = { body: message };
+          break;
+        case 'image':
+          payload.type = 'image';
+          payload.image = { link: message.message.url, caption: message.message.name || '' };
+          break;
+        case 'audio':
+          payload.type = 'audio';
+          payload.audio = { link: message.message.url };
+          break;
+        case 'video':
+          payload.type = 'video';
+          payload.video = { link: message.message.url, caption: message.message.name || '' };
+          break;
+        case 'document':
+          payload.type = 'document';
+          payload.document = { link: message.message.url, caption: message.message.name || '' };
+          break;
+        default:
+          console.error('Unsupported media type:', message.type);
+          return;
+      }
     }
 
     await axios.post(url, payload, {
@@ -220,8 +236,7 @@ const sendMessage = async (recipient: string, message: any) => {
   }
 };
 
-
-
+// Send a button message
 const sendMessageWithButtons = async (recipient: string, buttonMessage: any) => {
   try {
     const url = `${metaWhatsAppAPI.baseURL}/${metaWhatsAppAPI.phoneNumberId}/messages`;
@@ -248,4 +263,3 @@ const sendMessageWithButtons = async (recipient: string, buttonMessage: any) => 
     console.error('Error sending button message:', error);
   }
 };
-  
