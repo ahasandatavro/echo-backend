@@ -19,7 +19,7 @@ router.delete('/node/:id', authorizeRole(['SUPERADMIN']), deleteNode);
 router.get('/chatbots', getPaginatedChatbots);
 router.put('/chatflow/:chatId', updateChatFlow); // Update chat flow
 router.delete('/chatbot/:chat_id', deleteNodeByChatId);
-router.post('/chatflow', authorizeRole(['BOTCREATOR', 'SUPERADMIN']), createChatFlow); // Create full flow
+router.post('/chatflow', createChatFlow); // Create full flow
 router.get('/chatbot/:chatId', getNodesByChatId); // Get nodes by chatId
 router.get('/by-chat-name/:chatName', authorizeRole(['BOTCREATOR', 'SUPERADMIN']), getNodesByChatName); 
 

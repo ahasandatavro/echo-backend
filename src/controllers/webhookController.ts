@@ -82,6 +82,7 @@ export const webhookVerification = async (req: Request, res: Response) => {
             where: {
               value: {
                 contains: text,
+                mode: "insensitive",
               },
             },
             include: { chatbot: true },
@@ -120,7 +121,29 @@ const processChatFlow = async (chatbotId: number, recipient: string) => {
       await sendMessage(recipient, 'Chatbot start node not configured.');
       return;
     }
-
+    const existingConversation = await prisma.conversation.findFirst({
+      where: { recipient },
+    });
+    if (existingConversation) {
+      // Update the conversation with the new chatbot and start node
+      await prisma.conversation.update({
+        where: { id: existingConversation.id },
+        data: {
+          chatbotId,
+          currentNodeId: startNode.id,
+          lastNodeId: null, // Reset lastNodeId
+        },
+      });
+    } else {
+      // Create a new conversation entry
+      await prisma.conversation.create({
+        data: {
+          recipient,
+          chatbotId,
+          currentNodeId: startNode.id,
+        },
+      });
+    }
     await processNode(startNode.nodeId, chatbotData.nodes, chatbotData.edges, recipient);
   } catch (error) {
     console.error('Error processing chatbot flow:', error);
@@ -161,6 +184,20 @@ const processNode = async (nodeId: string, nodes: any[], edges: any[], recipient
       if (outgoingEdge) {
         const nextNodeId = nodes.find((node) => node.id === outgoingEdge.targetId)?.nodeId;
         if (nextNodeId) {
+          const conversation = await prisma.conversation.findFirst({
+            where: { recipient },
+          });
+          
+          if (!conversation) {
+            throw new Error('Conversation not found');
+          }
+          await prisma.conversation.update({
+            where:  { id: conversation.id },
+            data: {
+              lastNodeId: currentNode.id,
+              currentNodeId: currentNode.id+1,
+            },
+          });
           await processNode(nextNodeId, nodes, edges, recipient);
         }
       }
@@ -201,7 +238,7 @@ const sendMessage = async (recipient: string, message: any) => {
       switch (message.type) {
         case 'text':
           payload.type = 'text';
-          payload.text = { body: message };
+          payload.text = { body: message.message };
           break;
         case 'image':
           payload.type = 'image';
