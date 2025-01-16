@@ -9,7 +9,7 @@
     "build": "rimraf ./build && tsc"
   },
   "engines": {
-    "node": ">=20.x"
+    "node": ">=16 <20"
   },
   "author": "OvidijusParsiunas",
   "license": "ISC",
