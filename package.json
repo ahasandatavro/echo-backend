@@ -4,8 +4,12 @@
   "description": "Example server for the deep-chat component",
   "main": "app.js",
   "scripts": {
-    "start": "npx nodemon",
+    "start": "node build/app.js",
+    "start:dev": "npx nodemon",
     "build": "rimraf ./build && tsc"
+  },
+  "engines": {
+    "node": ">=20.x"
   },
   "author": "OvidijusParsiunas",
   "license": "ISC",
