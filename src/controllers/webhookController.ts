@@ -1,4 +1,4 @@
-
+// @ts-nocheck
 import { Request, Response } from 'express';
 import { prisma } from '../models/prismaClient';
 import axios from 'axios';

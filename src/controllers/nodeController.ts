@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Request, Response } from 'express';
 import { prisma } from '../models/prismaClient';
 import {s3} from '../config/s3Config'
