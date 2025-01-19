@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { Request, Response } from 'express';
-import { processChatFlow, processNode, sendMessage, sendMessageWithButtons } from '../routes/processors/webhook/webhookProcessor';
+import { processChatFlow, processNode, sendMessage, sendMessageWithButtons } from '../processors/webhook/webhookProcessor';
 import { prisma } from '../models/prismaClient';
 
 // Webhook Verification for WhatsApp

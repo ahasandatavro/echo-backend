@@ -1,6 +1,6 @@
-import { prisma } from '../../../models/prismaClient';
+import { prisma } from '../../models/prismaClient';
 import axios from 'axios';
-import { metaWhatsAppAPI } from '../../../config/metaConfig';
+import { metaWhatsAppAPI } from '../../config/metaConfig';
 
 export const processChatFlow = async (chatbotId: number, recipient: string) => {
   try {
