@@ -29,26 +29,28 @@ model User {
   tags                String[]  // Optional
   attributes          Json?    // Optional
   chatbots            Chatbot[] // One-to-many relation
+  conversations       Conversation[] // One-to-many relation
 }
 
 model Chatbot {
-  id               Int      @id @default(autoincrement())
+  id               Int       @id @default(autoincrement())
   name             String
   description      String?
-  triggered        Boolean? @default(false)
+  triggered        Boolean?  @default(false)
   stepsFinished    Int?
-  finished         Boolean? @default(false)
-  startNodeId      Int?     @unique
-  startNode        Node?    @relation("StartNode", fields: [startNodeId], references: [id])
+  finished         Boolean?  @default(false)
+  startNodeId      Int?      @unique
+  startNode        Node?     @relation("StartNode", fields: [startNodeId], references: [id])
   ownerId          Int?
-  owner            User?    @relation(fields: [ownerId], references: [id])
-  nodes            Node[]   @relation("ChatbotNodes") // One-to-many relation
-  edges            Edge[]   @relation("ChatbotEdges") // One-to-many relation
+  owner            User?     @relation(fields: [ownerId], references: [id])
+  nodes            Node[]    @relation("ChatbotNodes") // One-to-many relation
+  edges            Edge[]    @relation("ChatbotEdges") // One-to-many relation
   keywords         Keyword[]
   conversations    Conversation[]
-  status           Status   @default(ACTIVE)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  variables        Variable[] // Variables associated with the chatbot
+  status           Status    @default(ACTIVE)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 }
 
 model Node {
@@ -63,10 +65,10 @@ model Node {
   positionY  Float
   edgesOut   Edge[]  @relation("SourceNode") // One-to-many for outgoing edges
   edgesIn    Edge[]  @relation("TargetNode") // One-to-many for incoming edges
+  variables  Variable[] // Variables associated with the node
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
-
 
 model Edge {
   id           Int      @id @default(autoincrement())
@@ -81,6 +83,33 @@ model Edge {
   updatedAt    DateTime @updatedAt
 }
 
+model Variable {
+  id           Int       @id @default(autoincrement())
+  name         String    // Name of the variable
+  value        String?   // Value of the variable (set dynamically based on user input)
+  chatbotId    Int       // Associated chatbot ID
+  chatbot      Chatbot   @relation(fields: [chatbotId], references: [id])
+  conversationId Int?     // Optional relation to Conversation (specific to a user)
+  conversation Conversation? @relation(fields: [conversationId], references: [id])
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  node        Node?   @relation(fields: [nodeId], references: [id])
+  nodeId      Int?  
+}
+
+model Conversation {
+  id           Int       @id @default(autoincrement())
+  recipient    String    // WhatsApp user ID or phone number
+  chatbotId    Int       // Associated chatbot ID
+  chatbot      Chatbot   @relation(fields: [chatbotId], references: [id])
+  userId       Int?      // Associated user ID
+  user         User?     @relation(fields: [userId], references: [id])
+  variables    Variable[] // Variables updated during the conversation
+  lastNodeId   Int?      // The last processed node's ID
+  currentNodeId Int? 
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
 model Keyword {
   id           Int         @id @default(autoincrement())
   value        String      @unique // Keyword value (e.g., "test keyword")
@@ -93,26 +122,13 @@ model Keyword {
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 }
-
-model Conversation {
-  id           Int       @id @default(autoincrement())
-  recipient    String    // WhatsApp user ID or phone number
-  chatbotId    Int       // Associated chatbot ID
-  chatbot      Chatbot   @relation(fields: [chatbotId], references: [id])
-  lastNodeId   Int?   // The last processed node's ID
-  currentNodeId  Int 
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-}
-
-
 model TextMaterial {
   id         Int       @id @default(autoincrement())
   name       String    // Name of the text material
   content    String    // Content of the text material
-  keywords     Keyword[] 
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  keywords   Keyword[] 
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now())
 }
 
 enum Role {
@@ -132,4 +148,3 @@ enum MatchType {
   EXACT
   CONTAINS
 }
-

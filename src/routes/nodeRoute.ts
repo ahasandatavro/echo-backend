@@ -1,5 +1,5 @@
 import express from 'express';
-import { getNode, createNode, deleteNodeByChatId, createChatFlow,
+import { deleteNodeByChatId, createChatFlow,
     getNodesByChatId,
     getNodesByChatName,
     updateNode,
@@ -10,11 +10,8 @@ import { authorizeRole } from '../middlewares/roleAuthorization';
 
 const router = express.Router();
 
-router.post('/', authorizeRole(['BOTCREATOR','SUPERADMIN']), validateRequest(nodeValidation), createNode);
-router.get('/', getNode);
 router.put('/:id', authorizeRole(['BOTCREATOR', 'SUPERADMIN']), updateNode); // Update node
 router.delete('/node/:id', authorizeRole(['SUPERADMIN']), deleteNode);
-
 
 router.get('/chatbots', getPaginatedChatbots);
 router.put('/chatflow/:chatId', updateChatFlow); // Update chat flow
