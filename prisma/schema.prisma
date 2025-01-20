@@ -100,13 +100,14 @@ model Variable {
 model Conversation {
   id           Int       @id @default(autoincrement())
   recipient    String    // WhatsApp user ID or phone number
-  chatbotId    Int       // Associated chatbot ID
-  chatbot      Chatbot   @relation(fields: [chatbotId], references: [id])
+  chatbotId    Int?       // Associated chatbot ID
+  chatbot      Chatbot?   @relation(fields: [chatbotId], references: [id])
   userId       Int?      // Associated user ID
   user         User?     @relation(fields: [userId], references: [id])
   variables    Variable[] // Variables updated during the conversation
   lastNodeId   Int?      // The last processed node's ID
   currentNodeId Int? 
+  answeringQuestion Boolean @default(false)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 }

@@ -10,3 +10,23 @@ export interface User {
     email?: string; // Optional, add other properties as needed
   }
   
+    export interface IQuestion extends BaseNodeData {
+    questionText: string; 
+    answerVariants?: string[]; 
+    saveAnswerVariable?: string; 
+    acceptMediaResponse?: boolean; 
+    validation?: {
+      type?: "number" | "date" | "datetime" | "time" | "pattern" | "image" | "video" | "audio" | "document"; // Validation types
+      errorMessage?: string;
+      minValue?: number;
+      maxValue?: number; 
+      regexPattern?: string; 
+    };
+    validationFailureExitCount?: number; 
+  }
+  export interface BaseNodeData {
+    label?: string;
+    icon?: any;
+    description?: string;
+  }
+  

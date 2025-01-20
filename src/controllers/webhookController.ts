@@ -7,7 +7,7 @@ import {
   sendMessageWithButtons,
 } from "../processors/webhook/webhookProcessor";
 import { prisma } from "../models/prismaClient";
-
+import { validateUserResponse } from "../helpers/validation";
 // Webhook Verification for WhatsApp
 export const handleIncomingMessage = async (req: Request, res: Response) => {
   const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN;
@@ -24,7 +24,6 @@ export const handleIncomingMessage = async (req: Request, res: Response) => {
   }
 };
 
-// Main Webhook Handler
 export const webhookVerification = async (req: Request, res: Response) => {
   try {
     const { entry } = req.body;
@@ -42,72 +41,121 @@ export const webhookVerification = async (req: Request, res: Response) => {
         const message = change.value?.messages?.[0];
         const recipient = message?.from;
 
+        if (!recipient) {
+          console.error("Recipient not found in the message.");
+          continue;
+        }
+
+        let conversation = await prisma.conversation.findFirst({
+          where: { recipient },
+        });
+
+        const text = message?.text?.body?.toLowerCase();
+
+        // Create or update conversation
+        if (!conversation) {
+          console.log("No conversation found for recipient. Attempting to create a new one...");
+
+          let chatbotId: number | null = null;
+
+          if (text) {
+            const keyword = await prisma.keyword.findFirst({
+              where: {
+                value: {
+                  contains: text,
+                  mode: "insensitive",
+                },
+              },
+              include: { chatbot: true },
+            });
+
+            if (keyword?.chatbot) {
+              chatbotId = keyword.chatbot.id;
+              console.log(`Keyword matched. Using chatbot ID: ${chatbotId}`);
+            }
+          }
+
+          if (!chatbotId) {
+            console.warn("No keyword match found. Unable to associate a chatbot.");
+            await sendMessage(recipient, "Sorry, no chatbot is available for your query.");
+            continue;
+          }
+
+          conversation = await prisma.conversation.create({
+            data: {
+              recipient,
+              chatbotId,
+              answeringQuestion: false,
+            },
+          });
+
+          console.log("New conversation created:", conversation);
+        }
+
+        const chatbotData = await prisma.chatbot.findUnique({
+          where: { id: conversation.chatbotId },
+          include: { nodes: true, edges: true },
+        });
+
+        if (!chatbotData) {
+          console.warn(`Chatbot with ID ${conversation.chatbotId} not found.`);
+          await sendMessage(recipient, "Sorry, the associated chatbot is unavailable.");
+          continue;
+        }
+
         // Handle button reply
         if (message?.interactive?.button_reply) {
           const parts = message?.interactive?.button_reply.id.split("_node_");
-          const buttonId = "source_" + parts[0]; // "source_1"
+          const buttonId = "source_" + parts[0];
           const nodeId = parseInt(parts[1]);
-          console.log(`User clicked button: ${buttonId}`);
 
-          const conversation = await prisma.conversation.findFirst({
-            where: { recipient },
-          });
+          const selectedEdge = chatbotData.edges.find(
+            (edge) =>
+              edge.sourceHandle === buttonId && edge.sourceId === nodeId
+          );
 
-          if (conversation?.chatbotId) {
-            const chatbotData = await prisma.chatbot.findUnique({
-              where: { id: conversation.chatbotId },
-              include: { nodes: true, edges: true },
-            });
+          const nextNodeId = selectedEdge
+            ? chatbotData.nodes.find((node) => node.id === selectedEdge.targetId)?.nodeId
+            : null;
 
-            if (chatbotData) {
-              const selectedEdge = chatbotData.edges.find(
-                (edge) =>
-                  edge.sourceHandle === buttonId && edge.sourceId === nodeId
-              );
-              if (!selectedEdge) {
-                console.warn("No matching edge found for:", {
-                  buttonId,
-                  nodeId,
-                });
-              } else {
-                console.log("Found Edge:", selectedEdge);
-              }
-              const potentialMatches = chatbotData.edges.filter(
-                (edge) => edge.sourceId === nodeId
-              );
-              console.log("Potential Matches for Node ID:", potentialMatches);
-
-              const exactMatches = potentialMatches.filter(
-                (edge) => edge.sourceHandle === buttonId
-              );
-              console.log("Exact Matches:", exactMatches);
-
-              if (exactMatches.length === 0) {
-                console.warn(
-                  "No exact matches found. Double-check `sourceHandle` or `source` values."
-                );
-              }
-              const nextNodeId = selectedEdge
-                ? chatbotData.nodes.find(
-                    (node) => node.id === selectedEdge.targetId
-                  )?.nodeId
-                : null;
-
-              if (nextNodeId) {
-                await processNode(
-                  nextNodeId,
-                  chatbotData.nodes,
-                  chatbotData.edges,
-                  recipient
-                );
-              }
-            }
+          if (nextNodeId) {
+            await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient);
           }
+          continue;
         }
 
-        // Handle text messages
-        const text = message?.text?.body.toLowerCase();
-        if (recipient && text) {
+        // Handle text responses to questions
+        if (conversation.answeringQuestion && text) {
+          const currentNode = await prisma.node.findFirst({
+            where: { id: conversation.currentNodeId },
+          });
+
+          if (currentNode?.type === "question") {
+            const { validation } = currentNode.data?.question_data;
+
+            const isValid = validateUserResponse(text, validation);
+
+            if (isValid) {
+              await prisma.conversation.update({
+                where: { id: conversation.id },
+                data: { answeringQuestion: false },
+              });
+
+              console.log("User response is valid. Proceeding to the next node...");
+              const nextNodeId = getNextNodeId(chatbotData, null, currentNode.id);
+              if (nextNodeId) {
+                await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient);
+              }
+            } else {
+              console.warn("User response is invalid.");
+              await sendMessage(recipient, {type:"text",message:validation?.errorMessage||"Invalid response."},true);
+            }
+          }
+          continue;
+        }
+
+        // Handle keyword-based text messages
+        if (text) {
           const keyword = await prisma.keyword.findFirst({
             where: {
               value: {

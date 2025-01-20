@@ -157,7 +157,7 @@ export const processNode = async (
         };
 
         console.log(`Sending question message:`, questionMessage);
-        await sendQuestion(recipient, questionMessage);
+        await sendQuestion(recipient, questionMessage, currentNode?.id);
       }
       return; // Questions wait for user interaction
     }
@@ -197,7 +197,7 @@ export const processNode = async (
   }
 };
 
-export const sendMessage = async (recipient: string, message: any) => {
+export const sendMessage = async (recipient: string, message: any, plainText?:boolean) => {
   try {
     const url = `${metaWhatsAppAPI.baseURL}/${metaWhatsAppAPI.phoneNumberId}/messages`;
     const payload: any = {
@@ -210,7 +210,7 @@ export const sendMessage = async (recipient: string, message: any) => {
       switch (message.type) {
         case "text":
           payload.type = "text";
-          payload.text = { body: convertHtmlToWhatsAppText(message.message) };
+          payload.text = { body: plainText?message.message:convertHtmlToWhatsAppText(message.message) };
           break;
         case "image":
           payload.type = "image";
@@ -333,7 +333,7 @@ export const sendMessageWithList = async (
   }
 };
 
-export const sendQuestion = async (recipient: string, questionMessage: any) => {
+export const sendQuestion = async (recipient: string, questionMessage: any, currentNodeId:number) => {
   try {
     const url = `${metaWhatsAppAPI.baseURL}/${metaWhatsAppAPI.phoneNumberId}/messages`;
 
@@ -342,9 +342,27 @@ export const sendQuestion = async (recipient: string, questionMessage: any) => {
       (option: any) => option.id && option.title
     );
 
+    
     if (validOptions.length === 0) {
       throw new Error("No valid options provided for the question.");
     }
+
+    const conversation = await prisma.conversation.findFirst({
+      where: { recipient },
+    });
+    
+    if (!conversation) {
+      throw new Error("Conversation not found");
+    }
+    
+    await prisma.conversation.update({
+      where: { id: conversation.id }, // Use the conversation's ID
+      data: {
+        answeringQuestion:true,
+        currentNodeId: currentNodeId,
+      },
+    });
+    
 
     const payload = {
       messaging_product: "whatsapp",
