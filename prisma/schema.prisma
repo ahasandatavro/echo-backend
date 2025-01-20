@@ -108,6 +108,7 @@ model Conversation {
   lastNodeId   Int?      // The last processed node's ID
   currentNodeId Int? 
   answeringQuestion Boolean @default(false)
+  validationFailureCount Int    @default(0)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 }

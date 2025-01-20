@@ -130,7 +130,9 @@ export const webhookVerification = async (req: Request, res: Response) => {
           });
         
           if (currentNode?.type === "question") {
-            const { validation } = currentNode.data?.question_data;
+            const { validation, validationFailureExitCount = 3 } = currentNode.data?.question_data;
+        
+            let failureCount = conversation.validationFailureCount;
         
             if (message?.type === "text" && text) {
               // Validate text-based response
@@ -139,18 +141,42 @@ export const webhookVerification = async (req: Request, res: Response) => {
               if (isValid) {
                 await prisma.conversation.update({
                   where: { id: conversation.id },
-                  data: { answeringQuestion: false },
+                  data: { answeringQuestion: false, validationFailureCount: 0 },
                 });
         
                 console.log("Text response is valid. Proceeding to the next node...");
-                // Add your next node logic here
+                // Proceed to the next node
               } else {
-                console.warn("Text response is invalid.");
-                await sendMessage(
-                  recipient,
-                  { type: "text", message: validation?.errorMessage || "Invalid response." },
-                  true
-                );
+                failureCount += 1;
+        
+                if (failureCount >= validationFailureExitCount) {
+                  // End chat flow
+                  await prisma.conversation.update({
+                    where: { id: conversation.id },
+                    data: { answeringQuestion: false, validationFailureCount: 0 },
+                  });
+        
+                  await sendMessage(
+                    recipient,
+                    { type: "text", message: `You have given incorrect answers ${validationFailureExitCount} times. Closing chatflow.` },
+                    true
+                  );
+        
+                  console.warn("Chatflow ended due to repeated invalid responses.");
+                } else {
+                  // Update failure count and send error message
+                  await prisma.conversation.update({
+                    where: { id: conversation.id },
+                    data: { validationFailureCount: failureCount },
+                  });
+        
+                  console.warn(`Response is invalid. Failure count: ${failureCount}`);
+                  await sendMessage(
+                    recipient,
+                    { type: "text", message: validation?.errorMessage || "Invalid response." },
+                    true
+                  );
+                }
               }
             } else if (["image", "video", "audio", "document"].includes(message?.type)) {
               // Validate media response
@@ -160,31 +186,48 @@ export const webhookVerification = async (req: Request, res: Response) => {
               if (isValid) {
                 await prisma.conversation.update({
                   where: { id: conversation.id },
-                  data: { answeringQuestion: false },
+                  data: { answeringQuestion: false, validationFailureCount: 0 },
                 });
         
                 console.log(`${message.type} response is valid. Proceeding to the next node...`);
-                // Add your next node logic here
+                // Proceed to the next node
               } else {
-                console.warn(`${message.type} response is invalid.`);
-                await sendMessage(
-                  recipient,
-                  { type: "text", message: validation?.errorMessage || "Invalid response type. Please provide a valid response." },
-                  true
-                );
+                failureCount += 1;
+        
+                if (failureCount >= validationFailureExitCount) {
+                  // End chat flow
+                  await prisma.conversation.update({
+                    where: { id: conversation.id },
+                    data: { answeringQuestion: false, validationFailureCount: 0 },
+                  });
+        
+                  await sendMessage(
+                    recipient,
+                    { type: "text", message: `You have given incorrect answers ${validationFailureExitCount} times. Closing chatflow.` },
+                    true
+                  );
+        
+                  console.warn("Chatflow ended due to repeated invalid responses.");
+                } else {
+                  // Update failure count and send error message
+                  await prisma.conversation.update({
+                    where: { id: conversation.id },
+                    data: { validationFailureCount: failureCount },
+                  });
+        
+                  console.warn(`Response is invalid. Failure count: ${failureCount}`);
+                  await sendMessage(
+                    recipient,
+                    { type: "text", message: validation?.errorMessage || "Invalid response type. Please provide a valid response." },
+                    true
+                  );
+                }
               }
-            } else {
-              console.warn("Unsupported response type or missing required fields.");
-              await sendMessage(
-                recipient,
-                { type: "text", message: validation?.errorMessage || "Invalid response." },
-                true
-              );
             }
           }
-        
-          continue;
         }
+        
+        
         
         // Handle keyword-based text messages
         if (text) {
