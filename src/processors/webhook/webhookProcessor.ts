@@ -136,6 +136,8 @@ export const processNode = async (
             convertHtmlToWhatsAppText(buttonData.bodyText) ||
             "Please select an option:",
           buttons: buttons,
+          header: buttonData?.headerText,
+          footer: buttonData?.footerText,
         };
 
         await sendMessageWithButtons(recipient, buttonMessage);
@@ -164,25 +166,32 @@ export const processNode = async (
       if (delayData) {
         const { minutes = 0, seconds = 0 } = delayData;
         const delayTime = (minutes * 60 + seconds) * 1000;
-    
-        console.log(`Delaying for ${minutes} minute(s) and ${seconds} second(s)...`);
+
+        console.log(
+          `Delaying for ${minutes} minute(s) and ${seconds} second(s)...`
+        );
         await new Promise((resolve) => setTimeout(resolve, delayTime));
         console.log("Delay completed. Processing the next node...");
-    
+
         // Find the next node and process it
-        const outgoingEdge = edges.find((edge) => edge.sourceId === currentNode.id);
+        const outgoingEdge = edges.find(
+          (edge) => edge.sourceId === currentNode.id
+        );
         if (outgoingEdge) {
-          const nextNodeId = nodes.find((node) => node.id === outgoingEdge.targetId)?.nodeId;
+          const nextNodeId = nodes.find(
+            (node) => node.id === outgoingEdge.targetId
+          )?.nodeId;
           if (nextNodeId) {
             await processNode(nextNodeId, nodes, edges, recipient); // Recursive call to process the next node
           }
         } else {
-          console.warn(`No outgoing edge found for delay node ID: ${currentNode.id}`);
+          console.warn(
+            `No outgoing edge found for delay node ID: ${currentNode.id}`
+          );
         }
       }
       return; // Ensure no further processing for the current node
     }
-    
   } catch (error) {
     console.error("Error in processNode:", error);
   }
@@ -259,7 +268,13 @@ export const sendMessageWithButtons = async (
         type: "interactive",
         interactive: {
           type: "button",
+          header: buttonMessage.header
+          ? { type: "text", text: buttonMessage.header }
+          : undefined,
           body: { text: convertHtmlToWhatsAppText(buttonMessage.text) },
+          footer: buttonMessage.footer
+          ? { text: buttonMessage.footer }
+          : undefined,
           action: { buttons: buttonMessage.buttons },
         },
       },
