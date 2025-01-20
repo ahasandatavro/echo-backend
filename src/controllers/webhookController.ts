@@ -42,7 +42,7 @@ export const webhookVerification = async (req: Request, res: Response) => {
         const recipient = message?.from;
 
         if (!recipient) {
-          console.error("Recipient not found in the message.");
+         // console.error("Recipient not found in the message.");
           continue;
         }
 
@@ -74,7 +74,6 @@ export const webhookVerification = async (req: Request, res: Response) => {
               console.log(`Keyword matched. Using chatbot ID: ${chatbotId}`);
             }
           }
-
           if (!chatbotId) {
             console.warn("No keyword match found. Unable to associate a chatbot.");
             await sendMessage(recipient, "Sorry, no chatbot is available for your query.");
@@ -125,35 +124,68 @@ export const webhookVerification = async (req: Request, res: Response) => {
         }
 
         // Handle text responses to questions
-        if (conversation.answeringQuestion && text) {
+        if (conversation.answeringQuestion) {
           const currentNode = await prisma.node.findFirst({
             where: { id: conversation.currentNodeId },
           });
-
+        
           if (currentNode?.type === "question") {
             const { validation } = currentNode.data?.question_data;
-
-            const isValid = validateUserResponse(text, validation);
-
-            if (isValid) {
-              await prisma.conversation.update({
-                where: { id: conversation.id },
-                data: { answeringQuestion: false },
-              });
-
-              console.log("User response is valid. Proceeding to the next node...");
-              const nextNodeId = getNextNodeId(chatbotData, null, currentNode.id);
-              if (nextNodeId) {
-                await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient);
+        
+            if (message?.type === "text" && text) {
+              // Validate text-based response
+              const isValid = validateUserResponse(text, validation);
+        
+              if (isValid) {
+                await prisma.conversation.update({
+                  where: { id: conversation.id },
+                  data: { answeringQuestion: false },
+                });
+        
+                console.log("Text response is valid. Proceeding to the next node...");
+                // Add your next node logic here
+              } else {
+                console.warn("Text response is invalid.");
+                await sendMessage(
+                  recipient,
+                  { type: "text", message: validation?.errorMessage || "Invalid response." },
+                  true
+                );
+              }
+            } else if (["image", "video", "audio", "document"].includes(message?.type)) {
+              // Validate media response
+              const mediaId = message[message.type]?.id; // e.g., message.image.id, message.video.id
+              const isValid = await validateUserResponse(mediaId, validation, message.type);
+        
+              if (isValid) {
+                await prisma.conversation.update({
+                  where: { id: conversation.id },
+                  data: { answeringQuestion: false },
+                });
+        
+                console.log(`${message.type} response is valid. Proceeding to the next node...`);
+                // Add your next node logic here
+              } else {
+                console.warn(`${message.type} response is invalid.`);
+                await sendMessage(
+                  recipient,
+                  { type: "text", message: validation?.errorMessage || "Invalid response type. Please provide a valid response." },
+                  true
+                );
               }
             } else {
-              console.warn("User response is invalid.");
-              await sendMessage(recipient, {type:"text",message:validation?.errorMessage||"Invalid response."},true);
+              console.warn("Unsupported response type or missing required fields.");
+              await sendMessage(
+                recipient,
+                { type: "text", message: validation?.errorMessage || "Invalid response." },
+                true
+              );
             }
           }
+        
           continue;
         }
-
+        
         // Handle keyword-based text messages
         if (text) {
           const keyword = await prisma.keyword.findFirst({
