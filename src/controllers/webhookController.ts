@@ -101,7 +101,7 @@ export const webhookVerification = async (req: Request, res: Response) => {
 
         if (!chatbotData) {
           console.warn(`Chatbot with ID ${conversation.chatbotId} not found.`);
-          await sendMessage(recipient, "Sorry, the associated chatbot is unavailable.");
+         // await sendMessage(recipient, "Sorry, the associated chatbot is unavailable.");
           continue;
         }
 
@@ -246,6 +246,10 @@ export const webhookVerification = async (req: Request, res: Response) => {
 
           if (keyword?.chatbot) {
             const chatbotId = keyword.chatbot.id;
+            await prisma.conversation.update({
+              where: { id: conversation.id },
+              data: { answeringQuestion: false },
+            });
             await processChatFlow(chatbotId, recipient);
           }
         }
@@ -258,3 +262,4 @@ export const webhookVerification = async (req: Request, res: Response) => {
     res.sendStatus(500);
   }
 };
+

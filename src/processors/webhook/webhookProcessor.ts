@@ -9,19 +9,14 @@ export const processChatFlow = async (chatbotId: number, recipient: string) => {
       where: { id: chatbotId },
       include: { nodes: true, edges: true },
     });
-
-    if (!chatbotData) {
-      await sendMessage(recipient, "Chatbot flow not found.");
-      return;
-    }
-
-    const startNode = chatbotData.nodes.find((node) => node.type === "start");
-    if (!startNode) {
-      await sendMessage(recipient, "Chatbot start node not configured.");
-      return;
-    }
-
-    // Fetch all conversations for the recipient
+  
+    if (chatbotData) {
+      const startNode = chatbotData.nodes.find((node) => node.type === "start");
+      if (!startNode) {
+        await sendMessage(recipient, "Chatbot start node not configured.",chatbotData?.id);
+        return;
+      }
+          // Fetch all conversations for the recipient
     const recipientConversations = await prisma.conversation.findMany({
       where: { recipient },
     });
@@ -61,6 +56,9 @@ export const processChatFlow = async (chatbotId: number, recipient: string) => {
       chatbotData.edges,
       recipient
     );
+    }
+
+
   } catch (error) {
     console.error("Error processing chatbot flow:", error);
   }
@@ -101,7 +99,7 @@ export const processNode = async (
 
       if (messageData && messageData.length > 0) {
         for (const message of messageData) {
-          await sendMessage(recipient, message);
+          await sendMessage(recipient, message,currentNode?.chatId );
         }
       }
 
@@ -114,8 +112,12 @@ export const processNode = async (
         )?.nodeId;
         if (nextNodeId) {
           const conversation = await prisma.conversation.findFirst({
-            where: { recipient },
+            where: {
+              recipient: recipient, // Matches the recipient
+              chatbotId: currentNode.chatId,    // Matches the chatbotId
+            },
           });
+          
 
           if (!conversation) {
             throw new Error("Conversation not found");
@@ -152,6 +154,7 @@ export const processNode = async (
           buttons: buttons,
           header: buttonData?.headerText,
           footer: buttonData?.footerText,
+          chatId: currentNode?.chatId
         };
 
         await sendMessageWithButtons(recipient, buttonMessage);
@@ -162,6 +165,7 @@ export const processNode = async (
       if (questionData) {
         const questionMessage = {
           text: convertHtmlToWhatsAppText(questionData.questionText),
+          chatId:currentNode.chatId,
           buttons: questionData.answerVariants?.map(
             (variant: any, index: number) => ({
               id: `${index}_node_${currentNode.id}`,
@@ -211,12 +215,13 @@ export const processNode = async (
   }
 };
 
-export const sendMessage = async (recipient: string, message: any, plainText?:boolean) => {
+export const sendMessage = async (recipient: string, message: any, chatbotId:number,plainText?:boolean) => {
   try {
     const url = `${metaWhatsAppAPI.baseURL}/${metaWhatsAppAPI.phoneNumberId}/messages`;
     const payload: any = {
       messaging_product: "whatsapp",
       to: recipient,
+      biz_opaque_callback_data: `chatId=${chatbotId}`
     };
 
     if (message) {
@@ -291,6 +296,8 @@ export const sendMessageWithButtons = async (
           : undefined,
           action: { buttons: buttonMessage.buttons },
         },
+        
+           biz_opaque_callback_data: `chatId=${buttonMessage.chatId}`
       },
       {
         headers: {
@@ -362,7 +369,10 @@ export const sendQuestion = async (recipient: string, questionMessage: any, curr
     }
 
     const conversation = await prisma.conversation.findFirst({
-      where: { recipient },
+      where: {
+        recipient: recipient, // Matches the recipient
+        chatbotId: questionMessage.chatId,    // Matches the chatbotId
+      },
     });
     
     if (!conversation) {
@@ -392,6 +402,7 @@ export const sendQuestion = async (recipient: string, questionMessage: any, curr
           })),
         },
       },
+      biz_opaque_callback_data: `chatId=${questionMessage.chatId}`
     };
 
     await axios.post(url, payload, {
