@@ -2,6 +2,7 @@ import { prisma } from "../../models/prismaClient";
 import axios from "axios";
 import { metaWhatsAppAPI } from "../../config/metaConfig";
 import { convertHtmlToWhatsAppText } from "../../helpers/index";
+
 export const processChatFlow = async (chatbotId: number, recipient: string) => {
   try {
     const chatbotData = await prisma.chatbot.findUnique({
@@ -19,29 +20,41 @@ export const processChatFlow = async (chatbotId: number, recipient: string) => {
       await sendMessage(recipient, "Chatbot start node not configured.");
       return;
     }
-    const existingConversation = await prisma.conversation.findFirst({
+
+    // Fetch all conversations for the recipient
+    const recipientConversations = await prisma.conversation.findMany({
       where: { recipient },
     });
-    if (existingConversation) {
-      // Update the conversation with the new chatbot and start node
-      await prisma.conversation.update({
-        where: { id: existingConversation.id },
-        data: {
-          chatbotId,
-          currentNodeId: startNode.id,
-          lastNodeId: null, // Reset lastNodeId
-        },
-      });
-    } else {
-      // Create a new conversation entry
+
+    // Check for a matching conversation with the same chatbotId
+    const matchingConversation = recipientConversations.find(
+      (conversation) => conversation.chatbotId === chatbotId
+    );
+
+    if (!matchingConversation) {
+      // Create a new conversation if no match found
+      console.log(`No matching conversation for recipient ${recipient} and chatbotId ${chatbotId}. Creating a new one.`);
       await prisma.conversation.create({
         data: {
           recipient,
           chatbotId,
           currentNodeId: startNode.id,
+          lastNodeId: null,
+        },
+      });
+    } else {
+      // Update the existing conversation
+      console.log(`Matching conversation found for recipient ${recipient} and chatbotId ${chatbotId}. Updating it.`);
+      await prisma.conversation.update({
+        where: { id: matchingConversation.id },
+        data: {
+          currentNodeId: startNode.id,
+          lastNodeId: null, // Reset lastNodeId
         },
       });
     }
+
+    // Start processing the chatbot flow
     await processNode(
       startNode.nodeId,
       chatbotData.nodes,
@@ -52,6 +65,7 @@ export const processChatFlow = async (chatbotId: number, recipient: string) => {
     console.error("Error processing chatbot flow:", error);
   }
 };
+
 
 export const processNode = async (
   nodeId: string,

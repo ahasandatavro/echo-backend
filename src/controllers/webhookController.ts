@@ -48,6 +48,9 @@ export const webhookVerification = async (req: Request, res: Response) => {
 
         let conversation = await prisma.conversation.findFirst({
           where: { recipient },
+          orderBy: {
+            updatedAt: 'desc', // Orders by the most recently updated conversation
+          },
         });
 
         const text = message?.text?.body?.toLowerCase();
