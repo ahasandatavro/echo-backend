@@ -167,7 +167,64 @@ export const webhookVerification = async (req: Request, res: Response) => {
           }
           continue;
         }
+        if (message?.interactive?.list_reply) {
+          const listReplyId = message.interactive.list_reply.id;
+          const nodeId = parseInt(listReplyId.split("_node_")[1]);
+          const buttonId = (listReplyId.split("_node_")[0]);
+          const currentNode = chatbotData.nodes.find((node) => node.id === nodeId);
+         console.log("source"+buttonId+"node"+nodeId);
+          if (currentNode?.data?.list_data?.saveAnswerVariable) {
+            const variableName = currentNode?.data?.list_data?.saveAnswerVariable.startsWith("@")
+              ? currentNode?.data?.list_data?.saveAnswerVariable.slice(1)
+              : currentNode?.data?.list_data?.saveAnswerVariable;
         
+            // Find the conversation
+            const conversation = await prisma.conversation.findFirst({
+              where: { recipient, chatbotId: currentNode.chatId },
+            });
+        
+            if (conversation) {
+              // Check if the variable already exists
+              const existingVariable = await prisma.variable.findFirst({
+                where: {
+                  name: variableName,
+                  chatbotId: currentNode.chatId,
+                  conversationId: conversation.id,
+                },
+              });
+        
+              if (existingVariable) {
+                // Update the existing variable with the list reply title
+                await prisma.variable.update({
+                  where: { id: existingVariable.id },
+                  data: { value: message.interactive.list_reply.title, nodeId: currentNode.id },
+                });
+              } else {
+                // Create a new variable with the list reply title
+                await prisma.variable.create({
+                  data: {
+                    name: variableName,
+                    value: message.interactive.list_reply.title,
+                    chatbotId: currentNode.chatId,
+                    conversationId: conversation.id,
+                  },
+                });
+              }
+            }
+          }
+        
+          const selectedEdge = chatbotData.edges.find(
+            (edge) => edge.sourceId === currentNode?.id &&  edge.sourceHandle === buttonId
+          );
+        
+          const nextNodeId = selectedEdge
+            ? chatbotData.nodes.find((node) => node.id === selectedEdge.targetId)?.nodeId
+            : null;
+        
+          if (nextNodeId) {
+            await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient);
+          }
+        }
 
         // Handle text responses to questions
         if (conversation.answeringQuestion) {

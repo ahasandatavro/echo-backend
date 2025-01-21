@@ -30,3 +30,23 @@ export interface User {
     description?: string;
   }
   
+  export interface Row {
+    id: string; // Unique identifier for the row
+    title: string; // The title of the row (required)
+    description?: string; // An optional description for the row
+  }
+  
+  export interface Section {
+    sectionTitle: string; // The title of the section (required)
+    rows: string[]; // Array of rows belonging to this section
+  }
+  
+  export interface ListMessage {
+    header?: string; // Optional header text
+    text: string; // Body text (required)
+    footer?: string; // Optional footer text
+    buttonText: string; // Button text (required)
+    sections: Section[]; // Array of sections
+    saveAnswerVariable?: string
+  }
+  

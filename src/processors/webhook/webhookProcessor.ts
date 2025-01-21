@@ -2,7 +2,7 @@ import { prisma } from "../../models/prismaClient";
 import axios from "axios";
 import { metaWhatsAppAPI } from "../../config/metaConfig";
 import { convertHtmlToWhatsAppText } from "../../helpers/index";
-
+import { ListMessage,Section,Row } from "../../interphases";
 export const processChatFlow = async (chatbotId: number, recipient: string) => {
   try {
     const chatbotData = await prisma.chatbot.findUnique({
@@ -221,6 +221,82 @@ export const processNode = async (
       }
     }
     
+    if (currentNode.type === "list") {
+      const listData = currentNode.data?.list_data;
+      if (listData) {
+        const listMessage:ListMessage = {
+          text: convertHtmlToWhatsAppText(listData.bodyText) || "Please select an option:",
+          header: listData?.headerText,
+          footer: listData?.footerText,
+          buttonText: listData?.buttonText || "Options",
+          sections: listData?.sections || [],
+          saveAnswerVariable: listData?.saveAnswerVariable,
+        };
+    
+        try {
+          // Send list message
+          await sendMessageWithList(recipient, listMessage, currentNode.id);
+    
+          // Update the Variable table after successful message sending
+          if (listData?.saveAnswerVariable) {
+            const variableName = listData.saveAnswerVariable.startsWith("@")
+              ? listData.saveAnswerVariable.slice(1)
+              : listData.saveAnswerVariable;
+    
+            // Find the conversation using recipient and chatId
+            const conversation = await prisma.conversation.findFirst({
+              where: {
+                recipient: recipient,
+                chatbotId: currentNode?.chatId,
+              },
+            });
+    
+            if (conversation) {
+              // Check if the variable already exists
+              const existingVariable = await prisma.variable.findFirst({
+                where: {
+                  name: variableName,
+                  chatbotId: currentNode.chatId,
+                  conversationId: conversation.id,
+                },
+              });
+    
+              if (existingVariable) {
+                // Update the existing variable
+                await prisma.variable.update({
+                  where: { id: existingVariable.id },
+                  data: { updatedAt: new Date() }, // Update timestamp
+                });
+              } else {
+                // Create a new variable
+                await prisma.variable.create({
+                  data: {
+                    name: variableName,
+                    chatbotId: currentNode.chatId,
+                    conversationId: conversation.id,
+                  },
+                });
+              }
+    
+              console.log(
+                `Variable "${variableName}" saved for conversation ID ${conversation.id} and chatbot ID ${currentNode.chatId}.`
+              );
+            } else {
+              console.warn(
+                `No conversation found for recipient ${recipient} and chatbot ID ${currentNode.chatId}.`
+              );
+            }
+          }
+        } catch (error) {
+          console.error(
+            "Error sending list message or updating variable table:",
+            error
+          );
+        }
+      }
+    }
+    
+    
     
     if (currentNode.type === "question") {
       const questionData = currentNode.data?.question_data;
@@ -431,37 +507,42 @@ export const sendMessageWithButtons = async (
   }
 };
 
-export const sendMessageWithList = async (
-  recipient: string,
-  listMessage: any
-) => {
+export const sendMessageWithList = async (recipient: string, listMessage: ListMessage,nodeId:number) => {
   try {
     const url = `${metaWhatsAppAPI.baseURL}/${metaWhatsAppAPI.phoneNumberId}/messages`;
 
     const payload = {
       messaging_product: "whatsapp",
+      recipient_type: "individual",
       to: recipient,
       type: "interactive",
       interactive: {
         type: "list",
-        header: listMessage.header
-          ? { type: "text", text: listMessage.header }
-          : undefined,
-        body: { text: convertHtmlToWhatsAppText(listMessage.text) },
-        footer: listMessage.footer ? { text: listMessage.footer } : undefined,
+        header: {
+          type: "text",
+          text: listMessage.header
+        },
+        body: {
+          text: listMessage.text
+        },
+        footer: {
+          text: listMessage.footer
+        },
         action: {
           button: listMessage.buttonText,
-          sections: listMessage.sections.map((section: any) => ({
-            title: section.title,
-            rows: section.rows.map((row: any) => ({
-              id: row.id,
-              title: row.title,
-              description: row.description || "",
+          sections: listMessage.sections.map((section, sectionIndex) => ({
+            title: section.sectionTitle,
+            rows: section.rows.map((row, rowIndex) => ({
+              id: `source_${sectionIndex}_${rowIndex}_node_${nodeId}`,
+              title: row,
+              description: "row demo description",
             })),
           })),
-        },
-      },
+        }
+        
+      }
     };
+    
 
     await axios.post(url, payload, {
       headers: {
@@ -469,10 +550,13 @@ export const sendMessageWithList = async (
         "Content-Type": "application/json",
       },
     });
+
+    console.log("List message sent successfully.");
   } catch (error) {
     console.error("Error sending list message:", error);
   }
 };
+
 
 export const sendQuestion = async (recipient: string, questionMessage: any, currentNodeId:number) => {
   try {
