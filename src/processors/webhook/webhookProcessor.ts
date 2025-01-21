@@ -146,7 +146,7 @@ export const processNode = async (
             },
           })
         );
-
+    
         const buttonMessage = {
           text:
             convertHtmlToWhatsAppText(buttonData.bodyText) ||
@@ -154,31 +154,151 @@ export const processNode = async (
           buttons: buttons,
           header: buttonData?.headerText,
           footer: buttonData?.footerText,
-          chatId: currentNode?.chatId
+          chatId: currentNode?.chatId,
+          saveAnswerVariable: buttonData?.saveAnswerVariable,
         };
-
-        await sendMessageWithButtons(recipient, buttonMessage);
+    
+        try {
+          // Send button message
+          await sendMessageWithButtons(recipient, buttonMessage);
+    
+          // Update the Variable table after successful message sending
+          if (buttonData?.saveAnswerVariable) {
+            const variableName = buttonData.saveAnswerVariable.startsWith("@")
+              ? buttonData.saveAnswerVariable.slice(1)
+              : buttonData.saveAnswerVariable;
+    
+            // Find the conversation using recipient and chatId
+            const conversation = await prisma.conversation.findFirst({
+              where: {
+                recipient: recipient,
+                chatbotId: currentNode?.chatId,
+              },
+            });
+    
+            if (conversation) {
+              // Check if the variable already exists
+              const existingVariable = await prisma.variable.findFirst({
+                where: {
+                  name: variableName,
+                  chatbotId: currentNode.chatId,
+                  conversationId: conversation.id,
+                },
+              });
+    
+              if (existingVariable) {
+                // Update the existing variable
+                await prisma.variable.update({
+                  where: { id: existingVariable.id },
+                  data: { updatedAt: new Date() }, // Update timestamp
+                });
+              } else {
+                // Create a new variable
+                await prisma.variable.create({
+                  data: {
+                    name: variableName,
+                    chatbotId: currentNode.chatId,
+                    conversationId: conversation.id,
+                  },
+                });
+              }
+    
+              console.log(
+                `Variable "${variableName}" saved for conversation ID ${conversation.id} and chatbot ID ${currentNode.chatId}.`
+              );
+            } else {
+              console.warn(
+                `No conversation found for recipient ${recipient} and chatbot ID ${currentNode.chatId}.`
+              );
+            }
+          }
+        } catch (error) {
+          console.error(
+            "Error sending button message or updating variable table:",
+            error
+          );
+        }
       }
     }
+    
+    
     if (currentNode.type === "question") {
       const questionData = currentNode.data?.question_data;
       if (questionData) {
         const questionMessage = {
           text: convertHtmlToWhatsAppText(questionData.questionText),
-          chatId:currentNode.chatId,
-          buttons: questionData.answerVariants?.map(
-            (variant: any, index: number) => ({
-              id: `${index}_node_${currentNode.id}`,
-              title: variant,
-            })
-          ),
+          chatId: currentNode.chatId,
+          buttons: questionData.answerVariants?.map((variant: any, index: number) => ({
+            id: `${index}_node_${currentNode.id}`,
+            title: variant,
+          })),
         };
-
-        console.log(`Sending question message:`, questionMessage);
-        await sendQuestion(recipient, questionMessage, currentNode?.id);
+    
+        try {
+          // Send question message
+          console.log(`Sending question message:`, questionMessage);
+          await sendQuestion(recipient, questionMessage, currentNode?.id);
+    
+          // Update the Variable table after successful question message sending
+          if (questionData.saveAnswerVariable) {
+            const variableName = questionData.saveAnswerVariable.startsWith("@")
+              ? questionData.saveAnswerVariable.slice(1)
+              : questionData.saveAnswerVariable;
+    
+            // Find the conversation using recipient and chatId
+            const conversation = await prisma.conversation.findFirst({
+              where: {
+                recipient: recipient,
+                chatbotId: currentNode?.chatId,
+              },
+            });
+    
+            if (conversation) {
+              // Check if the variable already exists
+              const existingVariable = await prisma.variable.findFirst({
+                where: {
+                  name: variableName,
+                  chatbotId: currentNode.chatId,
+                  conversationId: conversation.id,
+                },
+              });
+    
+              if (existingVariable) {
+                // Update the existing variable
+                await prisma.variable.update({
+                  where: { id: existingVariable.id },
+                  data: { updatedAt: new Date() }, // Update timestamp
+                });
+              } else {
+                // Create a new variable
+                await prisma.variable.create({
+                  data: {
+                    name: variableName,
+                    chatbotId: currentNode.chatId,
+                    conversationId: conversation.id,
+                  },
+                });
+              }
+    
+              console.log(
+                `Variable "${variableName}" saved for conversation ID ${conversation.id} and chatbot ID ${currentNode.chatId}.`
+              );
+            } else {
+              console.warn(
+                `No conversation found for recipient ${recipient} and chatbot ID ${currentNode.chatId}.`
+              );
+            }
+          }
+        } catch (error) {
+          console.error(
+            "Error sending question message or updating variable table:",
+            error
+          );
+        }
       }
       return; // Questions wait for user interaction
     }
+    
     if (currentNode.type === "delay") {
       const delayData = currentNode.data?.delay_data;
       if (delayData) {
