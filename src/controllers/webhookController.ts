@@ -87,7 +87,7 @@ export const webhookVerification = async (req: Request, res: Response) => {
             data: {
               recipient,
               chatbotId,
-              answeringQuestion: false,
+              answeringQuestion: true,
             },
           });
 
@@ -222,7 +222,7 @@ export const webhookVerification = async (req: Request, res: Response) => {
                 }
           
                 console.log("Text response is valid. Proceeding to the next node...");
-                const nextNodeId = getNextNodeId(chatbotData, null, currentNode.id);
+                const nextNodeId = getNextNodeIdFromQuestion(chatbotData, null, currentNode.id);
                 if (nextNodeId) {
                   await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient);
                 }
@@ -301,3 +301,30 @@ export const webhookVerification = async (req: Request, res: Response) => {
   }
 };
 
+const getNextNodeIdFromQuestion = (
+  chatbotData: any, // The chatbot data with nodes and edges
+  buttonId: string | null, // Optional button ID for branching logic
+  currentNodeId: number // The current node's ID
+): string | null => {
+  // Find the outgoing edge from the current node
+  const outgoingEdge = chatbotData.edges.find((edge: any) => {
+    // Match the sourceId with the current node's ID
+    // Optionally check for buttonId in the sourceHandle for branching
+    return edge.sourceId === currentNodeId && (!buttonId || edge.sourceHandle === buttonId);
+  });
+
+  if (!outgoingEdge) {
+    console.warn(`No outgoing edge found for node ID: ${currentNodeId}`);
+    return null;
+  }
+
+  // Find the target node ID from the edge
+  const nextNode = chatbotData.nodes.find((node: any) => node.id === outgoingEdge.targetId);
+
+  if (!nextNode) {
+    console.warn(`No target node found for edge from node ID: ${currentNodeId}`);
+    return null;
+  }
+
+  return nextNode.nodeId;
+};
