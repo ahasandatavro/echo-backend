@@ -16,7 +16,7 @@ export interface User {
     saveAnswerVariable?: string; 
     acceptMediaResponse?: boolean; 
     validation?: {
-      type?: "number" | "date" | "datetime" | "time" | "pattern" | "image" | "video" | "audio" | "document"; // Validation types
+      type?: "number" | "date" | "datetime" | "time" | "pattern" | "image" | "video" | "audio" | "document" | ""; // Validation types
       errorMessage?: string;
       minValue?: number;
       maxValue?: number; 

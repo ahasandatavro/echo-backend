@@ -6,7 +6,7 @@ export const validateUserResponse = (
   validation?: IQuestionValidation,
   responseType?: "text" | "image" | "video" | "audio" | "document"
 ): boolean => {
-if (!validation) {
+if (!validation || validation.type==="") {
     console.warn("No validation specified. Automatically accepting the response.");
     return true; // Accept if no validation is defined
   }
