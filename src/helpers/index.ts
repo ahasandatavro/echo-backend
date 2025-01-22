@@ -6,7 +6,7 @@ import { htmlToText } from "html-to-text";
  * @param {string} html - The HTML string to preprocess.
  * @returns {string} - The preprocessed HTML string.
  */
-const preprocessHtmlForWhatsApp = (html: string): string => {
+export const preprocessHtmlForWhatsApp = (html: string): string => {
   return html
     .replace(/<strong>(.*?)<\/strong>/g, "*$1*") // Bold
     .replace(/<b>(.*?)<\/b>/g, "*$1*") // Bold

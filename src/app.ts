@@ -6,12 +6,15 @@ import authRoutes from "./routes/authRoute";
 import webhookRoutes from "./routes/webhookRoute";
 import textMaterialRoutes from "./routes/textMaterialRoute";
 import keywordRoutes from "./routes/keywordRoute";
+import variableRoute from "./routes/variableRoute"
 //import { authenticateJWT } from "./utils/jwtUtils";
 import passport from "passport";
 import dotenv, { config } from "dotenv";
 import "./config/passportConfig";
 import multer from "multer";
 import { s3 } from "./config/s3Config";
+
+
 dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -35,6 +38,7 @@ app.use("/auth", authRoutes);
 // app.use('/nodes', authenticateJWT, nodeRoutes);
 app.use("/nodes", nodeRoutes);
 app.use("/webhook", webhookRoutes);
+app.use("/variables", variableRoute);
 app.use("/textMaterials",textMaterialRoutes);
 app.use('/keyword',keywordRoutes);
 app.post("/upload", upload.single("file"), async (req, res) => {

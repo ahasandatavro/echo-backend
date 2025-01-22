@@ -172,7 +172,6 @@ export const webhookVerification = async (req: Request, res: Response) => {
           const nodeId = parseInt(listReplyId.split("_node_")[1]);
           const buttonId = (listReplyId.split("_node_")[0]);
           const currentNode = chatbotData.nodes.find((node) => node.id === nodeId);
-         console.log("source"+buttonId+"node"+nodeId);
           if (currentNode?.data?.list_data?.saveAnswerVariable) {
             const variableName = currentNode?.data?.list_data?.saveAnswerVariable.startsWith("@")
               ? currentNode?.data?.list_data?.saveAnswerVariable.slice(1)

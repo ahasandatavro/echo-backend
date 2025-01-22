@@ -1,6 +1,8 @@
 import { IQuestion } from "../../interphases";
 type IQuestionValidation = IQuestion["validation"];
-
+import { Prisma } from "@prisma/client";
+import { PrismaClient } from '@prisma/client';
+const prisma = new PrismaClient();
 export const validateUserResponse = (
   userResponse: string,
   validation?: IQuestionValidation,
@@ -185,5 +187,42 @@ if (!validation || validation.type==="") {
       console.error(`Unknown validation type: ${type}.`);
       return false;
     }
+  }
+};
+
+export const resolveVariables = async (text: string, chatbotId: number): Promise<string> => {
+  try {
+    const regex = /@(\w+)/g; // Match all occurrences of @variableName
+    const matches: RegExpExecArray[] = [];
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      matches.push(match);
+    }
+    
+    if (matches.length === 0) return text; // If no variables, return the original text
+
+    // Fetch all variables for the given chatbotId from the database
+    const variables = await prisma.variable.findMany({
+      where: { chatbotId },
+    });
+
+    // Create a mapping of variable names to their values
+    const variableMap = variables.reduce((acc: Record<string, string>, variable) => {
+      acc[variable.name] = variable.value || ""; // Map variable name to its value
+      return acc;
+    }, {});
+
+    // Replace each @variableName in the text with its value
+    let resolvedText = text;
+    matches.forEach((match) => {
+      const variableName = match[1]; // Extract variable name (without @)
+      const variableValue = variableMap[variableName] || ""; // Use the value or empty string if not found
+      resolvedText = resolvedText.replace(`@${variableName}`, variableValue);
+    });
+
+    return resolvedText;
+  } catch (error) {
+    console.error("Error resolving variables:", error);
+    return text; // If an error occurs, return the original text
   }
 };

@@ -2,7 +2,8 @@ import { prisma } from "../../models/prismaClient";
 import axios from "axios";
 import { metaWhatsAppAPI } from "../../config/metaConfig";
 import { convertHtmlToWhatsAppText } from "../../helpers/index";
-import { ListMessage,Section,Row } from "../../interphases";
+import { resolveVariables } from "../../helpers/validation";
+import { ListMessage } from "../../interphases";
 export const processChatFlow = async (chatbotId: number, recipient: string) => {
   try {
     const chatbotData = await prisma.chatbot.findUnique({
@@ -425,7 +426,17 @@ export const sendMessage = async (recipient: string, message: any, chatbotId:num
       switch (message.type) {
         case "text":
           payload.type = "text";
-          payload.text = { body: plainText?message.message:convertHtmlToWhatsAppText(message.message) };
+
+          // Resolve variables in the message text
+          let messageBody = message.message;
+          if (!plainText && messageBody.includes("@")) {
+            messageBody = await resolveVariables(messageBody, chatbotId);
+          }
+
+          payload.text = { body: plainText ? message.message : convertHtmlToWhatsAppText(messageBody) };
+          break;
+          // payload.type = "text";
+          // payload.text = { body: plainText?message.message:convertHtmlToWhatsAppText(message.message) };
           break;
         case "image":
           payload.type = "image";
@@ -475,6 +486,11 @@ export const sendMessageWithButtons = async (
 ) => {
   try {
     const url = `${metaWhatsAppAPI.baseURL}/${metaWhatsAppAPI.phoneNumberId}/messages`;
+    const headerText = buttonMessage.header
+    ? await resolveVariables(buttonMessage.header, buttonMessage.chatId)
+    : undefined;
+
+  const bodyText = await resolveVariables(buttonMessage.text, buttonMessage.chatId);
     await axios.post(
       url,
       {
@@ -483,10 +499,8 @@ export const sendMessageWithButtons = async (
         type: "interactive",
         interactive: {
           type: "button",
-          header: buttonMessage.header
-          ? { type: "text", text: buttonMessage.header }
-          : undefined,
-          body: { text: convertHtmlToWhatsAppText(buttonMessage.text) },
+          header: headerText ? { type: "text", text: headerText } : undefined,
+          body: { text: convertHtmlToWhatsAppText(bodyText) },
           footer: buttonMessage.footer
           ? { text: buttonMessage.footer }
           : undefined,
