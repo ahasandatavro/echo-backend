@@ -407,6 +407,80 @@ export const processNode = async (
       }
       return; // Ensure no further processing for the current node
     }
+    
+    if (currentNode.type === "webhook") {
+      const webhookData = currentNode.data?.webhook_data;
+    
+      if (webhookData) {
+        try {
+          // Prepare headers
+          const headers = webhookData.headers?.reduce((acc: Record<string, string>, header:any) => {
+            if (header.key && header.value) {
+              acc[header.key] = header.value;
+            }
+            return acc;
+          }, {});
+    
+          // Parse and validate the body
+          let requestBody = undefined;
+          if (webhookData.isBodyEnabled && webhookData.body) {
+            try {
+              requestBody = JSON.parse(webhookData.body);
+            } catch (error) {
+              console.error("Invalid JSON in webhook body:", error);
+              throw new Error("Invalid JSON body");
+            }
+          }
+    
+          // Make the API call
+          const response = await fetch(webhookData.url, {
+            method: webhookData.method || "POST",
+            headers: headers,
+            body: requestBody ? JSON.stringify(requestBody) : undefined,
+          });
+    
+          const responseBody = await response.json();
+          const responseStatus = response.status.toString();
+          const sourceHandle = `source_${responseStatus}`;
+          // Check if response status matches any expectedStatuses
+          const expectedStatusMatch = webhookData.expectedStatuses.some(
+            (status:any) => status.value === responseStatus
+          );
+    
+          if (expectedStatusMatch) {
+            console.log(`Response status ${responseStatus} matches an expected status.`);
+            const matchingEdge = edges.find(
+              (edge) =>
+                edge.sourceHandle === sourceHandle && edge.sourceId === currentNode.id
+            );
+            
+            if (matchingEdge) {
+              const nextNodeId = matchingEdge.targetId;
+            
+              // Find the next node from the nodes array
+              const nextNode = nodes.find((node) => node.id === nextNodeId);
+            
+              if (nextNode) {
+                console.log(`Navigating to the next node: ${nextNode.nodeId}`);
+                await processNode(nextNode.nodeId,nodes, edges, recipient); 
+              } else {
+                console.warn(`No next node found with nodeId: ${nextNodeId}`);
+              }
+            } else {
+              console.warn(`No matching edge found for sourceHandle: ${sourceHandle}`);
+            }
+          } else {
+            console.warn(`Response status ${responseStatus} does not match any expected statuses.`);
+          }
+    
+          console.log("Response Body:", responseBody);
+        } catch (error) {
+          console.error("Error processing webhook_data:", error);
+        }
+      }
+    }
+    
+
   } catch (error) {
     console.error("Error in processNode:", error);
   }
