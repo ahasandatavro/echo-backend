@@ -6,7 +6,8 @@ import authRoutes from "./routes/authRoute";
 import webhookRoutes from "./routes/webhookRoute";
 import textMaterialRoutes from "./routes/textMaterialRoute";
 import keywordRoutes from "./routes/keywordRoute";
-import variableRoute from "./routes/variableRoute"
+import variableRoute from "./routes/variableRoute";
+import gdriveRoutes from "./routes/gdriveRoute"
 //import { authenticateJWT } from "./utils/jwtUtils";
 import passport from "passport";
 import dotenv, { config } from "dotenv";
@@ -41,6 +42,7 @@ app.use("/webhook", webhookRoutes);
 app.use("/variables", variableRoute);
 app.use("/textMaterials",textMaterialRoutes);
 app.use('/keyword',keywordRoutes);
+app.use('/gdrive',gdriveRoutes);
 app.post("/upload", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {

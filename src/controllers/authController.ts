@@ -4,6 +4,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../models/prismaClient';
 import passport from 'passport';
+import "../config/passportConfig";
 
 export const registerUser = async (req: Request, res: Response) => {
   const { email, password, role } = req.body;
@@ -58,19 +59,18 @@ export const loginUser = async (req: Request, res: Response) => {
 
 };
 
-export const googleSignIn = async (req: Request, res: Response) => {
-  // Implement Google Sign-In logic
-};
+
 
 export const googleAuth = passport.authenticate('google', {
   scope: ['profile', 'email'],
 });
+
 export const googleCallback = [
   passport.authenticate('google', { session: false }),
   async (req: any, res: Response) => {
     try {
       const user = req.user;
-
+      const { accessToken, refreshToken } = req.authInfo;
       // Generate a JWT
       const token = jwt.sign(
         { userId: user.id, role: user.role },
@@ -98,30 +98,3 @@ export const googleCallback = [
     }
   },
 ];
-// export const googleCallback = [
-//   passport.authenticate('google', { session: false }),
-//   async (req: any, res: Response) => {
-//     try {
-//       const user = req.user;
-
-//       // Generate a JWT
-//       const token = jwt.sign(
-//         { userId: user.id, role: user.role },
-//         process.env.JWT_SECRET as string,
-//         { expiresIn: '1h' }
-//       );
-
-//       // Respond with token and user details
-//       res.status(200).json({
-//         token,
-//         user: {
-//           email: user.email,
-//           role: user.role, // Assuming your user object has this
-//         },
-//       });
-//     } catch (error) {
-//       console.error('Google Sign-In Error:', error);
-//       res.status(500).json({ message: 'An error occurred during Google Sign-In.' });
-//     }
-//   },
-// ];

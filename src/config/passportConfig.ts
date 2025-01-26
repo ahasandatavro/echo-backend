@@ -8,28 +8,47 @@ passport.use(
       clientID: process.env.GOOGLE_CLIENT_ID as string,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
       callbackURL: `${process.env.BASE_URL}/auth/google-callback`,
+      scope: [
+      'https://www.googleapis.com/auth/drive',
+      "https://www.googleapis.com/auth/drive.file",
+      "https://www.googleapis.com/auth/drive.readonly",
+      "https://www.googleapis.com/auth/userinfo.profile",
+      "https://www.googleapis.com/auth/userinfo.email",
+      ],
+      passReqToCallback: true, 
     },
-    async (accessToken, refreshToken, profile, done) => {
+    async (req:any,accessToken:any, refreshToken:any, profile:any, done:any) => {
       try {
-        // Check if user already exists
-        const user = await prisma.user.findUnique({
+        req.authInfo = { accessToken, refreshToken };
+        let user = await prisma.user.findUnique({
           where: { email: profile.emails?.[0].value },
         });
 
         if (user) {
-          return done(null, user); // Existing user
+          user = await prisma.user.update({
+            where: {
+              email: profile.emails?.[0]?.value, // Specify the user to update based on their email
+            },
+            data:{
+              email: profile.emails?.[0]?.value,
+              accessToken: accessToken,
+              refreshToken: refreshToken 
+            },
+            })
+        } else {
+          // Create a new user with tokens
+          user = await prisma.user.create({
+            data: {
+              email:profile.emails?.[0]?.value || "no-reply@example.com",
+              password: "", // No password needed for Google sign-in
+              role: "USER",
+              accessToken,
+              refreshToken,
+            },
+          });
         }
 
-        // Create a new user
-        const newUser = await prisma.user.create({
-          data: {
-            email: profile.emails?.[0]?.value || "no-reply@example.com", // Fallback to a default email if not provided
-            password: "", // Provide a placeholder password or handle differently for Google sign-ins
-            role: "USER", // Assign a default role or customize as needed
-          },
-        });
-
-        return done(null, newUser);
+        return done(null, user);
       } catch (error) {
         return done(error, loginUser);
       }
