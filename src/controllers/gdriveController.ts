@@ -89,7 +89,7 @@ export const fileList = async (req: any, res: Response) => {
       const data = await response.json();
   
       // Return the file list as JSON
-      return res.status(200).json({ files: data.files });
+      return res.status(200).json({ user:user.email, files: data.files });
     } catch (error) {
       console.error("Error fetching file list:", error);
       return res.status(500).json({ message: "Failed to fetch file list", error: error.message });
