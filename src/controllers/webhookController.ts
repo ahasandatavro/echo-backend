@@ -20,7 +20,7 @@ export const handleIncomingMessage = async (req: Request, res: Response) => {
     console.log("Webhook verified");
     res.status(200).send(challenge);
   } else {
-    res.sendStatus(403);
+    res.sendStatus(200);
   }
 };
 

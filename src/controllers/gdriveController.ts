@@ -6,51 +6,7 @@ import { prisma } from '../models/prismaClient';
 import passport from 'passport';
 import "../config/passportConfig";
 
-// export const fileList = [
-//     passport.authenticate("google", { session: false }),
-//     async (req: any, res: Response) => {
-//       try {
-//         const { accessToken } = req.authInfo; // Retrieve the access token from authInfo
-  
-//         if (!accessToken) {
-//           return res.status(401).json({ message: "Access token not found" });
-//         }
-  
-//         // Fetch the list of Google Spreadsheets using the access token
-//         const response = await fetch(
-//           "https://www.googleapis.com/drive/v3/files?q=mimeType='application/vnd.google-apps.spreadsheet'",
-//           {
-//             headers: {
-//               Authorization: `Bearer ${accessToken}`,
-//             },
-//           }
-//         );
-  
-//         if (!response.ok) {
-//           const errorData = await response.json();
-//           console.error("Error fetching files:", errorData);
-//           return res.status(response.status).json({
-//             message: "Failed to fetch files",
-//             error: errorData,
-//           });
-//         }
-  
-//         const data = await response.json();
-  
-//         // Send the list of files as JSON response
-//         return res.status(200).json({
-//           message: "File list fetched successfully",
-//           files: data.files,
-//         });
-//       } catch (error) {
-//         console.error("Google Callback Error:", error);
-//         return res.status(500).json({
-//           message: "An error occurred while fetching the file list",
-//           error: error.message,
-//         });
-//       }
-//     },
-//   ];
+
 export const fileList = async (req: any, res: Response) => {
     try {
       const userId = req.user.userId; // Ensure the user is authenticated and the user ID is available
@@ -96,3 +52,141 @@ export const fileList = async (req: any, res: Response) => {
     }
   };
   
+
+export const modifySpreadsheet = async (req: Request, res: Response) => {
+  try {
+    const { spreadsheetId, sheetName, action, referenceColumn, updateColumn } = req.body;
+
+    if (!spreadsheetId || !sheetName || !action) {
+      return res.status(400).json({ message: "Spreadsheet ID, sheet name, and action are required." });
+    }
+
+    // Fetch the user's access token (e.g., from your database)
+    const userId = req.user?.id; // Assuming `req.user` contains the authenticated user
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user || !user.accessToken) {
+      return res.status(403).json({ message: "User does not have a valid access token." });
+    }
+
+    const auth = new google.auth.OAuth2();
+    auth.setCredentials({ access_token: user.accessToken });
+
+    const sheets = google.sheets({ version: "v4", auth });
+
+    // Retrieve sheet metadata to get the sheet ID
+    const metadataResponse = await sheets.spreadsheets.get({
+      spreadsheetId,
+      ranges: [],
+      includeGridData: false,
+    });
+
+    const sheetMetadata = metadataResponse.data.sheets?.find(
+      (sheet) => sheet.properties?.title === sheetName
+    );
+    if (!sheetMetadata || !sheetMetadata.properties?.sheetId) {
+      return res.status(404).json({ message: "Sheet not found." });
+    }
+
+    const sheetId = sheetMetadata.properties.sheetId;
+
+    switch (action) {
+      case "add":
+        // Add a new row
+        await sheets.spreadsheets.values.append({
+          spreadsheetId,
+          range: sheetName,
+          valueInputOption: "USER_ENTERED",
+          requestBody: {
+            values: [[updateColumn.name, updateColumn.value]],
+          },
+        });
+        break;
+
+      case "update":
+        // Update a row
+        if (!referenceColumn.name || !referenceColumn.value || !updateColumn.name || !updateColumn.value) {
+          return res.status(400).json({ message: "Reference and update columns are required for updates." });
+        }
+
+        const readResponse = await sheets.spreadsheets.values.get({
+          spreadsheetId,
+          range: sheetName,
+        });
+
+        const rows = readResponse.data.values || [];
+        const headerRow = rows[0];
+        const refColumnIndex = headerRow.indexOf(referenceColumn.name);
+        const updateColumnIndex = headerRow.indexOf(updateColumn.name);
+
+        if (refColumnIndex === -1 || updateColumnIndex === -1) {
+          return res.status(400).json({ message: "Column names do not match the sheet." });
+        }
+
+        const rowIndex = rows.findIndex((row) => row[refColumnIndex] === referenceColumn.value);
+        if (rowIndex === -1) {
+          return res.status(404).json({ message: "Row not found." });
+        }
+
+        rows[rowIndex][updateColumnIndex] = updateColumn.value;
+
+        await sheets.spreadsheets.values.update({
+          spreadsheetId,
+          range: `${sheetName}!A1:Z${rows.length}`,
+          valueInputOption: "USER_ENTERED",
+          requestBody: {
+            values: rows,
+          },
+        });
+        break;
+
+      case "delete":
+        // Delete a row
+        if (!referenceColumn.name || !referenceColumn.value) {
+          return res.status(400).json({ message: "Reference column is required for deletions." });
+        }
+
+        const deleteResponse = await sheets.spreadsheets.values.get({
+          spreadsheetId,
+          range: sheetName,
+        });
+
+        const rowsToDelete = deleteResponse.data.values || [];
+        const refColumnToDeleteIndex = rowsToDelete[0].indexOf(referenceColumn.name);
+
+        if (refColumnToDeleteIndex === -1) {
+          return res.status(400).json({ message: "Column name does not match the sheet." });
+        }
+
+        const rowIndexToDelete = rowsToDelete.findIndex(
+          (row) => row[refColumnToDeleteIndex] === referenceColumn.value
+        );
+        if (rowIndexToDelete === -1) {
+          return res.status(404).json({ message: "Row not found." });
+        }
+
+        rowsToDelete.splice(rowIndexToDelete, 1); // Remove the row
+
+        await sheets.spreadsheets.values.update({
+          spreadsheetId,
+          range: `${sheetName}!A1:Z${rowsToDelete.length}`,
+          valueInputOption: "USER_ENTERED",
+          requestBody: {
+            values: rowsToDelete,
+          },
+        });
+        break;
+
+      default:
+        return res.status(400).json({ message: "Invalid action." });
+    }
+
+    res.status(200).json({ message: "Spreadsheet modified successfully." });
+  } catch (error) {
+    console.error("Error modifying spreadsheet:", error);
+    res.status(500).json({ message: "An error occurred while modifying the spreadsheet.", error });
+  }
+};

@@ -4,6 +4,7 @@ import { metaWhatsAppAPI } from "../../config/metaConfig";
 import { convertHtmlToWhatsAppText } from "../../helpers/index";
 import { resolveVariables } from "../../helpers/validation";
 import { ListMessage } from "../../interphases";
+import { performGoogleSheetAction } from "../../subProcessors/webhook";
 export const processChatFlow = async (chatbotId: number, recipient: string) => {
   try {
     const chatbotData = await prisma.chatbot.findUnique({
@@ -297,6 +298,58 @@ export const processNode = async (
       }
     }
     
+    if (currentNode.type === "googleSheet") {
+      const gsheetData = currentNode.data?.gsheet_data;
+    
+      if (gsheetData) {
+        try {
+          const { action, selectedSpreadsheet, updateInAndBy, referenceColumn, variables } = gsheetData;
+    
+          // Prepare the payload for the Google Sheets API
+          const payload: any = {
+            action,
+            spreadsheetId: selectedSpreadsheet,
+            updateInAndBy,
+            referenceColumn,
+            variables,
+          };
+    
+          // Simulate or perform Google Sheet operation
+          const googleSheetResult = await performGoogleSheetAction(payload, currentNode); // Define this function
+    
+          console.log(`Google Sheet action "${action}" performed successfully.`);
+    
+          // On success, find the `source1` edge and transition to its target node
+          const nextEdge = edges.find(
+            (edge) => edge.sourceId === currentNode.id && edge.sourceHandle === "source_1"
+          );
+    
+          if (nextEdge) {
+            const nextNode = nodes.find((node) => node.id === nextEdge.targetId);
+            if (nextNode) {
+              console.log(`Transitioning to next node (source1): ${nextNode.id}`);
+              await processNode(nextNode,nodes, edges, recipient); // Call the same function for the next node
+            }
+          }
+        } catch (error) {
+          console.error("Google Sheet action failed:", error);
+    
+          // On error, find the `source2` edge and transition to its target node
+          const errorEdge = edges.find(
+            (edge) => edge.sourceId === currentNode.id && edge.sourceHandle === "source_2"
+          );
+    
+          if (errorEdge) {
+            const errorNode = nodes.find((node) => node.id === errorEdge.targetId);
+            if (errorNode) {
+              console.log(`Transitioning to error node (source2): ${errorNode.id}`);
+              await processNode(errorNode,nodes, edges, recipient); // Call the same function for the next node
+            }
+          }
+        }
+      }
+      return; // Stop further execution for this node
+    }
     
     
     if (currentNode.type === "question") {
