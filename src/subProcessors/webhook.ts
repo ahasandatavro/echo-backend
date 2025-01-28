@@ -106,55 +106,68 @@ export const performGoogleSheetAction = async (
         console.log("Row successfully added.");
         return true;
 
-      case "update":
-        if (!referenceColumn || !referenceColumn.name || !referenceColumn.value) {
-          console.error("Invalid payload: Reference column data is missing.");
-          return false;
-        }
-
-        // Read existing rows
-        const readResponse = await sheets.spreadsheets.values.get({
-          spreadsheetId:spreadsheetId.id,
-          range: spreadsheetId.sheetName,
-        });
-
-        const rows = readResponse.data.values || [];
-         headerRow = rows[0];
-        let refColumnIndex = headerRow.indexOf(referenceColumn.name);
-
-        if (refColumnIndex === -1) {
-          console.error("Reference column not found in the sheet.");
-          return false;
-        }
-
-        // Find the row to update
-        const rowIndex = rows.findIndex(
-          (row:any) => row[refColumnIndex] === referenceColumn.value
-        );
-
-        if (rowIndex === -1) {
-          console.error("Row not found for the reference column value.");
-          return false;
-        }
-
-        // Update the row
-        updateInAndBy?.forEach((update: any) => {
-          const updateIndex = headerRow.indexOf(update.name);
-          if (updateIndex !== -1) {
-            rows[rowIndex][updateIndex] = update.value;
+        case "update":
+          if (!referenceColumn || !referenceColumn.name || !referenceColumn.value) {
+            console.error("Invalid payload: Reference column data is missing.");
+            return false;
           }
-        });
-
-        // Write updated rows back to the spreadsheet
-        await sheets.spreadsheets.values.update({
-          spreadsheetId:spreadsheetId.id,
-          range: `${spreadsheetId.sheetName}!A1:Z${rows.length}`, // Adjust range as needed
-          valueInputOption: "USER_ENTERED",
-          requestBody: { values: rows },
-        });
-        console.log("Rows successfully updated.");
-        return true;
-
+        
+          // Read existing rows
+          const readResponse = await sheets.spreadsheets.values.get({
+            spreadsheetId: spreadsheetId.id,
+            range: spreadsheetId.sheetName,
+          });
+        
+          const rows = readResponse.data.values || [];
+          headerRow = rows[0];
+          let refColumnIndex = headerRow.indexOf(referenceColumn.name);
+        
+          if (refColumnIndex === -1) {
+            console.error("Reference column not found in the sheet.");
+            return false;
+          }
+        
+          // Find the row to update
+          const rowIndex = rows.findIndex(
+            (row: any) => row[refColumnIndex] === referenceColumn.value
+          );
+        
+          if (rowIndex === -1) {
+            console.error("Row not found for the reference column value.");
+            return false;
+          }
+        
+          // Update the row with resolved variables
+          for (const update of updateInAndBy || []) {
+            const updateIndex = headerRow.indexOf(update.name);
+            if (updateIndex !== -1) {
+              if (update.value.startsWith("@")) {
+                // Resolve variable if it starts with '@'
+                try {
+                  const resolvedValue = await resolveVariables(update.value, currentNode.chatId);
+                  rows[rowIndex][updateIndex] = resolvedValue || ""; // Replace with resolved value or empty string
+                } catch (error) {
+                  console.error("Error resolving variable:", error);
+                  rows[rowIndex][updateIndex] = ""; // Default to empty string on error
+                }
+              } else {
+                // If no '@', use the value directly
+                rows[rowIndex][updateIndex] = update.value;
+              }
+            }
+          }
+        
+          // Write updated rows back to the spreadsheet
+          await sheets.spreadsheets.values.update({
+            spreadsheetId: spreadsheetId.id,
+            range: `${spreadsheetId.sheetName}!A1:Z${rows.length}`, // Adjust range as needed
+            valueInputOption: "USER_ENTERED",
+            requestBody: { values: rows },
+          });
+        
+          console.log("Rows successfully updated.");
+          return true;
+        
       case "delete":
         if (!referenceColumn || !referenceColumn.name || !referenceColumn.value) {
           throw new Error("Invalid payload: Reference column data is missing.");
