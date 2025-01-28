@@ -175,8 +175,8 @@ export const performGoogleSheetAction = async (
 
         // Read existing rows
         const deleteResponse = await sheets.spreadsheets.values.get({
-          spreadsheetId,
-          range: sheetName,
+          spreadsheetId: spreadsheetId.id,
+          range: spreadsheetId.sheetName,
         });
 
         const rowsToDelete = deleteResponse.data.values || [];
@@ -199,8 +199,8 @@ export const performGoogleSheetAction = async (
 
         // Write the updated rows back to the spreadsheet
          await sheets.spreadsheets.values.update({
-          spreadsheetId,
-          range: `${sheetName}!A1:Z${rowsToDelete.length}`, // Adjust range as needed
+          spreadsheetId:spreadsheetId.id,
+          range: `${spreadsheetId.sheetName}!A1:Z${rowsToDelete.length}`, // Adjust range as needed
           valueInputOption: "USER_ENTERED",
           requestBody: { values: rowsToDelete },
         });
