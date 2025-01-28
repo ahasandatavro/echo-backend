@@ -315,20 +315,26 @@ export const processNode = async (
           };
     
           // Simulate or perform Google Sheet operation
-          const googleSheetResult = await performGoogleSheetAction(payload, currentNode); // Define this function
-    
-          console.log(`Google Sheet action "${action}" performed successfully.`);
-    
-          // On success, find the `source1` edge and transition to its target node
-          const nextEdge = edges.find(
-            (edge) => edge.sourceId === currentNode.id && edge.sourceHandle === "source_1"
-          );
-    
+          const googleSheetResult:boolean = await performGoogleSheetAction(payload, currentNode); // Define this function
+          let nextEdge:any;
+           if(googleSheetResult==true){
+            nextEdge = edges.find(
+              (edge) => edge.sourceId === currentNode.id && edge.sourceHandle === "source_1"
+            );
+      
+           }
+           else{
+            nextEdge = edges.find(
+              (edge) => edge.sourceId === currentNode.id && edge.sourceHandle === "source_2"
+            );
+      
+           }
+         
           if (nextEdge) {
             const nextNode = nodes.find((node) => node.id === nextEdge.targetId);
             if (nextNode) {
               console.log(`Transitioning to next node (source1): ${nextNode.id}`);
-              await processNode(nextNode,nodes, edges, recipient); // Call the same function for the next node
+              await processNode(nextNode.nodeId,nodes, edges, recipient); // Call the same function for the next node
             }
           }
         } catch (error) {

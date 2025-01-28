@@ -54,14 +54,16 @@ export const performGoogleSheetAction = async (
           throw new Error("Invalid payload: No data provided for adding rows.");
         }
 
-        return await sheets.spreadsheets.values.append({
+         await sheets.spreadsheets.values.append({
           spreadsheetId:spreadsheetId.id,
-          range:  `sheet1!A1`,
+          range:  `${spreadsheetId.sheetName}!A1`,
           valueInputOption: "USER_ENTERED",
           requestBody: {
             values: variables.map((entry: any) => [entry.name, entry.value]),
           },
         });
+        console.log("Rows successfully added.");
+        return true;
 
       case "update":
         if (!referenceColumn || !referenceColumn.name || !referenceColumn.value) {
@@ -100,12 +102,14 @@ export const performGoogleSheetAction = async (
         });
 
         // Write updated rows back to the spreadsheet
-        return await sheets.spreadsheets.values.update({
+        await sheets.spreadsheets.values.update({
           spreadsheetId,
           range: `${sheetName}!A1:Z${rows.length}`, // Adjust range as needed
           valueInputOption: "USER_ENTERED",
           requestBody: { values: rows },
         });
+        console.log("Rows successfully updated.");
+        return true;
 
       case "delete":
         if (!referenceColumn || !referenceColumn.name || !referenceColumn.value) {
@@ -137,19 +141,22 @@ export const performGoogleSheetAction = async (
         rowsToDelete.splice(rowIndexToDelete, 1); // Remove the row
 
         // Write the updated rows back to the spreadsheet
-        return await sheets.spreadsheets.values.update({
+         await sheets.spreadsheets.values.update({
           spreadsheetId,
           range: `${sheetName}!A1:Z${rowsToDelete.length}`, // Adjust range as needed
           valueInputOption: "USER_ENTERED",
           requestBody: { values: rowsToDelete },
         });
+        console.log("Rows successfully deleted.");
+        return true;
 
       default:
-        throw new Error(`Invalid action "${action}" specified.`);
+        console.error(`Invalid action "${action}" specified.`);
+        return false;
     }
   } catch (error) {
     console.error("Error performing Google Sheets action:");
-    throw error;
+    return false;
   }
 };
 
@@ -177,7 +184,7 @@ export const refreshAccessToken = async (refreshToken: string): Promise<string> 
 };
 
 const ensureValidAccessToken = async (user: any): Promise<string> => {
-  if (isTokenExpired(user.accessTokenExpiresAt)) {
+  if (user.access_token==undefined || isTokenExpired(user.accessTokenExpiresAt)) {
     console.log("Access token expired. Refreshing...");
     const newAccessToken = await refreshAccessToken(user.refreshToken);
 

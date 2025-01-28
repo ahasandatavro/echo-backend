@@ -5,7 +5,7 @@ import jwt from 'jsonwebtoken';
 import { prisma } from '../models/prismaClient';
 import passport from 'passport';
 import "../config/passportConfig";
-
+import { google } from "googleapis";
 
 export const fileList = async (req: any, res: Response) => {
     try {
@@ -52,7 +52,6 @@ export const fileList = async (req: any, res: Response) => {
     }
   };
   
-
 export const modifySpreadsheet = async (req: Request, res: Response) => {
   try {
     const { spreadsheetId, sheetName, action, referenceColumn, updateColumn } = req.body;
@@ -188,5 +187,39 @@ export const modifySpreadsheet = async (req: Request, res: Response) => {
   } catch (error) {
     console.error("Error modifying spreadsheet:", error);
     res.status(500).json({ message: "An error occurred while modifying the spreadsheet.", error });
+  }
+};
+export const getSheetNames = async (req: Request, res: Response) => {
+  try {
+    const { spreadsheetId } = req.params;
+    const userId = req.user?.userId; // Assuming `req.user` contains the authenticated user
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    // Fetch the user from the database to get the access token
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user || !user.accessToken) {
+      return res.status(403).json({ message: "No access token found for the user" });
+    }
+
+    const accessToken = user.accessToken;
+    const auth = new google.auth.OAuth2();
+    auth.setCredentials({ access_token: user.accessToken });
+
+    const sheets = google.sheets({ version: "v4", auth });
+
+    // Fetch spreadsheet metadata to get sheet names
+    const response = await sheets.spreadsheets.get({
+      spreadsheetId,
+    });
+
+    const sheetNames = response.data.sheets?.map((sheet) => sheet.properties?.title) || [];
+    res.status(200).json({ success: true, sheetNames });
+  } catch (error: any) {
+    console.error("Error fetching sheet names:", error.message);
+    res.status(500).json({ success: false, message: error.message });
   }
 };
