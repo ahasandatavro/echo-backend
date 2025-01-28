@@ -108,13 +108,14 @@ export const performGoogleSheetAction = async (
 
       case "update":
         if (!referenceColumn || !referenceColumn.name || !referenceColumn.value) {
-          throw new Error("Invalid payload: Reference column data is missing.");
+          console.error("Invalid payload: Reference column data is missing.");
+          return false;
         }
 
         // Read existing rows
         const readResponse = await sheets.spreadsheets.values.get({
-          spreadsheetId,
-          range: sheetName,
+          spreadsheetId:spreadsheetId.id,
+          range: spreadsheetId.sheetName,
         });
 
         const rows = readResponse.data.values || [];
@@ -122,7 +123,8 @@ export const performGoogleSheetAction = async (
         let refColumnIndex = headerRow.indexOf(referenceColumn.name);
 
         if (refColumnIndex === -1) {
-          throw new Error("Reference column not found in the sheet.");
+          console.error("Reference column not found in the sheet.");
+          return false;
         }
 
         // Find the row to update
@@ -131,7 +133,8 @@ export const performGoogleSheetAction = async (
         );
 
         if (rowIndex === -1) {
-          throw new Error("Row not found for the reference column value.");
+          console.error("Row not found for the reference column value.");
+          return false;
         }
 
         // Update the row
@@ -144,8 +147,8 @@ export const performGoogleSheetAction = async (
 
         // Write updated rows back to the spreadsheet
         await sheets.spreadsheets.values.update({
-          spreadsheetId,
-          range: `${sheetName}!A1:Z${rows.length}`, // Adjust range as needed
+          spreadsheetId:spreadsheetId.id,
+          range: `${spreadsheetId.sheetName}!A1:Z${rows.length}`, // Adjust range as needed
           valueInputOption: "USER_ENTERED",
           requestBody: { values: rows },
         });
