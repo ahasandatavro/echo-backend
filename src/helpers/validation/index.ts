@@ -208,9 +208,13 @@ export const resolveVariables = async (text: string, chatbotId: number): Promise
 
     // Create a mapping of variable names to their values
     const variableMap = variables.reduce((acc: Record<string, string>, variable) => {
-      acc[variable.name] = variable.value || ""; // Map variable name to its value
+      // Only add the variable if it doesn't already exist in the map and has a non-null value
+      if (!acc[variable.name] && variable.value !== null) {
+        acc[variable.name] = variable.value || ""; // Use empty string if value is undefined
+      }
       return acc;
     }, {});
+    
 
     // Replace each @variableName in the text with its value
     let resolvedText = text;

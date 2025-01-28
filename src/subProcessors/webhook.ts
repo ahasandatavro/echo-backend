@@ -1,6 +1,6 @@
 import { google } from "googleapis";
 import { prisma } from '../models/prismaClient';
-
+import { resolveVariables } from "../helpers/validation";
 /**
  * Perform a Google Sheet action using the chatbot's owner's access token.
  * @param {Object} payload - The payload for the Google Sheets action.
@@ -50,19 +50,60 @@ export const performGoogleSheetAction = async (
     // Step 3: Perform the specified action
     switch (action) {
       case "add":
-        if (!updateInAndBy || updateInAndBy.length === 0) {
+        if (!variables || variables.length === 0) {
           throw new Error("Invalid payload: No data provided for adding rows.");
         }
-
-         await sheets.spreadsheets.values.append({
-          spreadsheetId:spreadsheetId.id,
-          range:  `${spreadsheetId.sheetName}!A1`,
+    
+        // Read existing header row to match columns
+        const readHeaderResponse = await sheets.spreadsheets.values.get({
+          spreadsheetId: spreadsheetId.id,
+          range: `${spreadsheetId.sheetName}!A1:Z1`, // Fetch the header row
+        });
+    
+        let headerRow = readHeaderResponse.data.values?.[0]; // Get the header row
+    
+        if (!headerRow) {
+          throw new Error("Sheet is missing a header row.");
+        }
+    
+        const newRow = await Promise.all(
+          headerRow.map(async (columnName: string) => {
+            const variable = variables.find((v: any) => v.name === columnName);
+        
+            if (!variable) return ""; // If no matching variable, leave blank
+        
+            // Resolve variable if it contains "@"
+            if (typeof variable.value === "string" && variable.value.includes("@")) {
+              try {
+                const resolvedValue = await resolveVariables(variable.value, currentNode.chatId);
+                return resolvedValue || ""; // Ensure resolvedValue is a valid string
+              } catch (error) {
+                console.error("Error resolving variable:", error);
+                return ""; // Default to empty string on error
+              }
+            }
+        
+            // Ensure variable.value is a string or valid primitive
+            return typeof variable.value === "string" || typeof variable.value === "number"
+              ? variable.value
+              : ""; // Default to empty string for invalid values
+          })
+        );
+        
+        
+        
+    
+        // Append the new row to the sheet
+        await sheets.spreadsheets.values.append({
+          spreadsheetId: spreadsheetId.id,
+          range: `${spreadsheetId.sheetName}!A1`, // Target the sheet to append rows
           valueInputOption: "USER_ENTERED",
           requestBody: {
-            values: variables.map((entry: any) => [entry.name, entry.value]),
+            values: [newRow], // Wrap the new row in an array to match API format
           },
         });
-        console.log("Rows successfully added.");
+    
+        console.log("Row successfully added.");
         return true;
 
       case "update":
@@ -77,7 +118,7 @@ export const performGoogleSheetAction = async (
         });
 
         const rows = readResponse.data.values || [];
-        const headerRow = rows[0];
+         headerRow = rows[0];
         let refColumnIndex = headerRow.indexOf(referenceColumn.name);
 
         if (refColumnIndex === -1) {
@@ -155,7 +196,7 @@ export const performGoogleSheetAction = async (
         return false;
     }
   } catch (error) {
-    console.error("Error performing Google Sheets action:");
+    console.error(error);
     return false;
   }
 };
