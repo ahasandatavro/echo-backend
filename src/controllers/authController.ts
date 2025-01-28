@@ -66,11 +66,11 @@ export const googleAuth = passport.authenticate('google', {
 });
 
 export const googleCallback = [
-  passport.authenticate('google', { session: false }),
+  passport.authenticate('google', { session: false,accessType: "offline", // Request refresh token
+    prompt: "consent"}),
   async (req: any, res: Response) => {
     try {
       const user = req.user;
-      const { accessToken, refreshToken } = req.authInfo;
       // Generate a JWT
       const token = jwt.sign(
         { userId: user.id, role: user.role },

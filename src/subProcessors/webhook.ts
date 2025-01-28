@@ -10,17 +10,18 @@ import { prisma } from '../models/prismaClient';
 export const performGoogleSheetAction = async (
   payload: {
     action: string;
-    spreadsheetId: string;
+    spreadsheetId: any;
     sheetName: string;
     updateInAndBy?: any[];
     referenceColumn?: { name: string; value: string };
+    variables:any[]
   },
   currentNode:any
 ): Promise<any> => {
   try {
     // Step 1: Find the chatbot and its owner
     const chatbot = await prisma.chatbot.findUnique({
-      where: { id: currentNode.chatbotId },
+      where: { id: currentNode.chatId },
       include: { owner: true }, // Include the owner relation
     });
 
@@ -36,8 +37,7 @@ export const performGoogleSheetAction = async (
     const sheetOwner =  await prisma.user.findUnique({
       where: { id: ownerId },
     });
-
-    const ownerAccessToken =sheetOwner?sheetOwner.accessToken:"";
+    const ownerAccessToken = await ensureValidAccessToken(sheetOwner);
 
     // Step 2: Authenticate with Google Sheets API
     const auth = new google.auth.OAuth2();
@@ -45,7 +45,7 @@ export const performGoogleSheetAction = async (
 
     const sheets = google.sheets({ version: "v4", auth });
 
-    const { action, spreadsheetId, sheetName, updateInAndBy, referenceColumn } = payload;
+    const { action, spreadsheetId, sheetName, updateInAndBy, referenceColumn, variables } = payload;
 
     // Step 3: Perform the specified action
     switch (action) {
@@ -55,11 +55,11 @@ export const performGoogleSheetAction = async (
         }
 
         return await sheets.spreadsheets.values.append({
-          spreadsheetId,
-          range: sheetName,
+          spreadsheetId:spreadsheetId.id,
+          range:  `sheet1!A1`,
           valueInputOption: "USER_ENTERED",
           requestBody: {
-            values: updateInAndBy.map((entry: any) => [entry.name, entry.value]),
+            values: variables.map((entry: any) => [entry.name, entry.value]),
           },
         });
 
@@ -151,4 +151,53 @@ export const performGoogleSheetAction = async (
     console.error("Error performing Google Sheets action:");
     throw error;
   }
+};
+
+export const refreshAccessToken = async (refreshToken: string): Promise<string> => {
+  try {
+
+    const auth = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      `${process.env.BASE_URL}/auth/google-callback`
+    );
+    auth.setCredentials({ refresh_token: refreshToken });
+
+    const { token } = await auth.getAccessToken();
+
+    if (!token) {
+      throw new Error("Failed to refresh access token.");
+    }
+
+    return token;
+  } catch (error) {
+    console.error("Error refreshing access token:");
+    throw error;
+  }
+};
+
+const ensureValidAccessToken = async (user: any): Promise<string> => {
+  if (isTokenExpired(user.accessTokenExpiresAt)) {
+    console.log("Access token expired. Refreshing...");
+    const newAccessToken = await refreshAccessToken(user.refreshToken);
+
+    const expiresIn = 3600; // Token lifespan (1 hour)
+    const expirationTimestamp = Math.floor(Date.now() / 1000) + expiresIn;
+
+    // Update the database with the new token and expiration time
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { accessToken: newAccessToken, accessTokenExpiresAt: expirationTimestamp },
+    });
+
+    return newAccessToken;
+  }
+
+  return user.accessToken; // Return valid token
+};
+
+// Helper function to check if the token is expired
+const isTokenExpired = (expirationTimestamp: number): boolean => {
+  const now = Math.floor(Date.now() / 1000); // Current time in seconds
+  return now >= expirationTimestamp; // Token is expired if current time is past the expiration time
 };

@@ -14,12 +14,15 @@ passport.use(
       "https://www.googleapis.com/auth/drive.readonly",
       "https://www.googleapis.com/auth/userinfo.profile",
       "https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/spreadsheets"
       ],
       passReqToCallback: true, 
     },
-    async (req:any,accessToken:any, refreshToken:any, profile:any, done:any) => {
+    async (req:any,accessToken:any, refreshToken:any, params:any, profile:any, done:any) => {
       try {
         req.authInfo = { accessToken, refreshToken };
+        const expiresIn = params.expires_in; // Token lifespan in seconds
+        const expirationTimestamp = Math.floor(Date.now() / 1000) + expiresIn;
         let user = await prisma.user.findUnique({
           where: { email: profile.emails?.[0].value },
         });
@@ -32,7 +35,9 @@ passport.use(
             data:{
               email: profile.emails?.[0]?.value,
               accessToken: accessToken,
-              refreshToken: refreshToken 
+              refreshToken: refreshToken || user.refreshToken,
+              accessTokenExpiresAt: expirationTimestamp, 
+
             },
             })
         } else {
@@ -44,6 +49,7 @@ passport.use(
               role: "USER",
               accessToken,
               refreshToken,
+              accessTokenExpiresAt: expirationTimestamp,
             },
           });
         }
