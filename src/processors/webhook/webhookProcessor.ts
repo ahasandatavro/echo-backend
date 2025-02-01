@@ -136,6 +136,47 @@ export const processNode = async (
       }
     }
 
+    if (currentNode.type === "template") {
+      try {
+        // Extract template data from the node
+        const templateData = currentNode.data?.template_data;
+        if (!templateData || !templateData.selectedTemplate) {
+          throw new Error("No selectedTemplate provided in template_data.");
+        }
+        const selectedTemplate: string = templateData.selectedTemplate;
+    
+        // Call the sendTemplate function
+        await sendTemplate(recipient, selectedTemplate, chatbotId);
+    
+        // Find and process the outgoing edge on success (handle "source_1")
+        const nextEdge = edges.find(
+          (edge) => edge.sourceId === currentNode.id && edge.sourceHandle === "source_1"
+        );
+        if (nextEdge) {
+          const nextNode = nodes.find((node) => node.id === nextEdge.targetId);
+          if (nextNode) {
+            console.log(`Transitioning to next node: ${nextNode.id}`);
+            await processNode(nextNode.nodeId, nodes, edges, recipient);
+          }
+        }
+      } catch (error) {
+        console.error("Error in template node:", error);
+    
+        // On error, route to the error branch (handle "source_2")
+        const errorEdge = edges.find(
+          (edge) => edge.sourceId === currentNode.id && edge.sourceHandle === "source_2"
+        );
+        if (errorEdge) {
+          const errorNode = nodes.find((node) => node.id === errorEdge.targetId);
+          if (errorNode) {
+            console.log(`Transitioning to error node: ${errorNode.id}`);
+            await processNode(errorNode.nodeId, nodes, edges, recipient);
+          }
+        }
+      }
+      return; // Stop further processing for this node.
+    }    
+
     if (currentNode.type === "buttons") {
       const buttonData = currentNode.data?.buttons_data;
       if (buttonData) {
@@ -356,8 +397,216 @@ export const processNode = async (
       }
       return; // Stop further execution for this node
     }
+
+    if (currentNode.type === "subscribe") {
+      try {
+        // Attempt to update the contact with the given recipient
+        // Adjust the `where` clause based on how you identify your contact (e.g., phoneNumber, email, etc.)
+        const updatedContact = await prisma.contact.update({
+          where: { phoneNumber: recipient },
+          data: { subscribed: true },
+        });
+        
+        console.log(`Contact ${recipient} subscription set to true.`);
+        
+        // Find the next edge using the "source_1" handle on success
+        const nextEdge = edges.find(
+          (edge) => edge.sourceId === currentNode.id && edge.sourceHandle === "source_1"
+        );
+        
+        if (nextEdge) {
+          const nextNode = nodes.find((node) => node.id === nextEdge.targetId);
+          if (nextNode) {
+            console.log(`Transitioning to next node (source1): ${nextNode.id}`);
+            // Continue processing with the next node
+            await processNode(nextNode.nodeId, nodes, edges, recipient);
+          }
+        }
+      } catch (error) {
+        console.error("Subscribe action failed:", error);
+        
+        // On error, route to the error branch using the "source_2" handle
+        const errorEdge = edges.find(
+          (edge) => edge.sourceId === currentNode.id && edge.sourceHandle === "source_2"
+        );
+        
+        if (errorEdge) {
+          const errorNode = nodes.find((node) => node.id === errorEdge.targetId);
+          if (errorNode) {
+            console.log(`Transitioning to error node (source2): ${errorNode.id}`);
+            await processNode(errorNode.nodeId, nodes, edges, recipient);
+          }
+        }
+      }
+      
+      return; // Prevent further execution for this node.
+    }
     
+    if (currentNode.type === "unsubscribe") {
+      try {
+        // Attempt to update the contact with the given recipient
+        // Adjust the `where` clause based on how you identify your contact (e.g., phoneNumber, email, etc.)
+        const updatedContact = await prisma.contact.update({
+          where: { phoneNumber: recipient },
+          data: { subscribed: false },
+        });
+        
+        console.log(`Contact ${recipient} subscription set to false.`);
+        
+        // Find the next edge using the "source_1" handle on success
+        const nextEdge = edges.find(
+          (edge) => edge.sourceId === currentNode.id && edge.sourceHandle === "source_1"
+        );
+        
+        if (nextEdge) {
+          const nextNode = nodes.find((node) => node.id === nextEdge.targetId);
+          if (nextNode) {
+            console.log(`Transitioning to next node (source1): ${nextNode.id}`);
+            // Continue processing with the next node
+            await processNode(nextNode.nodeId, nodes, edges, recipient);
+          }
+        }
+      } catch (error) {
+        console.error("Subscribe action failed:", error);
+        
+        // On error, route to the error branch using the "source_2" handle
+        const errorEdge = edges.find(
+          (edge) => edge.sourceId === currentNode.id && edge.sourceHandle === "source_2"
+        );
+        
+        if (errorEdge) {
+          const errorNode = nodes.find((node) => node.id === errorEdge.targetId);
+          if (errorNode) {
+            console.log(`Transitioning to error node (source2): ${errorNode.id}`);
+            await processNode(errorNode.nodeId, nodes, edges, recipient);
+          }
+        }
+      }
+      
+      return; // Prevent further execution for this node.
+    }
+
+    if (currentNode.type === "triggerChatbot") {
+      try {
+        // Extract the chatbot data from the node
+        const chatbotData = currentNode.data?.chatbot_data;
+        if (!chatbotData || !chatbotData.selectedChatbot) {
+          throw new Error("No chatbot data provided.");
+        }
+        const selectedChatbotName: string = chatbotData.selectedChatbot;
     
+        // Find the chatbot record by name
+        const chatbot = await prisma.chatbot.findFirst({
+          where: { name: selectedChatbotName },
+        });
+    
+        if (!chatbot) {
+          throw new Error(`Chatbot with name "${selectedChatbotName}" not found.`);
+        }
+    
+        // Now query the Keyword table to get a keyword for the chatbot.
+        // Adjust the query if you need a specific keyword, here we simply take the first one.
+        const keywordRecord = await prisma.keyword.findFirst({
+          where: { chatbotId: chatbot.id },
+        });
+    
+        if (!keywordRecord) {
+          throw new Error(`No keyword found for chatbot with ID ${chatbot.id}.`);
+        }
+    
+        const keywordValue = keywordRecord.value;
+        console.log(`Sending keyword message: ${keywordValue}`);
+    
+        // Send the keyword's value as a message with plainText=true.
+        await sendMessage(recipient, keywordValue, chatbot.id, true);
+    
+        // Find the next edge using the "source_1" handle (success branch)
+        const nextEdge = edges.find(
+          (edge) =>
+            edge.sourceId === currentNode.id && edge.sourceHandle === "source_1"
+        );
+    
+        if (nextEdge) {
+          const nextNode = nodes.find((node) => node.id === nextEdge.targetId);
+          if (nextNode) {
+            console.log(`Transitioning to next node: ${nextNode.id}`);
+            // Continue processing with the next node.
+            await processNode(nextNode.nodeId, nodes, edges, recipient);
+          }
+        }
+      } catch (error) {
+        console.error("Error in triggerChatbot node:", error);
+    
+        // On error, route to the error branch using the "source_2" handle.
+        const errorEdge = edges.find(
+          (edge) =>
+            edge.sourceId === currentNode.id && edge.sourceHandle === "source_2"
+        );
+    
+        if (errorEdge) {
+          const errorNode = nodes.find((node) => node.id === errorEdge.targetId);
+          if (errorNode) {
+            console.log(`Transitioning to error node: ${errorNode.id}`);
+            await processNode(errorNode.nodeId, nodes, edges, recipient);
+          }
+        }
+      }
+    
+      return; // Prevent further processing of this node.
+    }
+
+    if (currentNode.type === "setTags") {
+      try {
+        // Extract the selected tags from the node's data.
+        const tagsData = currentNode.data?.tags_data;
+        if (!tagsData || !tagsData.selectedTags || tagsData.selectedTags.length === 0) {
+          throw new Error("No tags provided in the node data.");
+        }
+        const selectedTags: string[] = tagsData.selectedTags;
+        
+        // Update the Contact record by pushing the selected tags to the existing tags array.
+        await prisma.contact.update({
+          where: { phoneNumber: recipient },
+          data: {
+            tags: {
+              push: selectedTags,
+            },
+          },
+        });
+        
+        console.log(`Updated contact ${recipient} with tags: ${selectedTags.join(", ")}`);
+        
+        // On success, find the outgoing edge with source handle "source_1" and process the next node.
+        const nextEdge = edges.find(
+          (edge) =>
+            edge.sourceId === currentNode.id && edge.sourceHandle === "source_1"
+        );
+        if (nextEdge) {
+          const nextNode = nodes.find((node) => node.id === nextEdge.targetId);
+          if (nextNode) {
+            console.log(`Transitioning to next node: ${nextNode.id}`);
+            await processNode(nextNode.nodeId, nodes, edges, recipient);
+          }
+        }
+      } catch (error) {
+        console.error("Error updating tags for contact:", error);
+        
+        // On error, route to the error branch using the "source_2" edge.
+        const errorEdge = edges.find(
+          (edge) =>
+            edge.sourceId === currentNode.id && edge.sourceHandle === "source_2"
+        );
+        if (errorEdge) {
+          const errorNode = nodes.find((node) => node.id === errorEdge.targetId);
+          if (errorNode) {
+            console.log(`Transitioning to error node: ${errorNode.id}`);
+            await processNode(errorNode.nodeId, nodes, edges, recipient);
+          }
+        }
+      }
+      return; // Prevent further processing for this node.
+    }    
+
     if (currentNode.type === "question") {
       const questionData = currentNode.data?.question_data;
       if (questionData) {
@@ -435,6 +684,147 @@ export const processNode = async (
       return; // Questions wait for user interaction
     }
     
+    if (currentNode.type === "updateAttribute") {
+      try {
+        // Ensure attribute data exists
+        const attributeData = currentNode.data?.attribute_data;
+        if (!attributeData || !Array.isArray(attributeData.attributes)) {
+          throw new Error("No attribute data provided.");
+        }
+    
+        // Retrieve the contact record using the recipient (e.g., phone number)
+        const contactRecord = await prisma.contact.findUnique({
+          where: { phoneNumber: recipient },
+        });
+        if (!contactRecord) {
+          throw new Error(`Contact with phoneNumber ${recipient} not found.`);
+        }
+    
+        // Use existing attributes or default to an empty object
+        let existingAttributes: Record<string, any> = {};
+        if (contactRecord.attributes && typeof contactRecord.attributes === "object") {
+          existingAttributes = contactRecord.attributes;
+        }
+    
+        // Iterate over each attribute, resolve variables if necessary, and update the object
+        for (const attr of attributeData.attributes) {
+          let { key, value } = attr;
+          
+          // If the key starts with '@', resolve it
+          if (key.startsWith("@")) {
+            key = await resolveVariables(key, currentNode?.chatbotId);
+          }
+          
+          // If the value starts with '@', resolve it
+          if (value.startsWith("@")) {
+            value = await resolveVariables(value, currentNode?.chatbotId);
+          }
+          
+          // Update (or add) the attribute key/value pair
+          existingAttributes[key] = value;
+        }
+    
+        // Update the contact's attributes field in the database
+        await prisma.contact.update({
+          where: { phoneNumber: recipient },
+          data: { attributes: existingAttributes },
+        });
+        console.log(`Updated contact ${recipient} with attributes:`, existingAttributes);
+    
+        // Find the outgoing edge for success (sourceHandle "source_1")
+        const nextEdge = edges.find(
+          (edge) => edge.sourceId === currentNode.id && edge.sourceHandle === "source_1"
+        );
+        if (nextEdge) {
+          const nextNode = nodes.find((node) => node.id === nextEdge.targetId);
+          if (nextNode) {
+            console.log(`Transitioning to next node: ${nextNode.id}`);
+            await processNode(nextNode.nodeId, nodes, edges, recipient);
+          }
+        }
+      } catch (error) {
+        console.error("Error in updateAttribute node:", error);
+    
+        // On error, transition using the "source_2" outgoing edge
+        const errorEdge = edges.find(
+          (edge) => edge.sourceId === currentNode.id && edge.sourceHandle === "source_2"
+        );
+        if (errorEdge) {
+          const errorNode = nodes.find((node) => node.id === errorEdge.targetId);
+          if (errorNode) {
+            console.log(`Transitioning to error node: ${errorNode.id}`);
+            await processNode(errorNode.nodeId, nodes, edges, recipient);
+          }
+        }
+      }
+      return; // Stop further execution for this node.
+    }
+    
+    if (currentNode.type === "updateChatStatus") {
+      try {
+        // Extract the selected status from the node's data
+        const chatStatusData = currentNode.data?.chat_status_data;
+        if (!chatStatusData || !chatStatusData.selectedStatus) {
+          throw new Error("No selectedStatus provided in the node data.");
+        }
+        const selectedStatus: string = chatStatusData.selectedStatus;
+    
+        // Find the conversation record for the given recipient and chatbotId.
+        // Adjust the query if you have additional criteria.
+        const conversation = await prisma.conversation.findFirst({
+          where: {
+            recipient: recipient,
+            chatbotId: currentNode.chatbotId,
+          },
+        });
+    
+        if (!conversation) {
+          throw new Error(
+            `Conversation for recipient ${recipient} and chatbotId ${currentNode.chatbotId} not found.`
+          );
+        }
+    
+        // Update the conversation's chatStatus field to the selectedStatus.
+        await prisma.conversation.update({
+          where: { id: conversation.id },
+          data: { chatStatus: selectedStatus },
+        });
+        console.log(
+          `Updated conversation (ID: ${conversation.id}) with chatStatus: ${selectedStatus}`
+        );
+    
+        // On success, route to the next node via the outgoing edge with handle "source_1"
+        const nextEdge = edges.find(
+          (edge) =>
+            edge.sourceId === currentNode.id && edge.sourceHandle === "source_1"
+        );
+        if (nextEdge) {
+          const nextNode = nodes.find((node) => node.id === nextEdge.targetId);
+          if (nextNode) {
+            console.log(`Transitioning to next node: ${nextNode.id}`);
+            await processNode(nextNode.nodeId, nodes, edges, recipient);
+          }
+        }
+      } catch (error) {
+        console.error("Error in updateChatStatus node:", error);
+    
+        // On error, route to the error branch using the "source_2" outgoing edge.
+        const errorEdge = edges.find(
+          (edge) =>
+            edge.sourceId === currentNode.id && edge.sourceHandle === "source_2"
+        );
+        if (errorEdge) {
+          const errorNode = nodes.find((node) => node.id === errorEdge.targetId);
+          if (errorNode) {
+            console.log(`Transitioning to error node: ${errorNode.id}`);
+            await processNode(errorNode.nodeId, nodes, edges, recipient);
+          }
+        }
+      }
+      return; // Prevent further processing for this node.
+    }
+    
+
     if (currentNode.type === "delay") {
       const delayData = currentNode.data?.delay_data;
       if (delayData) {
@@ -612,6 +1002,39 @@ export const sendMessage = async (recipient: string, message: any, chatbotId:num
     console.error("Error sending message:", error);
   }
 };
+
+
+
+export const sendTemplate = async (
+  recipient: string,
+  selectedTemplate: string,
+  chatbotId: number
+) => {
+  try {
+    const url = `${metaWhatsAppAPI.baseURL}/${metaWhatsAppAPI.phoneNumberId}/messages`;
+    const payload = {
+      messaging_product: "whatsapp",
+      to: recipient,
+      biz_opaque_callback_data: `chatId=${chatbotId}`,
+      type: "template",
+      template: {
+        name: selectedTemplate,
+        language: { code: "en_US" }, // Set your default language or make it dynamic
+      },
+    };
+
+    await axios.post(url, payload, {
+      headers: {
+        Authorization: `Bearer ${metaWhatsAppAPI.accessToken}`,
+        "Content-Type": "application/json",
+      },
+    });
+    console.log(`Template "${selectedTemplate}" sent to ${recipient}`);
+  } catch (error) {
+    console.error("Error sending template message:", error);
+  }
+};
+
 
 export const sendMessageWithButtons = async (
   recipient: string,

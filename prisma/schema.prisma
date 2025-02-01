@@ -33,6 +33,24 @@ model User {
   attributes          Json?    // Optional
   chatbots            Chatbot[] // One-to-many relation
   conversations       Conversation[] // One-to-many relation
+  contacts            Contact[]
+}
+
+model Contact {
+  id              Int       @id @default(autoincrement())
+  name            String?   // Name of the contact (if available)
+  phoneNumber     String    @unique // Primary contact number
+  email           String?   // Optional email
+  source          String    // WhatsApp, SMS, or other
+  userId          Int?      // Owner of the contact
+  user            User?     @relation(fields: [userId], references: [id])
+  conversations   Conversation[] // One-to-Many relation with Conversations
+  tags           String[]   // Custom tags for categorization
+  attributes     Json?      // Custom attributes
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  subscribed      Boolean?  @default(false)
+  sendSMS         Boolean?  @default(false)
 }
 
 model Chatbot {
@@ -109,11 +127,14 @@ model Conversation {
   user         User?     @relation(fields: [userId], references: [id])
   variables    Variable[] // Variables updated during the conversation
   lastNodeId   Int?      // The last processed node's ID
+  contactId    Int?      
+  contact      Contact?  @relation(fields: [contactId], references: [id])
   currentNodeId Int? 
   answeringQuestion Boolean @default(false)
   validationFailureCount Int    @default(0)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
+  chatStatus   String?
 }
 model Keyword {
   id           Int         @id @default(autoincrement())
