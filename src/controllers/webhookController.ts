@@ -40,7 +40,14 @@ export const webhookVerification = async (req: Request, res: Response) => {
       for (const change of changes) {
         const message = change.value?.messages?.[0];
         const recipient = message?.from;
-
+      //   const messages = req.body.entry[0].changes[0].value.messages;
+      //   if (messages) {
+      //     for (let msg of messages) {
+      //         const { from, id, timestamp, text } = msg;
+      //         // Store message in PostgreSQL
+      //         await saveMessageToDB(from, id, timestamp, text.body);
+      //     }
+      // }
         if (!recipient) {
          // console.error("Recipient not found in the message.");
           continue;

@@ -34,6 +34,7 @@ model User {
   chatbots            Chatbot[] // One-to-many relation
   conversations       Conversation[] // One-to-many relation
   contacts            Contact[]
+  templates Template[]
 }
 
 model Contact {
@@ -148,6 +149,19 @@ model Keyword {
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 }
+
+model Template {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique         // e.g., "Follow-up Reminder"
+  language  String   @default("en_US") // Default language code
+  content   String?                    // Optional field for the template content
+  userId    Int                        // Foreign key referencing the creator
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+
 model TextMaterial {
   id         Int       @id @default(autoincrement())
   name       String    // Name of the text material

@@ -146,7 +146,7 @@ export const processNode = async (
         const selectedTemplate: string = templateData.selectedTemplate;
     
         // Call the sendTemplate function
-        await sendTemplate(recipient, selectedTemplate, chatbotId);
+        await sendTemplate(recipient, selectedTemplate, currentNode.chatbotId);
     
         // Find and process the outgoing edge on success (handle "source_1")
         const nextEdge = edges.find(
@@ -402,16 +402,21 @@ export const processNode = async (
       try {
         // Attempt to update the contact with the given recipient
         // Adjust the `where` clause based on how you identify your contact (e.g., phoneNumber, email, etc.)
-        const updatedContact = await prisma.contact.update({
-          where: { phoneNumber: recipient },
-          data: { subscribed: true },
-        });
+        const updatedContact = await prisma.contact.upsert({
+          where: { phoneNumber: recipient }, // Search by phoneNumber
+          update: { subscribed: true }, // Update if found
+          create: { 
+            phoneNumber: recipient, 
+            subscribed: true, 
+            source: "WhatsApp", // Default value if new contact
+          },
+        });        
         
         console.log(`Contact ${recipient} subscription set to true.`);
         
         // Find the next edge using the "source_1" handle on success
         const nextEdge = edges.find(
-          (edge) => edge.sourceId === currentNode.id && edge.sourceHandle === "source_1"
+          (edge) => edge.sourceId === currentNode.id
         );
         
         if (nextEdge) {
@@ -446,16 +451,21 @@ export const processNode = async (
       try {
         // Attempt to update the contact with the given recipient
         // Adjust the `where` clause based on how you identify your contact (e.g., phoneNumber, email, etc.)
-        const updatedContact = await prisma.contact.update({
-          where: { phoneNumber: recipient },
-          data: { subscribed: false },
-        });
+        const updatedContact = await prisma.contact.upsert({
+          where: { phoneNumber: recipient }, // Search by phoneNumber
+          update: { subscribed: false }, // Update if found
+          create: { 
+            phoneNumber: recipient, 
+            subscribed: true, 
+            source: "WhatsApp", // Default value if new contact
+          },
+        });     
         
         console.log(`Contact ${recipient} subscription set to false.`);
         
         // Find the next edge using the "source_1" handle on success
         const nextEdge = edges.find(
-          (edge) => edge.sourceId === currentNode.id && edge.sourceHandle === "source_1"
+          (edge) => edge.sourceId === currentNode.id
         );
         
         if (nextEdge) {
@@ -518,22 +528,7 @@ export const processNode = async (
         console.log(`Sending keyword message: ${keywordValue}`);
     
         // Send the keyword's value as a message with plainText=true.
-        await sendMessage(recipient, keywordValue, chatbot.id, true);
-    
-        // Find the next edge using the "source_1" handle (success branch)
-        const nextEdge = edges.find(
-          (edge) =>
-            edge.sourceId === currentNode.id && edge.sourceHandle === "source_1"
-        );
-    
-        if (nextEdge) {
-          const nextNode = nodes.find((node) => node.id === nextEdge.targetId);
-          if (nextNode) {
-            console.log(`Transitioning to next node: ${nextNode.id}`);
-            // Continue processing with the next node.
-            await processNode(nextNode.nodeId, nodes, edges, recipient);
-          }
-        }
+        await processChatFlow(chatbot?.id,recipient);
       } catch (error) {
         console.error("Error in triggerChatbot node:", error);
     
@@ -579,7 +574,7 @@ export const processNode = async (
         // On success, find the outgoing edge with source handle "source_1" and process the next node.
         const nextEdge = edges.find(
           (edge) =>
-            edge.sourceId === currentNode.id && edge.sourceHandle === "source_1"
+            edge.sourceId === currentNode.id
         );
         if (nextEdge) {
           const nextNode = nodes.find((node) => node.id === nextEdge.targetId);
@@ -733,7 +728,7 @@ export const processNode = async (
     
         // Find the outgoing edge for success (sourceHandle "source_1")
         const nextEdge = edges.find(
-          (edge) => edge.sourceId === currentNode.id && edge.sourceHandle === "source_1"
+          (edge) => edge.sourceId === currentNode.id
         );
         if (nextEdge) {
           const nextNode = nodes.find((node) => node.id === nextEdge.targetId);
@@ -796,7 +791,7 @@ export const processNode = async (
         // On success, route to the next node via the outgoing edge with handle "source_1"
         const nextEdge = edges.find(
           (edge) =>
-            edge.sourceId === currentNode.id && edge.sourceHandle === "source_1"
+            edge.sourceId === currentNode.id
         );
         if (nextEdge) {
           const nextNode = nodes.find((node) => node.id === nextEdge.targetId);
