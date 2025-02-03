@@ -8,7 +8,8 @@ import textMaterialRoutes from "./routes/textMaterialRoute";
 import keywordRoutes from "./routes/keywordRoute";
 import variableRoute from "./routes/variableRoute";
 import gdriveRoutes from "./routes/gdriveRoute";
-import contactRoutes from "./routes/contactRoute"
+import contactRoutes from "./routes/contactRoute";
+import analyticsRoutes from "./routes/analyticsRoute"
 //import { authenticateJWT } from "./utils/jwtUtils";
 import passport from "passport";
 import dotenv, { config } from "dotenv";
@@ -45,6 +46,7 @@ app.use("/textMaterials",textMaterialRoutes);
 app.use('/keyword',keywordRoutes);
 app.use('/gdrive',gdriveRoutes);
 app.use('/contacts',contactRoutes);
+app.use('/analytics', analyticsRoutes)
 app.post("/upload", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {

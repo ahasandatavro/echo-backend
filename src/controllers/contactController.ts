@@ -14,6 +14,8 @@ export const getAllContacts = async (req: Request, res: Response) => {
         name: true,
         phoneNumber: true,
         attributes: true, // Fetch attributes as JSON
+        subscribed: true,
+        sendSMS: true
       },
     });
     
