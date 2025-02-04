@@ -9,7 +9,9 @@ import keywordRoutes from "./routes/keywordRoute";
 import variableRoute from "./routes/variableRoute";
 import gdriveRoutes from "./routes/gdriveRoute";
 import contactRoutes from "./routes/contactRoute";
-import analyticsRoutes from "./routes/analyticsRoute"
+import analyticsRoutes from "./routes/analyticsRoute";
+import userRoutes from "./routes/userRoute";
+import teamRoutes from "./routes/teamRoutes";
 //import { authenticateJWT } from "./utils/jwtUtils";
 import passport from "passport";
 import dotenv, { config } from "dotenv";
@@ -40,13 +42,15 @@ app.use(passport.initialize());
 app.use("/auth", authRoutes);
 // app.use('/nodes', authenticateJWT, nodeRoutes);
 app.use("/nodes", nodeRoutes);
+app.use("/users", userRoutes);
 app.use("/webhook", webhookRoutes);
 app.use("/variables", variableRoute);
 app.use("/textMaterials",textMaterialRoutes);
 app.use('/keyword',keywordRoutes);
 app.use('/gdrive',gdriveRoutes);
 app.use('/contacts',contactRoutes);
-app.use('/analytics', analyticsRoutes)
+app.use('/analytics', analyticsRoutes);
+app.use("/teams", teamRoutes);
 app.post("/upload", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {

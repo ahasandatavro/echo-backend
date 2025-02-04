@@ -35,6 +35,17 @@ model User {
   conversations       Conversation[] // One-to-many relation
   contacts            Contact[]
   templates Template[]
+  teams               Team[]   @relation("UserTeams") 
+}
+
+model Team {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  defaultTeam Boolean  @default(false)
+  size        Int
+  users       User[]   @relation("UserTeams")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model Contact {
