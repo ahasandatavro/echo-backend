@@ -398,6 +398,88 @@ export const processNode = async (
       return; // Stop further execution for this node
     }
 
+    if (currentNode.type === "condition") {
+      const conditionData = currentNode.data?.condition_data;
+    
+      if (conditionData) {
+        try {
+          const { conditions, logicOperator } = conditionData;
+    
+          // Function to evaluate a single condition
+          const evaluateCondition = async (condition: any) => {
+            let { variable, operator, value } = condition;
+    
+            // Resolve variables if they start with "@", otherwise keep them as is
+            if (variable.startsWith("@")) {
+              variable = await resolveVariables(variable, currentNode?.chatbotId);
+            }
+            if (value.startsWith("@")) {
+              value = await resolveVariables(value, currentNode?.chatbotId);
+            }
+    
+            // Fetch the actual value of the variable (if it's an object lookup, resolve it)
+            let actualValue = variable;
+    
+            switch (operator) {
+              case "Equal to":
+                return actualValue == value;
+              case "Not equal to":
+                return actualValue != value;
+              case "Greater than":
+                return Number(actualValue) > Number(value);
+              case "Less than":
+                return Number(actualValue) < Number(value);
+              case "Contains":
+                return typeof actualValue === "string" && actualValue.includes(value);
+              case "Does not contain":
+                return typeof actualValue === "string" && !actualValue.includes(value);
+              case "Starts with":
+                return typeof actualValue === "string" && actualValue.startsWith(value);
+              case "Does not start with":
+                return typeof actualValue === "string" && !actualValue.startsWith(value);
+              default:
+                return false;
+            }
+          };
+    
+          // Evaluate all conditions asynchronously
+          const conditionResults = await Promise.all(conditions.map(evaluateCondition));
+    
+          // Combine results based on AND/OR logic
+          const isConditionMet =
+            logicOperator === "AND"
+              ? conditionResults.every((result) => result === true)
+              : conditionResults.some((result) => result === true);
+    
+          // Determine the next node based on the condition result
+          let nextEdge: any;
+          if (isConditionMet) {
+            nextEdge = edges.find(
+              (edge) => edge.sourceId === currentNode.id && edge.sourceHandle === "source_1"
+            );
+          } else {
+            nextEdge = edges.find(
+              (edge) => edge.sourceId === currentNode.id && edge.sourceHandle === "source_2"
+            );
+          }
+    
+          // Move to the next node if found
+          if (nextEdge) {
+            const nextNode = nodes.find((node) => node.id === nextEdge.targetId);
+            if (nextNode) {
+              console.log(`Transitioning to next node: ${nextNode.id}`);
+              await processNode(nextNode.nodeId, nodes, edges, recipient);
+            }
+          }
+        } catch (error) {
+          console.error("Condition evaluation failed:", error);
+        }
+      }
+      return; // Stop further execution for this node
+    }
+    
+    
+
     if (currentNode.type === "subscribe") {
       try {
         // Attempt to update the contact with the given recipient
@@ -769,7 +851,7 @@ export const processNode = async (
         const conversation = await prisma.conversation.findFirst({
           where: {
             recipient: recipient,
-            chatbotId: currentNode.chatbotId,
+            chatbotId: currentNode.chatId,
           },
         });
     
@@ -817,6 +899,90 @@ export const processNode = async (
         }
       }
       return; // Prevent further processing for this node.
+    }
+    
+    if (currentNode.type === "assignUser") {
+      const assignedUserEmail = currentNode.data?.user_data?.selectedUser;
+      const user = await prisma.user.findUnique({
+        where: { email:assignedUserEmail },
+      });
+      if (user?.id) {
+        try {
+          // Update assigned user in the Contact model
+          await prisma.contact.update({
+            where: { phoneNumber: recipient }, // Assuming contact is identified by phoneNumber
+            data: {
+              userId: user.id,
+            },
+          });
+    
+          console.log(`Assigned user ${user.id} to contact ${recipient}`);
+        } catch (error) {
+          console.error(`Failed to assign user to contact ${recipient}:`, error);
+        }
+    
+        // Proceed to the next node
+        const outgoingEdge = edges.find((edge) => edge.sourceId === currentNode.id);
+        if (outgoingEdge) {
+          const nextNodeId = nodes.find((node) => node.id === outgoingEdge.targetId)?.nodeId;
+          if (nextNodeId) {
+            await processNode(nextNodeId, nodes, edges, recipient);
+          }
+        } else {
+          console.warn(`No outgoing edge found for assignUser node ID: ${currentNode.id}`);
+        }
+      }
+      return;
+    }
+    
+    if (currentNode.type === "assignTeam") {
+      const assignTeamData = currentNode.data?.team_data.selectedTeams;
+    
+      if (assignTeamData && assignTeamData.length > 0) {
+        try {
+          // Fetch team IDs dynamically based on names
+          const teams = await prisma.team.findMany({
+            where: {
+              OR: assignTeamData.map((teamName: string) =>
+                teamName === "Default Team"
+                  ? { defaultTeam: true } // Find the team with `defaultTeam: true`
+                  : { name: teamName } // Find teams matching the given names
+              ),
+            },
+            select: { id: true }, // Only fetch the IDs
+          });
+    
+          const teamIds = teams.map((team) => ({ id: team.id }));
+    
+          if (teamIds.length > 0) {
+            // Update assigned teams in the Contact model
+            await prisma.contact.update({
+              where: { phoneNumber: recipient }, // Assuming contact is identified by phoneNumber
+              data: {
+                assignedTeams: { set: teamIds }, // Assign multiple teams
+              },
+            });
+    
+            console.log(`Assigned teams ${teamIds.map((t) => t.id)} to contact ${recipient}`);
+          } else {
+            console.warn(`No matching teams found for contact ${recipient}`);
+          }
+        } catch (error) {
+          console.error(`Failed to assign teams to contact ${recipient}:`, error);
+        }
+    
+        // Proceed to the next node
+        const outgoingEdge = edges.find((edge) => edge.sourceId === currentNode.id);
+        if (outgoingEdge) {
+          const nextNodeId = nodes.find((node) => node.id === outgoingEdge.targetId)?.nodeId;
+          if (nextNodeId) {
+            await processNode(nextNodeId, nodes, edges, recipient);
+          }
+        } else {
+          console.warn(`No outgoing edge found for assignTeam node ID: ${currentNode.id}`);
+        }
+      }
+      return;
     }
     
 
@@ -923,7 +1089,6 @@ export const processNode = async (
         }
       }
     }
-    
 
   } catch (error) {
     console.error("Error in processNode:", error);

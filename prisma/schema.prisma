@@ -44,6 +44,7 @@ model Team {
   defaultTeam Boolean  @default(false)
   size        Int
   users       User[]   @relation("UserTeams")
+  contacts    Contact[] @relation("ContactTeams")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -63,6 +64,7 @@ model Contact {
   updatedAt       DateTime  @updatedAt
   subscribed      Boolean?  @default(false)
   sendSMS         Boolean?  @default(false)
+  assignedTeams   Team[]    @relation("ContactTeams")
 }
 
 model Chatbot {
