@@ -180,3 +180,25 @@ const parseAttributes = (attributes: string): Record<string, string> => {
     }, {} as Record<string, string>);
   }
 };
+
+export const getMessagesByContactId = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // Validate input
+    if (!id) {
+      return res.status(400).json({ message: "Contact ID is required" });
+    }
+
+    // Fetch messages
+    const messages = await prisma.message.findMany({
+      where: { contactId: parseInt(id) },
+      orderBy: { time: "asc" },
+    });
+
+    res.status(200).json(messages);
+  } catch (error) {
+    console.error("Error fetching messages:", error);
+    res.status(500).json({ message: "Error retrieving messages" });
+  }
+};

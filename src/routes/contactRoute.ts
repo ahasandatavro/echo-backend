@@ -6,7 +6,8 @@ import {
   createContact,
   updateContact,
   deleteContact,
-  uploadContacts
+  uploadContacts,
+  getMessagesByContactId
 } from "../controllers/contactController";
 
 const router = Router();
@@ -14,6 +15,7 @@ const upload = multer({ dest: "uploads/" });
 
 router.get("/", getAllContacts);
 router.get("/:id", getContactById);
+router.get("/:id/messages", getMessagesByContactId);
 router.post("/", createContact);
 router.put("/:id", updateContact);
 router.delete("/:id", deleteContact);

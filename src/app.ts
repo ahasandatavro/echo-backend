@@ -12,17 +12,28 @@ import contactRoutes from "./routes/contactRoute";
 import analyticsRoutes from "./routes/analyticsRoute";
 import userRoutes from "./routes/userRoute";
 import teamRoutes from "./routes/teamRoutes";
+import { Server } from "socket.io";
 //import { authenticateJWT } from "./utils/jwtUtils";
 import passport from "passport";
 import dotenv, { config } from "dotenv";
 import "./config/passportConfig";
 import multer from "multer";
 import { s3 } from "./config/s3Config";
-
+import http from "http";
 
 dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: process.env.FRONTEND_URL || "*", // Allow only the frontend URL
+    methods: ["GET", "POST"],
+  },
+});
+
+app.set("socketio", io);
+
 const upload = multer({
   storage: multer.memoryStorage(),
 });
@@ -77,6 +88,6 @@ app.post("/upload", upload.single("file"), async (req, res) => {
     res.status(500).json({ message: "Failed to upload file", error });
   }
 });
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });

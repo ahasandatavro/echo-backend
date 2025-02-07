@@ -49,6 +49,30 @@ model Team {
   updatedAt   DateTime @updatedAt
 }
 
+model Message {
+  id             Int        @id @default(autoincrement())
+  conversationId Int        // Links message to a conversation
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  contactId      Int        // Links message to a contact
+  contact        Contact    @relation(fields: [contactId], references: [id])
+  sender         String     // "user" | "them" | "system"
+  text           String?    // Message text
+  time           DateTime   @default(now())  // Timestamp when the message was sent
+  links          String[]   // Array of link URLs
+  attachment     String?    // Stores file URLs or attachments
+  subMessages    Json?      // Nested messages (if any)
+  status         MessageStatus @default(SENT) // Message status
+  createdAt      DateTime   @default(now())   // Message creation time
+  updatedAt      DateTime   @updatedAt        // Auto-update timestamp
+}
+
+enum MessageStatus {
+  SENT
+  DELIVERED
+  READ
+}
+
+
 model Contact {
   id              Int       @id @default(autoincrement())
   name            String?   // Name of the contact (if available)
@@ -57,6 +81,7 @@ model Contact {
   source          String    // WhatsApp, SMS, or other
   userId          Int?      // Owner of the contact
   user            User?     @relation(fields: [userId], references: [id])
+  messages        Message[] // One-to-Many relation with Messages
   conversations   Conversation[] // One-to-Many relation with Conversations
   tags           String[]   // Custom tags for categorization
   attributes     Json?      // Custom attributes
@@ -143,6 +168,7 @@ model Conversation {
   lastNodeId   Int?      // The last processed node's ID
   contactId    Int?      
   contact      Contact?  @relation(fields: [contactId], references: [id])
+  messages     Message[] // One-to-Many relation with Messages
   currentNodeId Int? 
   answeringQuestion Boolean @default(false)
   validationFailureCount Int    @default(0)

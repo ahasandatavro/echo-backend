@@ -6,8 +6,11 @@ import {
   sendMessage,
   sendMessageWithButtons,
 } from "../processors/webhook/webhookProcessor";
+import { processWebhookMessage } from "../processors/inboxProcessor";
 import { prisma } from "../models/prismaClient";
 import { validateUserResponse } from "../helpers/validation";
+import { processWebhookMessage } from "../processors/inboxProcessor";
+
 // Webhook Verification for WhatsApp
 export const handleIncomingMessage = async (req: Request, res: Response) => {
   const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN;
@@ -27,7 +30,7 @@ export const handleIncomingMessage = async (req: Request, res: Response) => {
 export const webhookVerification = async (req: Request, res: Response) => {
   try {
     const { entry } = req.body;
-
+    const io = req.app.get("socketio"); 
     if (!entry || !Array.isArray(entry)) {
       return res.status(400).send("Invalid request");
     }
@@ -40,17 +43,9 @@ export const webhookVerification = async (req: Request, res: Response) => {
       for (const change of changes) {
         const message = change.value?.messages?.[0];
         const recipient = message?.from;
-      //   const messages = req.body.entry[0].changes[0].value.messages;
-      //   if (messages) {
-      //     for (let msg of messages) {
-      //         const { from, id, timestamp, text } = msg;
-      //         // Store message in PostgreSQL
-      //         await saveMessageToDB(from, id, timestamp, text.body);
-      //     }
-      // }
-        if (!recipient) {
-         // console.error("Recipient not found in the message.");
-          continue;
+        if (recipient) {
+          const processedMessage = await processWebhookMessage(recipient, message);
+          io.emit("newMessage", { recipient, message: processedMessage });
         }
 
         let conversation = await prisma.conversation.findFirst({
@@ -100,18 +95,20 @@ export const webhookVerification = async (req: Request, res: Response) => {
 
           console.log("New conversation created:", conversation);
         }
+   if(conversation && conversation.chatbotId){
+    const chatbotData = await prisma.chatbot.findUnique({
+      where: { id: conversation.chatbotId},
+      include: { nodes: true, edges: true },
+    });
+    
+    if (!chatbotData) {
+      console.warn(`Chatbot with ID ${conversation.chatbotId} not found.`);
+     // await sendMessage(recipient, "Sorry, the associated chatbot is unavailable.");
+      continue;
+    }
 
-        const chatbotData = await prisma.chatbot.findUnique({
-          where: { id: conversation.chatbotId },
-          include: { nodes: true, edges: true },
-        });
-
-        if (!chatbotData) {
-          console.warn(`Chatbot with ID ${conversation.chatbotId} not found.`);
-         // await sendMessage(recipient, "Sorry, the associated chatbot is unavailable.");
-          continue;
-        }
-
+   }
+   
         if (message?.interactive?.button_reply) {
           const parts = message?.interactive?.button_reply.id.split("_node_");
           const buttonId = "source_" + parts[0];
