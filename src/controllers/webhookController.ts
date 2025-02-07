@@ -6,7 +6,6 @@ import {
   sendMessage,
   sendMessageWithButtons,
 } from "../processors/webhook/webhookProcessor";
-import { processWebhookMessage } from "../processors/inboxProcessor";
 import { prisma } from "../models/prismaClient";
 import { validateUserResponse } from "../helpers/validation";
 import { processWebhookMessage } from "../processors/inboxProcessor";
@@ -28,6 +27,7 @@ export const handleIncomingMessage = async (req: Request, res: Response) => {
 };
 
 export const webhookVerification = async (req: Request, res: Response) => {
+  
   try {
     const { entry } = req.body;
     const io = req.app.get("socketio"); 
@@ -95,8 +95,9 @@ export const webhookVerification = async (req: Request, res: Response) => {
 
           console.log("New conversation created:", conversation);
         }
+        let chatbotData;
    if(conversation && conversation.chatbotId){
-    const chatbotData = await prisma.chatbot.findUnique({
+  chatbotData = await prisma.chatbot.findUnique({
       where: { id: conversation.chatbotId},
       include: { nodes: true, edges: true },
     });

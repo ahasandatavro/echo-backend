@@ -1,10 +1,37 @@
 import { prisma } from "../models/prismaClient";
 //import { sendMessage} from "../processors/webhook";
-
+let lastProcessedTime = new Date();
 export const processWebhookMessage = async (recipient: string, message: any) => {
   try {
 
-    const text = message?.text?.body?.toLowerCase();
+    let textMessage = "";
+    
+    // ✅ Handle Interactive Messages (Button Replies, List Replies)
+    if (message.type === "interactive") {
+      if (message.interactive?.button_reply) {
+        const now = new Date();
+        const timeDiff = now.getTime() - lastProcessedTime.getTime();
+      
+        // ✅ Prevent duplicates if they arrive within 2 seconds
+        if (timeDiff < 2000) {
+          console.warn("⚠️ Skipping duplicate event due to rapid trigger");
+          return;
+        }
+        lastProcessedTime = now;
+
+        textMessage = `Button: ${message.interactive.button_reply.title}`;
+      } else if (message.interactive?.list_reply) {
+        textMessage = `List Selection: ${message.interactive.list_reply.title}`;
+      }
+    } 
+    // ✅ Handle Standard Text Messages
+    else if (message.type === "text") {
+      textMessage = message.text?.body || "";
+    } 
+    // ✅ Handle Media Messages (Future Support)
+    else {
+      textMessage = `Unsupported message type: ${message.type}`;
+    }
     let contact = await prisma.contact.findFirst({
       where: { phoneNumber: recipient },
     });
@@ -49,7 +76,7 @@ export const processWebhookMessage = async (recipient: string, message: any) => 
         contactId: contact.id, // Ensure message links to a contact
         conversationId: conversation.id,
         sender: "them",
-        text: text,
+        text: textMessage,
         time: new Date(), // Store correct timestamp
         status: "SENT",
       },
@@ -58,7 +85,7 @@ export const processWebhookMessage = async (recipient: string, message: any) => 
       id: message.id,
       sender: "them",
       time: new Date().toLocaleTimeString(),
-      text: text,
+      text: textMessage,
     };
 
     return newMessage;
