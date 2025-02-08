@@ -55,8 +55,13 @@ model Message {
   conversation   Conversation @relation(fields: [conversationId], references: [id])
   contactId      Int        // Links message to a contact
   contact        Contact    @relation(fields: [contactId], references: [id])
+  chatbotId      Int?      // ✅ Foreign key reference to Chatbot
+  chatbot        Chatbot?  @relation(fields: [chatbotId], references: [id], name: "ChatbotMessages")
   sender         String     // "user" | "them" | "system"
   text           String?    // Message text
+  messageType    String    @default("text")
+  buttonOptions  Json?     // ✅ Stores button options (for interactive messages)
+  listItems      Json?     // ✅ Stores list items (for list messages)
   time           DateTime   @default(now())  // Timestamp when the message was sent
   links          String[]   // Array of link URLs
   attachment     String?    // Stores file URLs or attachments
@@ -108,6 +113,7 @@ model Chatbot {
   keywords         Keyword[]
   conversations    Conversation[]
   variables        Variable[] // Variables associated with the chatbot
+  messages         Message[] @relation("ChatbotMessages")
   status           Status    @default(ACTIVE)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt

@@ -27,7 +27,7 @@ const PORT = process.env.PORT || 5000;
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || "*", // Allow only the frontend URL
+    origin: process.env.FRONTEND_URL, // Allow only the frontend URL
     methods: ["GET", "POST"],
   },
 });

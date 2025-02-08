@@ -44,6 +44,15 @@ export const webhookVerification = async (req: Request, res: Response) => {
         const message = change.value?.messages?.[0];
         const recipient = message?.from;
         if (recipient) {
+          const allowedTestNumbers = process.env.ALLOWED_TEST_NUMBERS
+          ? process.env.ALLOWED_TEST_NUMBERS.split(",").map((num) => num.trim())
+          : [];
+
+        // ✅ Ignore messages from unknown senders
+        if (!allowedTestNumbers.includes(recipient)) {
+          console.log("❌ Ignoring message from an unknown sender:", recipient);
+          return res.sendStatus(200); // ✅ Ignore and exit
+        }
           const processedMessage = await processWebhookMessage(recipient, message);
           io.emit("newMessage", { recipient, message: processedMessage });
         }
@@ -173,7 +182,7 @@ export const webhookVerification = async (req: Request, res: Response) => {
           continue;
         }
         if (message?.interactive?.list_reply) {
-          const listReplyId = message.interactive.list_reply.id;
+          const listReplyId = message.  interactive.list_reply.id;
           const nodeId = parseInt(listReplyId.split("_node_")[1]);
           const buttonId = (listReplyId.split("_node_")[0]);
           const currentNode = chatbotData.nodes.find((node) => node.id === nodeId);

@@ -1098,6 +1098,7 @@ export const processNode = async (
 export const sendMessage = async (recipient: string, message: any, chatbotId:number,plainText?:boolean) => {
   try {
     const url = `${metaWhatsAppAPI.baseURL}/${metaWhatsAppAPI.phoneNumberId}/messages`;
+    let messageBody;
     const payload: any = {
       messaging_product: "whatsapp",
       to: recipient,
@@ -1111,7 +1112,7 @@ export const sendMessage = async (recipient: string, message: any, chatbotId:num
           payload.type = "text";
 
           // Resolve variables in the message text
-          let messageBody = message.message;
+          messageBody = message.message;
           if (!plainText && messageBody.includes("@")) {
             messageBody = await resolveVariables(messageBody, chatbotId);
           }
@@ -1158,12 +1159,11 @@ export const sendMessage = async (recipient: string, message: any, chatbotId:num
         "Content-Type": "application/json",
       },
     });
+    await storeMessage({ recipient, chatbotId, messageType: "text", text: messageBody });
   } catch (error) {
     console.error("Error sending message:", error);
   }
 };
-
-
 
 export const sendTemplate = async (
   recipient: string,
@@ -1189,12 +1189,12 @@ export const sendTemplate = async (
         "Content-Type": "application/json",
       },
     });
-    console.log(`Template "${selectedTemplate}" sent to ${recipient}`);
+    await storeMessage({ recipient, chatbotId, messageType: "template", text: `Template: ${selectedTemplate}` });
+   
   } catch (error) {
     console.error("Error sending template message:", error);
   }
 };
-
 
 export const sendMessageWithButtons = async (
   recipient: string,
@@ -1207,6 +1207,10 @@ export const sendMessageWithButtons = async (
     : undefined;
 
   const bodyText = await resolveVariables(buttonMessage.text, buttonMessage.chatId);
+  const buttonOptions = buttonMessage.buttons.map((btn: any) => ({
+    id: btn.reply.id,
+    title: btn.reply.title,
+  }));
     await axios.post(
       url,
       {
@@ -1232,15 +1236,27 @@ export const sendMessageWithButtons = async (
         },
       }
     );
+    await storeMessage({
+      recipient,
+      chatbotId: buttonMessage.chatId,
+      messageType: "button",
+      text: bodyText,
+      buttonOptions,
+    });
   } catch (error) {
     console.error("Error sending button message:", error);
   }
 };
-
 export const sendMessageWithList = async (recipient: string, listMessage: ListMessage,nodeId:number) => {
   try {
     const url = `${metaWhatsAppAPI.baseURL}/${metaWhatsAppAPI.phoneNumberId}/messages`;
-
+    const listItems = listMessage.sections.flatMap((section: any, sectionIndex: number) =>
+      section.rows.map((row: any, rowIndex: number) => ({
+        id: `source_${sectionIndex}_${rowIndex}_node_${nodeId}`,
+        title: row,
+        description: "row demo description",
+      }))
+    );
     const payload = {
       messaging_product: "whatsapp",
       recipient_type: "individual",
@@ -1280,13 +1296,17 @@ export const sendMessageWithList = async (recipient: string, listMessage: ListMe
         "Content-Type": "application/json",
       },
     });
-
-    console.log("List message sent successfully.");
+    await storeMessage({
+      recipient,
+      chatbotId: nodeId,
+      messageType: "list",
+      text: listMessage.text,
+      listItems,
+    });
   } catch (error) {
     console.error("Error sending list message:", error);
   }
 };
-
 
 export const sendQuestion = async (recipient: string, questionMessage: any, currentNodeId:number) => {
   try {
@@ -1345,8 +1365,12 @@ export const sendQuestion = async (recipient: string, questionMessage: any, curr
         "Content-Type": "application/json",
       },
     });
-
-    console.log("Question message sent successfully.");
+    await storeMessage({
+      recipient,
+      chatbotId: questionMessage.chatId,
+      messageType: "question",
+      text: questionMessage.text,
+    });
   } catch (error: any) {
     console.error(
       "Error sending question message:",
@@ -1354,3 +1378,71 @@ export const sendQuestion = async (recipient: string, questionMessage: any, curr
     );
   }
 };
+
+
+import { MessageStatus } from "../../interphases"; // ✅ Import the correct enum
+
+import { Prisma } from "@prisma/client"; // ✅ Import Prisma types
+
+export const storeMessage = async ({
+  recipient,
+  chatbotId,
+  messageType,
+  text,
+  status = MessageStatus.SENT,
+  buttonOptions,
+  listItems,
+}: {
+  recipient: string;
+  chatbotId?: number;
+  messageType: string;
+  text?: string;
+  status?: MessageStatus;
+  buttonOptions?: { id: string; title: string }[]; // ✅ Store button options as JSON
+  listItems?: { id: string; title: string; description?: string }[]; // ✅ Store list items as JSON
+}) => {
+  try {
+    let contact = await prisma.contact.findUnique({ where: { phoneNumber: recipient } });
+
+    if (!contact) {
+      contact = await prisma.contact.create({
+        data: { phoneNumber: recipient, name: "Unknown", source: "WhatsApp" },
+      });
+      console.log("✅ New contact created:", contact);
+    }
+
+    let conversation = await prisma.conversation.findFirst({
+      where: { recipient },
+      orderBy: { updatedAt: "desc" },
+    });
+
+    if (!conversation) {
+      conversation = await prisma.conversation.create({
+        data: { recipient, contactId: contact.id, chatbotId },
+      });
+      console.log("✅ New conversation created:", conversation);
+    }
+
+    // ✅ Correctly handle JSON fields using Prisma.JsonNull when needed
+    const savedMessage = await prisma.message.create({
+      data: {
+        conversationId: conversation.id,
+        contactId: contact.id,
+        chatbotId,
+        sender: "user",
+        text,
+        messageType,
+        buttonOptions: buttonOptions && buttonOptions.length > 0 ? buttonOptions : Prisma.JsonNull, // ✅ Fix here
+        listItems: listItems && listItems.length > 0 ? listItems : Prisma.JsonNull, // ✅ Fix here
+        status,
+        time: new Date(),
+      },
+    });
+
+    console.log("✅ Stored business message:", savedMessage);
+    return savedMessage;
+  } catch (error) {
+    console.error("❌ Error storing message:", error);
+  }
+};
+
