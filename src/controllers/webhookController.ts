@@ -50,7 +50,7 @@ export const webhookVerification = async (req: Request, res: Response) => {
 
         // ✅ Ignore messages from unknown senders
         if (!allowedTestNumbers.includes(recipient)) {
-          console.log("❌ Ignoring message from an unknown sender:", recipient);
+          //console.log("❌ Ignoring message from an unknown sender:", recipient);
           return res.sendStatus(200); // ✅ Ignore and exit
         }
           const processedMessage = await processWebhookMessage(recipient, message);

@@ -1,5 +1,4 @@
-// routes/textMaterialRoutes.ts
-import express from 'express';
+import { Router } from 'express';
 import {
   createTextMaterial,
   getAllTextMaterials,
@@ -7,9 +6,9 @@ import {
   deleteTextMaterial,
 } from '../controllers/textMaterialController';
 
-const router = express.Router();
+const router: Router = Router();
 
-
+// Define CRUD routes
 router.post('/', createTextMaterial);
 router.get('/', getAllTextMaterials);
 router.put('/:id', updateTextMaterial);

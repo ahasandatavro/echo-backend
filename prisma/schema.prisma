@@ -88,6 +88,7 @@ model Contact {
   user            User?     @relation(fields: [userId], references: [id])
   messages        Message[] // One-to-Many relation with Messages
   conversations   Conversation[] // One-to-Many relation with Conversations
+  notes           Note[]     // One-to-Many relation with Notes
   tags           String[]   // Custom tags for categorization
   attributes     Json?      // Custom attributes
   createdAt       DateTime  @default(now())
@@ -95,6 +96,14 @@ model Contact {
   subscribed      Boolean?  @default(false)
   sendSMS         Boolean?  @default(false)
   assignedTeams   Team[]    @relation("ContactTeams")
+}
+
+model Note {
+  id          Int      @id @default(autoincrement())
+  contactId   Int
+  contact     Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  content     String   // The note content
+  createdAt   DateTime @default(now())
 }
 
 model Chatbot {

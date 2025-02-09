@@ -11,6 +11,7 @@ import gdriveRoutes from "./routes/gdriveRoute";
 import contactRoutes from "./routes/contactRoute";
 import analyticsRoutes from "./routes/analyticsRoute";
 import userRoutes from "./routes/userRoute";
+import templateRoutes from "./routes/templateRoute"
 import teamRoutes from "./routes/teamRoutes";
 import { Server } from "socket.io";
 //import { authenticateJWT } from "./utils/jwtUtils";
@@ -62,6 +63,7 @@ app.use('/gdrive',gdriveRoutes);
 app.use('/contacts',contactRoutes);
 app.use('/analytics', analyticsRoutes);
 app.use("/teams", teamRoutes);
+app.use("/templates", templateRoutes);
 app.post("/upload", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {

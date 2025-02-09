@@ -202,3 +202,157 @@ export const getMessagesByContactId = async (req: Request, res: Response) => {
     res.status(500).json({ message: "Error retrieving messages" });
   }
 };
+
+
+export const getAttributes = async (req: Request, res: Response) => {
+  try {
+    const contact = await prisma.contact.findUnique({
+      where: { id: parseInt(req.params.id) },
+      select: { attributes: true },
+    });
+    res.json(contact?.attributes || {});
+  } catch {
+    res.status(500).json({ error: "Failed to fetch attributes" });
+  }
+};
+
+export const updateAttribute = async (req: Request, res: Response) => {
+  try {
+    const { key, value } = req.body;
+    const contactId = parseInt(req.params.id);
+
+    const contact = await prisma.contact.findUnique({
+      where: { id: contactId },
+    });
+
+    if (!contact) return res.status(404).json({ message: "Contact not found" });
+
+    // Ensure attributes is an object before updating
+    const existingAttributes = (contact.attributes as Record<string, any>) || {};
+    const updatedAttributes = { ...existingAttributes, [key]: value };
+
+    // Update the contact's attributes in the database
+    await prisma.contact.update({
+      where: { id: contactId },
+      data: { attributes: updatedAttributes },
+    });
+
+    res.json({ message: "Attribute updated", attributes: updatedAttributes });
+  } catch (error) {
+    console.error("Error updating attribute:", error);
+    res.status(500).json({ error: "Failed to update attribute" });
+  }
+};
+
+
+export const getNotes = async (req: Request, res: Response) => {
+  try {
+    const contact = await prisma.contact.findUnique({
+      where: { id: parseInt(req.params.id) },
+      select: { notes: true },
+    });
+    res.json(contact?.notes || []);
+  } catch {
+    res.status(500).json({ error: "Failed to fetch notes" });
+  }
+};
+
+export const addNote = async (req: Request, res: Response) => {
+  try {
+    const { note } = req.body;
+    const contactId = parseInt(req.params.id);
+
+    if (!note) return res.status(400).json({ error: "Note content is required" });
+
+    // Create a new note entry linked to the contact
+    const newNote = await prisma.note.create({
+      data: {
+        content: note,
+        contactId: contactId,
+      },
+    });
+
+    res.json({ message: "Note added", note: newNote });
+  } catch (error) {
+    console.error("Error adding note:", error);
+    res.status(500).json({ error: "Failed to add note" });
+  }
+};
+
+export const getTags = async (req: Request, res: Response) => {
+  try {
+    const contactId = parseInt(req.params.id);
+
+    const contact = await prisma.contact.findUnique({
+      where: { id: contactId },
+      select: { tags: true },
+    });
+
+    if (!contact) return res.status(404).json({ message: "Contact not found" });
+
+    res.json(contact.tags || []);
+  } catch (error) {
+    console.error("Error fetching tags:", error);
+    res.status(500).json({ error: "Failed to fetch tags" });
+  }
+};
+
+/**
+ * Add a tag to a contact
+ */
+export const addTag = async (req: Request, res: Response) => {
+  try {
+    const contactId = parseInt(req.params.id);
+    const { tag } = req.body;
+
+    if (!tag) return res.status(400).json({ error: "Tag is required" });
+
+    const contact = await prisma.contact.findUnique({
+      where: { id: contactId },
+    });
+
+    if (!contact) return res.status(404).json({ message: "Contact not found" });
+
+    if (contact.tags.includes(tag)) {
+      return res.status(400).json({ error: "Tag already exists" });
+    }
+
+    const updatedContact = await prisma.contact.update({
+      where: { id: contactId },
+      data: { tags: { push: tag } },
+    });
+
+    res.json({ message: "Tag added", tags: updatedContact.tags });
+  } catch (error) {
+    console.error("Error adding tag:", error);
+    res.status(500).json({ error: "Failed to add tag" });
+  }
+};
+
+/**
+ * Remove a tag from a contact
+ */
+export const removeTag = async (req: Request, res: Response) => {
+  try {
+    const contactId = parseInt(req.params.id);
+    const tagToRemove = req.params.tag;
+
+    const contact = await prisma.contact.findUnique({
+      where: { id: contactId },
+    });
+
+    if (!contact) return res.status(404).json({ message: "Contact not found" });
+
+    const updatedTags = contact.tags.filter((tag) => tag !== tagToRemove);
+
+    await prisma.contact.update({
+      where: { id: contactId },
+      data: { tags: updatedTags },
+    });
+
+    res.json({ message: "Tag removed", tags: updatedTags });
+  } catch (error) {
+    console.error("Error removing tag:", error);
+    res.status(500).json({ error: "Failed to remove tag" });
+  }
+};
