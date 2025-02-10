@@ -14,7 +14,8 @@ import {
   addNote,
   getTags,
   addTag,
-  removeTag
+  removeTag,
+  updateChatStatus
 } from "../controllers/contactController";
 
 const router = Router();
@@ -35,6 +36,7 @@ router.post("/:id/notes", addNote);
 router.get("/:id/tags", getTags);
 router.post("/:id/tags", addTag);
 router.delete("/:id/tags/:tag", removeTag);
+router.put("/:id/chat-status", updateChatStatus);
 
 router.post("/upload", upload.single("file"), uploadContacts);
 

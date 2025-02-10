@@ -15,7 +15,8 @@ export const getAllContacts = async (req: Request, res: Response) => {
         phoneNumber: true,
         attributes: true, // Fetch attributes as JSON
         subscribed: true,
-        sendSMS: true
+        sendSMS: true,
+        ticketstatus:true
       },
     });
     
@@ -367,3 +368,24 @@ export const removeTag = async (req: Request, res: Response) => {
     res.status(500).json({ error: "Failed to remove tag" });
   }
 };
+
+export const updateChatStatus = async (req: Request, res: Response) =>{
+  try {
+    const { id } = req.params;
+    const { chatStatus } = req.body;
+
+    if (!["Open", "Pending", "Solved"].includes(chatStatus)) {
+      return res.status(400).json({ error: "Invalid status" });
+    }
+
+    const updatedContact = await prisma.contact.update({
+      where: { id: parseInt(id) },
+      data: { ticketstatus:chatStatus },
+    });
+
+    res.json({ message: "Chat status updated", chatStatus: updatedContact.ticketstatus });
+  } catch (error) {
+    console.error("Error updating chat status:", error);
+    res.status(500).json({ error: "Failed to update chat status" });
+  }
+}

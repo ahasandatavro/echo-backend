@@ -8,67 +8,231 @@ datasource db {
 }
 
 model User {
-  id                  Int      @id @default(autoincrement())
-  email               String   @unique
-  password            String
-  accessToken String?  
+  id                   Int            @id @default(autoincrement())
+  email                String         @unique
+  password             String
+  role                 Role           @default(USER)
+  createdAt            DateTime       @default(now())
+  about                String?
+  attributes           Json?
+  businessAddress      String?
+  businessDescription  String?
+  businessIndustry     String?
+  clientId             String?
+  contactEmail         String?
+  firstName            String?
+  image                String?
+  lastName             String?
+  phoneNumber          String?
+  tags                 String[]
+  updatedAt            DateTime       @updatedAt
+  website1             String?
+  website2             String?
+  accessToken          String?
+  refreshToken         String?
   accessTokenExpiresAt Int?
-  refreshToken String?
-  role                Role     @default(USER)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-  clientId            String?  // Optional
-  image               String?  // Optional
-  firstName           String?  // Optional
-  lastName            String?  // Optional
-  phoneNumber         String?  // Optional
-  about               String?  // Optional
-  businessAddress     String?  // Optional
-  businessDescription String?  // Optional
-  contactEmail        String?  // Optional
-  businessIndustry    String?  // Optional
-  website1            String?  // Optional
-  website2            String?  // Optional
-  tags                String[]  // Optional
-  attributes          Json?    // Optional
-  chatbots            Chatbot[] // One-to-many relation
-  conversations       Conversation[] // One-to-many relation
-  contacts            Contact[]
-  templates Template[]
-  teams               Team[]   @relation("UserTeams") 
+  chatbots             Chatbot[]
+  contacts             Contact[]
+  conversations        Conversation[]
+  templates            Template[]
+  teams                Team[]         @relation("UserTeams")
 }
 
 model Team {
-  id          Int      @id @default(autoincrement())
-  name        String   @unique
-  defaultTeam Boolean  @default(false)
+  id          Int       @id @default(autoincrement())
+  name        String    @unique
+  defaultTeam Boolean   @default(false)
   size        Int
-  users       User[]   @relation("UserTeams")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   contacts    Contact[] @relation("ContactTeams")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  users       User[]    @relation("UserTeams")
 }
 
 model Message {
-  id             Int        @id @default(autoincrement())
-  conversationId Int        // Links message to a conversation
-  conversation   Conversation @relation(fields: [conversationId], references: [id])
-  contactId      Int        // Links message to a contact
-  contact        Contact    @relation(fields: [contactId], references: [id])
-  chatbotId      Int?      // ✅ Foreign key reference to Chatbot
-  chatbot        Chatbot?  @relation(fields: [chatbotId], references: [id], name: "ChatbotMessages")
-  sender         String     // "user" | "them" | "system"
-  text           String?    // Message text
-  messageType    String    @default("text")
-  buttonOptions  Json?     // ✅ Stores button options (for interactive messages)
-  listItems      Json?     // ✅ Stores list items (for list messages)
-  time           DateTime   @default(now())  // Timestamp when the message was sent
-  links          String[]   // Array of link URLs
-  attachment     String?    // Stores file URLs or attachments
-  subMessages    Json?      // Nested messages (if any)
-  status         MessageStatus @default(SENT) // Message status
-  createdAt      DateTime   @default(now())   // Message creation time
-  updatedAt      DateTime   @updatedAt        // Auto-update timestamp
+  id             Int           @id @default(autoincrement())
+  conversationId Int
+  contactId      Int
+  sender         String
+  text           String?
+  time           DateTime      @default(now())
+  links          String[]
+  attachment     String?
+  subMessages    Json?
+  status         MessageStatus @default(SENT)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  chatbotId      Int?
+  messageType    String        @default("text")
+  buttonOptions  Json?
+  listItems      Json?
+  chatbot        Chatbot?      @relation("ChatbotMessages", fields: [chatbotId], references: [id])
+  contact        Contact       @relation(fields: [contactId], references: [id])
+  conversation   Conversation  @relation(fields: [conversationId], references: [id])
+}
+
+model Contact {
+  id                                                              Int                 @id @default(autoincrement())
+  name                                                            String?
+  phoneNumber                                                     String              @unique
+  email                                                           String?
+  source                                                          String
+  userId                                                          Int?
+  tags                                                            String[]
+  attributes                                                      Json?
+  createdAt                                                       DateTime            @default(now())
+  updatedAt                                                       DateTime            @updatedAt
+  sendSMS                                                         Boolean?            @default(false)
+  subscribed                                                      Boolean?            @default(false)
+  latestChatStatusId                                              Int?                @unique
+  ticketstatus                                                    String?
+  ChatStatusHistory_ChatStatusHistory_contactIdToContact          ChatStatusHistory[] @relation("ChatStatusHistory_contactIdToContact")
+  ChatStatusHistory_Contact_latestChatStatusIdToChatStatusHistory ChatStatusHistory?  @relation("Contact_latestChatStatusIdToChatStatusHistory", fields: [latestChatStatusId], references: [id])
+  user                                                            User?               @relation(fields: [userId], references: [id])
+  conversations                                                   Conversation[]
+  messages                                                        Message[]
+  notes                                                           Note[]
+  assignedTeams                                                   Team[]              @relation("ContactTeams")
+}
+
+model Note {
+  id        Int      @id @default(autoincrement())
+  contactId Int
+  content   String
+  createdAt DateTime @default(now())
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+}
+
+model Chatbot {
+  id            Int            @id @default(autoincrement())
+  name          String
+  description   String?
+  triggered     Boolean?       @default(false)
+  stepsFinished Int?
+  finished      Boolean?       @default(false)
+  startNodeId   Int?           @unique
+  ownerId       Int?
+  status        Status         @default(ACTIVE)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  owner         User?          @relation(fields: [ownerId], references: [id])
+  startNode     Node?          @relation("StartNode", fields: [startNodeId], references: [id])
+  conversations Conversation[]
+  edges         Edge[]         @relation("ChatbotEdges")
+  keywords      Keyword[]
+  messages      Message[]      @relation("ChatbotMessages")
+  nodes         Node[]         @relation("ChatbotNodes")
+  variables     Variable[]
+}
+
+model Node {
+  id           Int        @id @default(autoincrement())
+  nodeId       String
+  data         Json
+  createdAt    DateTime   @default(now())
+  positionX    Float
+  positionY    Float
+  type         String
+  updatedAt    DateTime   @updatedAt
+  chatId       Int
+  startChatbot Chatbot?   @relation("StartNode")
+  edgesOut     Edge[]     @relation("SourceNode")
+  edgesIn      Edge[]     @relation("TargetNode")
+  chatbot      Chatbot    @relation("ChatbotNodes", fields: [chatId], references: [id])
+  variables    Variable[]
+}
+
+model Edge {
+  id           Int      @id @default(autoincrement())
+  chatId       Int
+  sourceId     Int
+  targetId     Int
+  sourceHandle String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  chatbot      Chatbot  @relation("ChatbotEdges", fields: [chatId], references: [id])
+  source       Node     @relation("SourceNode", fields: [sourceId], references: [id])
+  target       Node     @relation("TargetNode", fields: [targetId], references: [id])
+}
+
+model Variable {
+  id             Int           @id @default(autoincrement())
+  name           String
+  value          String?
+  chatbotId      Int
+  conversationId Int?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  nodeId         Int?
+  chatbot        Chatbot       @relation(fields: [chatbotId], references: [id])
+  conversation   Conversation? @relation(fields: [conversationId], references: [id])
+  node           Node?         @relation(fields: [nodeId], references: [id])
+}
+
+model Conversation {
+  id                     Int                 @id @default(autoincrement())
+  recipient              String
+  chatbotId              Int?
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+  currentNodeId          Int?
+  lastNodeId             Int?
+  userId                 Int?
+  answeringQuestion      Boolean             @default(false)
+  validationFailureCount Int                 @default(0)
+  contactId              Int?
+  chatStatus             String?
+  ChatStatusHistory      ChatStatusHistory[]
+  chatbot                Chatbot?            @relation(fields: [chatbotId], references: [id])
+  contact                Contact?            @relation(fields: [contactId], references: [id])
+  user                   User?               @relation(fields: [userId], references: [id])
+  messages               Message[]
+  variables              Variable[]
+}
+
+model Keyword {
+  id           Int           @id @default(autoincrement())
+  value        String        @unique
+  chatbotId    Int?
+  textId       Int?
+  matchType    MatchType
+  fuzzyPercent Int?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  chatbot      Chatbot?      @relation(fields: [chatbotId], references: [id])
+  text         TextMaterial? @relation(fields: [textId], references: [id])
+}
+
+model Template {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  language  String   @default("en_US")
+  content   String?
+  userId    Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model TextMaterial {
+  id        Int       @id @default(autoincrement())
+  name      String
+  content   String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @default(now())
+  keywords  Keyword[]
+}
+
+model ChatStatusHistory {
+  id                                                    Int           @id @default(autoincrement())
+  contactId                                             Int
+  conversationId                                        Int?
+  status                                                ChatStatus
+  changedAt                                             DateTime      @default(now())
+  createdAt                                             DateTime      @default(now())
+  Contact_ChatStatusHistory_contactIdToContact          Contact       @relation("ChatStatusHistory_contactIdToContact", fields: [contactId], references: [id])
+  Conversation                                          Conversation? @relation(fields: [conversationId], references: [id])
+  Contact_Contact_latestChatStatusIdToChatStatusHistory Contact?      @relation("Contact_latestChatStatusIdToChatStatusHistory")
 }
 
 enum MessageStatus {
@@ -83,157 +247,6 @@ enum ChatStatus {
   SOLVED
   PENDING
   IN_PROGRESS
-}
-
-
-
-model Contact {
-  id              Int       @id @default(autoincrement())
-  name            String?   // Name of the contact (if available)
-  phoneNumber     String    @unique // Primary contact number
-  email           String?   // Optional email
-  source          String    // WhatsApp, SMS, or other
-  userId          Int?      // Owner of the contact
-  user            User?     @relation(fields: [userId], references: [id])
-  messages        Message[] // One-to-Many relation with Messages
-  conversations   Conversation[] // One-to-Many relation with Conversations
-  notes           Note[]     // One-to-Many relation with Notes
-  tags           String[]   // Custom tags for categorization
-  attributes     Json?      // Custom attributes
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  subscribed      Boolean?  @default(false)
-  sendSMS         Boolean?  @default(false)
-  assignedTeams   Team[]    @relation("ContactTeams")
-}
-
-model Note {
-  id          Int      @id @default(autoincrement())
-  contactId   Int
-  contact     Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  content     String   // The note content
-  createdAt   DateTime @default(now())
-}
-
-model Chatbot {
-  id               Int       @id @default(autoincrement())
-  name             String
-  description      String?
-  triggered        Boolean?  @default(false)
-  stepsFinished    Int?
-  finished         Boolean?  @default(false)
-  startNodeId      Int?      @unique
-  startNode        Node?     @relation("StartNode", fields: [startNodeId], references: [id])
-  ownerId          Int?
-  owner            User?     @relation(fields: [ownerId], references: [id])
-  nodes            Node[]    @relation("ChatbotNodes") // One-to-many relation
-  edges            Edge[]    @relation("ChatbotEdges") // One-to-many relation
-  keywords         Keyword[]
-  conversations    Conversation[]
-  variables        Variable[] // Variables associated with the chatbot
-  messages         Message[] @relation("ChatbotMessages")
-  status           Status    @default(ACTIVE)
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-}
-
-model Node {
-  id         Int     @id @default(autoincrement())
-  chatId     Int
-  chatbot    Chatbot @relation("ChatbotNodes", fields: [chatId], references: [id])
-  startChatbot Chatbot? @relation("StartNode") // Opposite relation for startNode
-  nodeId     String
-  data       Json
-  type       String
-  positionX  Float
-  positionY  Float
-  edgesOut   Edge[]  @relation("SourceNode") // One-to-many for outgoing edges
-  edgesIn    Edge[]  @relation("TargetNode") // One-to-many for incoming edges
-  variables  Variable[] // Variables associated with the node
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-}
-
-model Edge {
-  id           Int      @id @default(autoincrement())
-  chatId       Int
-  chatbot      Chatbot  @relation("ChatbotEdges", fields: [chatId], references: [id])
-  sourceId     Int
-  source       Node     @relation("SourceNode", fields: [sourceId], references: [id])
-  targetId     Int
-  target       Node     @relation("TargetNode", fields: [targetId], references: [id])
-  sourceHandle String?  // Optional source handle for branching
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-}
-
-model Variable {
-  id           Int       @id @default(autoincrement())
-  name         String    // Name of the variable
-  value        String?   // Value of the variable (set dynamically based on user input)
-  chatbotId    Int       // Associated chatbot ID
-  chatbot      Chatbot   @relation(fields: [chatbotId], references: [id])
-  conversationId Int?     // Optional relation to Conversation (specific to a user)
-  conversation Conversation? @relation(fields: [conversationId], references: [id])
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  node        Node?   @relation(fields: [nodeId], references: [id])
-  nodeId      Int?  
-}
-
-model Conversation {
-  id           Int       @id @default(autoincrement())
-  recipient    String    // WhatsApp user ID or phone number
-  chatbotId    Int?       // Associated chatbot ID
-  chatbot      Chatbot?   @relation(fields: [chatbotId], references: [id])
-  userId       Int?      // Associated user ID
-  user         User?     @relation(fields: [userId], references: [id])
-  variables    Variable[] // Variables updated during the conversation
-  lastNodeId   Int?      // The last processed node's ID
-  contactId    Int?      
-  contact      Contact?  @relation(fields: [contactId], references: [id])
-  messages     Message[] // One-to-Many relation with Messages
-  currentNodeId Int? 
-  answeringQuestion Boolean @default(false)
-  validationFailureCount Int    @default(0)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  chatStatus   String?
-}
-
-
-model Keyword {
-  id           Int         @id @default(autoincrement())
-  value        String      @unique // Keyword value (e.g., "test keyword")
-  chatbotId    Int?         // Relation to Chatbot
-  chatbot      Chatbot?     @relation(fields: [chatbotId], references: [id])
-  textId       Int?        // Optional relation to text material
-  text         TextMaterial? @relation(fields: [textId], references: [id])
-  matchType    MatchType   // Type of matching (Fuzzy, Exact, Contains)
-  fuzzyPercent Int?        // Fuzzy matching percentage (optional)
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-}
-
-model Template {
-  id        Int      @id @default(autoincrement())
-  name      String   @unique         // e.g., "Follow-up Reminder"
-  language  String   @default("en_US") // Default language code
-  content   String?                    // Optional field for the template content
-  userId    Int                        // Foreign key referencing the creator
-  user      User     @relation(fields: [userId], references: [id])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-
-model TextMaterial {
-  id         Int       @id @default(autoincrement())
-  name       String    // Name of the text material
-  content    String    // Content of the text material
-  keywords   Keyword[] 
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @default(now())
 }
 
 enum Role {

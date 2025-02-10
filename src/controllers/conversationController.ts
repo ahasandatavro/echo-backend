@@ -12,20 +12,15 @@ export const getConversationStatus = async (req:Request, res:Response) => {
     // Get the latest chat status for this contact
     const contact = await prisma.contact.findUnique({
       where: { id: parseInt(contactId) },
-      include: {
-        latestChatStatus: true,
-      },
+      
     });
 
-    if (!contact || !contact.latestChatStatus) {
+    if (!contact || !contact.ticketstatus) {
       return res.status(404).json({ message: "No conversation history found" });
     }
 
     res.json({
-      status: contact.latestChatStatus.status,
-      openedAt: contact.latestChatStatus.status === "OPENED" ? contact.latestChatStatus.changedAt : null,
-      expiredAt: contact.latestChatStatus.status === "EXPIRED" ? contact.latestChatStatus.changedAt : null,
-      solvedAt: contact.latestChatStatus.status === "SOLVED" ? contact.latestChatStatus.changedAt : null,
+      status: contact.ticketstatus
     });
   } catch (error) {
     console.error("Error fetching conversation status:", error);
