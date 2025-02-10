@@ -84,14 +84,24 @@ export const updateContact = async (req: Request, res: Response) => {
   const { name, phoneNumber, source, tags, attributes } = req.body;
 
   try {
+    // Fetch existing contact to preserve current tags/attributes if not provided
+    const existingContact = await prisma.contact.findUnique({
+      where: { id: parseInt(id) },
+      select: { tags: true, attributes: true }, // Only select necessary fields
+    });
+
+    if (!existingContact) {
+      return res.status(404).json({ error: "Contact not found" });
+    }
+
     const updatedContact = await prisma.contact.update({
       where: { id: parseInt(id) },
       data: {
         name,
         phoneNumber,
         source,
-        tags: tags || [],
-        attributes: attributes ? JSON.parse(attributes) : {},
+        tags: tags !== undefined ? tags : existingContact.tags, // Keep existing tags if not provided
+        attributes: attributes !== undefined ? JSON.parse(attributes) : existingContact.attributes, // Keep existing attributes if not provided
       },
     });
 
@@ -101,6 +111,7 @@ export const updateContact = async (req: Request, res: Response) => {
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
+
 
 /** 📌 Delete a Contact */
 export const deleteContact = async (req: Request, res: Response) => {

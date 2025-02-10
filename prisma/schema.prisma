@@ -77,6 +77,15 @@ enum MessageStatus {
   READ
 }
 
+enum ChatStatus {
+  OPENED
+  EXPIRED
+  SOLVED
+  PENDING
+  IN_PROGRESS
+}
+
+
 
 model Contact {
   id              Int       @id @default(autoincrement())
@@ -191,6 +200,8 @@ model Conversation {
   updatedAt    DateTime  @updatedAt
   chatStatus   String?
 }
+
+
 model Keyword {
   id           Int         @id @default(autoincrement())
   value        String      @unique // Keyword value (e.g., "test keyword")

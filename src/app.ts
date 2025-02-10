@@ -11,7 +11,8 @@ import gdriveRoutes from "./routes/gdriveRoute";
 import contactRoutes from "./routes/contactRoute";
 import analyticsRoutes from "./routes/analyticsRoute";
 import userRoutes from "./routes/userRoute";
-import templateRoutes from "./routes/templateRoute"
+import templateRoutes from "./routes/templateRoute";
+import conversationRoutes from "./routes/conversationRoute";
 import teamRoutes from "./routes/teamRoutes";
 import { Server } from "socket.io";
 //import { authenticateJWT } from "./utils/jwtUtils";
@@ -61,6 +62,7 @@ app.use("/textMaterials",textMaterialRoutes);
 app.use('/keyword',keywordRoutes);
 app.use('/gdrive',gdriveRoutes);
 app.use('/contacts',contactRoutes);
+app.use("/conversations", conversationRoutes);
 app.use('/analytics', analyticsRoutes);
 app.use("/teams", teamRoutes);
 app.use("/templates", templateRoutes);
