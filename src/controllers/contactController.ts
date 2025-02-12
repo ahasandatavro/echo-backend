@@ -6,7 +6,8 @@ import csvParser from "csv-parser";
 import { processWebhookMessage } from "../processors/inboxProcessor";
 import {sendMessage, sendTemplate} from "../processors/webhook/webhookProcessor"
 const prisma = new PrismaClient();
-
+import FormData from "form-data";
+import axios from "axios";
 /** 📌 Get All Contacts */
 export const getAllContacts = async (req: Request, res: Response) => {
   try {
@@ -477,50 +478,6 @@ export const expireInactiveChats = async (req: Request, res: Response) => {
   }
 };
 
-// export const sendMessage = async (req: Request, res: Response) => {
-//   try {
-//     const contactId = Number(req.params.contactId); // Ensure it's a number
-//     const { text, template } = req.body;
-//     const file = req.file; // Handle file uploads
-
-//     if (!text && !template && !file) {
-//       return res.status(400).json({ error: "Message content is required" });
-//     }
-
-//     // ✅ Fetch Contact by ID
-//     let contact = await prisma.contact.findFirst({
-//       where: { id: contactId },
-//     });
-
-//     if (!contact) {
-//       return res.status(404).json({ error: "Contact not found" });
-//     }
-
-//     // ✅ Prepare Message Object for processWebhookMessage
-//     const messageData: any = {
-//       type: "text", // Default message type
-//       text: { body: text || `Template: ${template}` },
-//     };
-
-//     // ✅ Handle File Upload (If any)
-//     if (file) {
-//       messageData.type = "media";
-//       messageData.mediaType = file.mimetype; // Store file type
-//       messageData.attachment = `/uploads/${file.filename}`; // Store file URL
-//     }
-
-//     // ✅ Use processWebhookMessage to handle logic (without modifying it)
-//     const savedMessage = await processWebhookMessage(contact.phoneNumber, messageData);
-//     const io = req.app.get("socketio"); 
-//     // ✅ Emit message via socket
-//     io.emit("newMessage", savedMessage);
-
-//     return res.status(200).json(savedMessage);
-//   } catch (error) {
-//     console.error("Error sending message:", error);
-//     res.status(500).json({ error: "Internal server error" });
-//   }
-// };
 
 export const sendMessageController = async (req: Request, res: Response) => {
   try {
@@ -605,7 +562,12 @@ export const sendMessageController = async (req: Request, res: Response) => {
       message: savedMessage, // Send the saved message object
     });
     
-
+    if (filePath) {
+      fs.unlink(filePath, (err) => {
+        if (err) console.error("Failed to delete file:", err);
+        else console.log(`Deleted file: ${filePath}`);
+      });
+    }
     return res.status(200).json(savedMessage);
   } catch (error) {
     console.error("Error sending message:", error);
