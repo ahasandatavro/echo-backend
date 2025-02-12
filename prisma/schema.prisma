@@ -52,7 +52,7 @@ model Team {
 
 model Message {
   id             Int           @id @default(autoincrement())
-  conversationId Int
+  conversationId Int?
   contactId      Int
   sender         String
   text           String?
@@ -69,7 +69,7 @@ model Message {
   listItems      Json?
   chatbot        Chatbot?      @relation("ChatbotMessages", fields: [chatbotId], references: [id])
   contact        Contact       @relation(fields: [contactId], references: [id])
-  conversation   Conversation  @relation(fields: [conversationId], references: [id])
+  conversation   Conversation?  @relation(fields: [conversationId], references: [id])
 }
 
 model Contact {

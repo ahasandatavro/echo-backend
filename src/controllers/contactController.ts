@@ -3,7 +3,8 @@ import { Request, Response } from "express";
 import { PrismaClient } from "@prisma/client";
 import fs from "fs";
 import csvParser from "csv-parser";
-
+import { processWebhookMessage } from "../processors/inboxProcessor";
+import {sendMessage, sendTemplate} from "../processors/webhook/webhookProcessor"
 const prisma = new PrismaClient();
 
 /** 📌 Get All Contacts */
@@ -423,8 +424,15 @@ export const updateChatStatus = async (req: Request, res: Response) => {
         changedAt: new Date(),
         timerStartTime: newStatus === "Open" ? new Date() : contact.timerStartTime,
       },
+      include: { changedBy: { select: { email: true } } }
     });
-
+    const io = req.app.get("socketio"); 
+    io.emit("chatStatusUpdated", {
+      contactId: parseInt(id),
+      chatStatus: newStatus,
+      changedBy: statusChange.changedBy ? statusChange.changedBy.email : "Bot",
+      changedAt: statusChange.changedAt,
+    });
     res.json({ success: true, statusChange });
   } catch (error) {
     console.error("Error updating chat status:", error);
@@ -466,5 +474,141 @@ export const expireInactiveChats = async (req: Request, res: Response) => {
   } catch (error) {
     console.error("Error expiring chats:", error);
     res.status(500).json({ error: "Failed to expire chats" });
+  }
+};
+
+// export const sendMessage = async (req: Request, res: Response) => {
+//   try {
+//     const contactId = Number(req.params.contactId); // Ensure it's a number
+//     const { text, template } = req.body;
+//     const file = req.file; // Handle file uploads
+
+//     if (!text && !template && !file) {
+//       return res.status(400).json({ error: "Message content is required" });
+//     }
+
+//     // ✅ Fetch Contact by ID
+//     let contact = await prisma.contact.findFirst({
+//       where: { id: contactId },
+//     });
+
+//     if (!contact) {
+//       return res.status(404).json({ error: "Contact not found" });
+//     }
+
+//     // ✅ Prepare Message Object for processWebhookMessage
+//     const messageData: any = {
+//       type: "text", // Default message type
+//       text: { body: text || `Template: ${template}` },
+//     };
+
+//     // ✅ Handle File Upload (If any)
+//     if (file) {
+//       messageData.type = "media";
+//       messageData.mediaType = file.mimetype; // Store file type
+//       messageData.attachment = `/uploads/${file.filename}`; // Store file URL
+//     }
+
+//     // ✅ Use processWebhookMessage to handle logic (without modifying it)
+//     const savedMessage = await processWebhookMessage(contact.phoneNumber, messageData);
+//     const io = req.app.get("socketio"); 
+//     // ✅ Emit message via socket
+//     io.emit("newMessage", savedMessage);
+
+//     return res.status(200).json(savedMessage);
+//   } catch (error) {
+//     console.error("Error sending message:", error);
+//     res.status(500).json({ error: "Internal server error" });
+//   }
+// };
+
+export const sendMessageController = async (req: Request, res: Response) => {
+  try {
+    const contactId = Number(req.params.contactId); // Ensure it's a number
+    const { text, template, chatbotId } = req.body;
+    const file = req.file; // Handle file uploads
+
+    if (!text && !template && !file) {
+      return res.status(400).json({ error: "Message content is required" });
+    }
+
+    // ✅ Fetch Contact by ID
+    let contact = await prisma.contact.findFirst({ where: { id: contactId } });
+
+    if (!contact) {
+      return res.status(404).json({ error: "Contact not found" });
+    }
+    let fileUrl: string | null = null;
+    if (file) {
+      const formData = new FormData();
+      const fileStream = fs.readFileSync(file.path); // ✅ Use createReadStream()
+
+      formData.append("file", fileStream, {
+        filename: file.originalname,
+        contentType: file.mimetype, // ✅ Ensure correct MIME type
+      });
+      const uploadResponse = await axios.post(
+        "http://localhost:5000/upload", // Change to your actual upload API URL
+        formData,
+        { headers: { ...formData.getHeaders() } }
+      );
+
+      fileUrl = uploadResponse.data.fileUrl; // Get uploaded file URL
+    }
+    // ✅ Handle WhatsApp Template Messages
+    if (template) {
+      await sendTemplate(contact.phoneNumber, template, chatbotId);
+    }
+    // ✅ Handle Regular Messages (Text, Media)
+    else {
+      let messageType = "text";
+      let messageContent: any = { message: text };
+
+      if (fileUrl) {
+        // Determine message type based on file extension
+        const fileExtension = fileUrl.split(".").pop()?.toLowerCase();
+        if (["jpg", "jpeg", "png", "gif"].includes(fileExtension)) {
+          messageType = "image";
+        } else if (["mp3", "wav", "ogg"].includes(fileExtension)) {
+          messageType = "audio";
+        } else if (["mp4", "mov"].includes(fileExtension)) {
+          messageType = "video";
+        } else {
+          messageType = "document";
+        }
+
+        messageContent = { message: { url: fileUrl, name: fileUrl.split("/").pop() } };
+      }
+
+      // Send message to WhatsApp using your existing function
+      await sendMessage(contact.phoneNumber, { type: messageType, ...messageContent }, chatbotId);
+    }
+
+    // ✅ Store Message in Database
+    const savedMessage = await prisma.message.create({
+      data: {
+        contact: {
+          connect: { id: contactId }, // ✅ Explicitly linking the contact
+        },
+        sender: "user",
+        text: text || `Template: ${template}`,
+        time: new Date(),
+        status: "SENT",
+        attachment: fileUrl,
+      },
+    });
+
+    // ✅ Emit message to frontend via socket
+    const io = req.app.get("socketio"); 
+    io.emit("newMessage", {
+      recipient: contact.phoneNumber, // Ensure correct recipient
+      message: savedMessage, // Send the saved message object
+    });
+    
+
+    return res.status(200).json(savedMessage);
+  } catch (error) {
+    console.error("Error sending message:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 };

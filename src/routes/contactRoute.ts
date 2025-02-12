@@ -17,7 +17,8 @@ import {
   removeTag,
   getChatHistory,
   updateChatStatus,
-  expireInactiveChats
+  expireInactiveChats,
+  sendMessageController
 } from "../controllers/contactController";
 import { authenticateJWT } from '../middlewares/authMiddleware';
 const router = Router();
@@ -46,4 +47,6 @@ router.get("/:contactId/chat-history", getChatHistory);
 router.put("/:id/chat-status", authenticateJWT,updateChatStatus);
 router.post("/expire-timers", expireInactiveChats);
 
+
+router.post("/:contactId/send-message",upload.single("file"),sendMessageController)
 export default router;
