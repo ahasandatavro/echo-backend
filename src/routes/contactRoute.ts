@@ -15,9 +15,11 @@ import {
   getTags,
   addTag,
   removeTag,
-  updateChatStatus
+  getChatHistory,
+  updateChatStatus,
+  expireInactiveChats
 } from "../controllers/contactController";
-
+import { authenticateJWT } from '../middlewares/authMiddleware';
 const router = Router();
 const upload = multer({ dest: "uploads/" });
 
@@ -36,8 +38,12 @@ router.post("/:id/notes", addNote);
 router.get("/:id/tags", getTags);
 router.post("/:id/tags", addTag);
 router.delete("/:id/tags/:tag", removeTag);
-router.put("/:id/chat-status", updateChatStatus);
 
 router.post("/upload", upload.single("file"), uploadContacts);
+
+
+router.get("/:contactId/chat-history", getChatHistory);
+router.put("/:id/chat-status", authenticateJWT,updateChatStatus);
+router.post("/expire-timers", expireInactiveChats);
 
 export default router;

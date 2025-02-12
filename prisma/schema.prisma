@@ -36,6 +36,7 @@ model User {
   conversations        Conversation[]
   templates            Template[]
   teams                Team[]         @relation("UserTeams")
+   chatStatusChanges    ChatStatusHistory[] 
 }
 
 model Team {
@@ -84,15 +85,21 @@ model Contact {
   updatedAt                                                       DateTime            @updatedAt
   sendSMS                                                         Boolean?            @default(false)
   subscribed                                                      Boolean?            @default(false)
-  latestChatStatusId                                              Int?                @unique
-  ticketstatus                                                    String?
-  ChatStatusHistory_ChatStatusHistory_contactIdToContact          ChatStatusHistory[] @relation("ChatStatusHistory_contactIdToContact")
-  ChatStatusHistory_Contact_latestChatStatusIdToChatStatusHistory ChatStatusHistory?  @relation("Contact_latestChatStatusIdToChatStatusHistory", fields: [latestChatStatusId], references: [id])
   user                                                            User?               @relation(fields: [userId], references: [id])
   conversations                                                   Conversation[]
   messages                                                        Message[]
   notes                                                           Note[]
   assignedTeams                                                   Team[]              @relation("ContactTeams")
+
+    // ✅ Chat Status Tracking
+  ticketStatus         String?              // Stores current chat status ("Open", "Pending", "Expired", etc.)
+  latestChatStatusId   Int?                 @unique
+  chatStatusHistory    ChatStatusHistory[]  // Relation to track all status changes
+
+  // ✅ Timer Tracking
+  lastMessageTime      DateTime?            // Timestamp of the last received message
+  timerStartTime       DateTime?            // When the timer last started
+  timerEndTime         DateTime? 
 }
 
 model Note {
@@ -226,13 +233,21 @@ model TextMaterial {
 model ChatStatusHistory {
   id                                                    Int           @id @default(autoincrement())
   contactId                                             Int
-  conversationId                                        Int?
-  status                                                ChatStatus
-  changedAt                                             DateTime      @default(now())
+  contact    Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  previousStatus String?
+  newStatus      String
+  changedById    Int?       // ✅ Foreign key reference to User (Agent or Bot)
+   changedBy     User? @relation(fields: [changedById], references: [id], onDelete: SetNull)
+
   createdAt                                             DateTime      @default(now())
-  Contact_ChatStatusHistory_contactIdToContact          Contact       @relation("ChatStatusHistory_contactIdToContact", fields: [contactId], references: [id])
+  changedAt      DateTime  @default(now())
+
+  timerStartTime DateTime?  // ✅ Only updates when a new message is received
+  timerEndTime   DateTime?
+
+  conversationId                                        Int?
   Conversation                                          Conversation? @relation(fields: [conversationId], references: [id])
-  Contact_Contact_latestChatStatusIdToChatStatusHistory Contact?      @relation("Contact_latestChatStatusIdToChatStatusHistory")
 }
 
 enum MessageStatus {
@@ -254,6 +269,7 @@ enum Role {
   ANALYST
   USER
   BOTCREATOR
+  BOT
 }
 
 enum Status {

@@ -15,12 +15,12 @@ export const getConversationStatus = async (req:Request, res:Response) => {
       
     });
 
-    if (!contact || !contact.ticketstatus) {
+    if (!contact || !contact.ticketStatus) {
       return res.status(404).json({ message: "No conversation history found" });
     }
 
     res.json({
-      status: contact.ticketstatus
+      status: contact.ticketStatus
     });
   } catch (error) {
     console.error("Error fetching conversation status:", error);
@@ -39,7 +39,7 @@ export const solveConversation = async (req:Request, res:Response) => {
     const newStatus = await prisma.chatStatusHistory.create({
       data: {
         contactId: parseInt(contactId),
-        status: "SOLVED",
+        newStatus: "SOLVED",
       },
     });
 
@@ -67,7 +67,7 @@ export const updateExpiredConversations = async () => {
     // Find all open conversations older than 24 hours
     const expiredConversations = await prisma.chatStatusHistory.findMany({
       where: {
-        status: "OPENED",
+        newStatus: "OPENED",
         changedAt: { lt: expirationThreshold },
       },
     });
@@ -77,7 +77,7 @@ export const updateExpiredConversations = async () => {
       const newStatus = await prisma.chatStatusHistory.create({
         data: {
           contactId: conv.contactId,
-          status: "EXPIRED",
+          newStatus: "EXPIRED",
         },
       });
 

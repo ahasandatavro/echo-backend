@@ -16,7 +16,7 @@ export const registerUser = async (req: Request, res: Response) => {
     res.status(201).send("User Created successfully");
   } catch (error: unknown) {
     if (error instanceof Error) {
-        res.status(500).send(error.message); // Safely access the message property
+        res.status(500).send("An unknown error occurred."); // Safely access the message property
     } else {
         res.status(500).send('An unknown error occurred.');
     }
@@ -51,7 +51,7 @@ export const loginUser = async (req: Request, res: Response) => {
     }, });
   } catch (error: unknown) {
     if (error instanceof Error) {
-        res.status(500).send(error.message); // Safely access the message property
+        res.status(500).send('An unknown error occurred.'); // Safely access the message property
     } else {
         res.status(500).send('An unknown error occurred.');
     }

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Request, Response } from "express";
 import { PrismaClient } from "@prisma/client";
 import fs from "fs";
@@ -16,7 +17,7 @@ export const getAllContacts = async (req: Request, res: Response) => {
         attributes: true, // Fetch attributes as JSON
         subscribed: true,
         sendSMS: true,
-        ticketstatus:true
+        ticketStatus:true
       },
     });
     
@@ -369,23 +370,101 @@ export const removeTag = async (req: Request, res: Response) => {
   }
 };
 
-export const updateChatStatus = async (req: Request, res: Response) =>{
+
+export const getChatHistory = async (req: Request, res: Response) => {
+  const { contactId } = req.params;
   try {
-    const { id } = req.params;
-    const { chatStatus } = req.body;
-
-    if (!["Open", "Pending", "Solved"].includes(chatStatus)) {
-      return res.status(400).json({ error: "Invalid status" });
-    }
-
-    const updatedContact = await prisma.contact.update({
-      where: { id: parseInt(id) },
-      data: { ticketstatus:chatStatus },
+    const chatHistory = await prisma.chatStatusHistory.findMany({
+      where: { contactId: parseInt(contactId) },
+      include: { changedBy: true }, // Include agent/bot details
+      orderBy: { changedAt: "desc" }, // Sort by latest status change
     });
 
-    res.json({ message: "Chat status updated", chatStatus: updatedContact.ticketstatus });
+    res.json(chatHistory);
+  } catch (error) {
+    console.error("Error fetching chat history:", error);
+    res.status(500).json({ error: "Failed to fetch chat history" });
+  }
+};
+
+/**
+ * ✅ Update chat status & track in history
+ */
+export const updateChatStatus = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { newStatus} = req.body; // `changedById` is the user ID (agent/bot)
+
+  try {
+    const contact = await prisma.contact.findUnique({ where: { id: parseInt(id) } });
+    if (!contact) return res.status(404).json({ error: "Contact not found" });
+
+    // ✅ Update Contact's current status
+    await prisma.contact.update({
+      where: { id: parseInt(id) },
+      data: { ticketStatus: newStatus },
+    });
+  const userId = req.user?.userId; // Assuming `req.user` contains the authenticated user
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user || !user.accessToken) {
+      return res.status(403).json({ message: "User does not have a valid access token." });
+    }
+
+    // ✅ Add new entry in ChatStatusHistory
+    const statusChange = await prisma.chatStatusHistory.create({
+      data: {
+        contactId: parseInt(id),
+        previousStatus: contact.ticketStatus,
+        newStatus,
+        changedById: user.id || null, // If it's a bot, this can be null
+        changedAt: new Date(),
+        timerStartTime: newStatus === "Open" ? new Date() : contact.timerStartTime,
+      },
+    });
+
+    res.json({ success: true, statusChange });
   } catch (error) {
     console.error("Error updating chat status:", error);
     res.status(500).json({ error: "Failed to update chat status" });
   }
-}
+};
+
+/**
+ * ✅ Auto-expire chat after inactivity
+ */
+export const expireInactiveChats = async (req: Request, res: Response) => {
+  try {
+    const currentTime = new Date();
+    const expiredChats = await prisma.chatStatusHistory.findMany({
+      where: {
+        timerStartTime: { lte: new Date(currentTime.getTime() - 60 * 60 * 1000) }, // 1 hour inactivity
+        timerEndTime: null,
+      },
+    });
+
+    for (const chat of expiredChats) {
+      await prisma.chatStatusHistory.update({
+        where: { id: chat.id },
+        data: {
+          newStatus: "Expired",
+          changedById: 999, // Assuming bot user ID
+          changedAt: currentTime,
+          timerEndTime: currentTime,
+        },
+      });
+
+      await prisma.contact.update({
+        where: { id: chat.contactId },
+        data: { ticketStatus: "Expired" },
+      });
+    }
+
+    res.json({ success: true, expiredChats: expiredChats.length });
+  } catch (error) {
+    console.error("Error expiring chats:", error);
+    res.status(500).json({ error: "Failed to expire chats" });
+  }
+};
