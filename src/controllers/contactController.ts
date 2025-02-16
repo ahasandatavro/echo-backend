@@ -4,7 +4,10 @@ import { PrismaClient } from "@prisma/client";
 import fs from "fs";
 import csvParser from "csv-parser";
 import { processWebhookMessage } from "../processors/inboxProcessor";
-import {sendMessage, sendTemplate} from "../processors/webhook/webhookProcessor"
+import {
+  sendMessage,
+  sendTemplate,
+} from "../processors/webhook/webhookProcessor";
 const prisma = new PrismaClient();
 import FormData from "form-data";
 import axios from "axios";
@@ -19,20 +22,22 @@ export const getAllContacts = async (req: Request, res: Response) => {
         attributes: true, // Fetch attributes as JSON
         subscribed: true,
         sendSMS: true,
-        ticketStatus:true
+        ticketStatus: true,
       },
     });
-    
+
     // Ensure attributes is an array
-    const formattedContacts = contacts.map(contact => ({
+    const formattedContacts = contacts.map((contact) => ({
       ...contact,
       attributes: Array.isArray(contact.attributes)
         ? contact.attributes
-        : Object.entries(contact.attributes || {}).map(([key, value]) => ({ key, value })),
+        : Object.entries(contact.attributes || {}).map(([key, value]) => ({
+            key,
+            value,
+          })),
     }));
-    
+
     res.json(formattedContacts);
-    
   } catch (error) {
     console.error("Error fetching contacts:", error);
     res.status(500).json({ error: "Internal Server Error" });
@@ -105,7 +110,10 @@ export const updateContact = async (req: Request, res: Response) => {
         phoneNumber,
         source,
         tags: tags !== undefined ? tags : existingContact.tags, // Keep existing tags if not provided
-        attributes: attributes !== undefined ? JSON.parse(attributes) : existingContact.attributes, // Keep existing attributes if not provided
+        attributes:
+          attributes !== undefined
+            ? JSON.parse(attributes)
+            : existingContact.attributes, // Keep existing attributes if not provided
       },
     });
 
@@ -115,7 +123,6 @@ export const updateContact = async (req: Request, res: Response) => {
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
-
 
 /** 📌 Delete a Contact */
 export const deleteContact = async (req: Request, res: Response) => {
@@ -218,7 +225,6 @@ export const getMessagesByContactId = async (req: Request, res: Response) => {
   }
 };
 
-
 export const getAttributes = async (req: Request, res: Response) => {
   try {
     const contact = await prisma.contact.findUnique({
@@ -243,7 +249,8 @@ export const updateAttribute = async (req: Request, res: Response) => {
     if (!contact) return res.status(404).json({ message: "Contact not found" });
 
     // Ensure attributes is an object before updating
-    const existingAttributes = (contact.attributes as Record<string, any>) || {};
+    const existingAttributes =
+      (contact.attributes as Record<string, any>) || {};
     const updatedAttributes = { ...existingAttributes, [key]: value };
 
     // Update the contact's attributes in the database
@@ -258,7 +265,6 @@ export const updateAttribute = async (req: Request, res: Response) => {
     res.status(500).json({ error: "Failed to update attribute" });
   }
 };
-
 
 export const getNotes = async (req: Request, res: Response) => {
   try {
@@ -277,7 +283,8 @@ export const addNote = async (req: Request, res: Response) => {
     const { note } = req.body;
     const contactId = parseInt(req.params.id);
 
-    if (!note) return res.status(400).json({ error: "Note content is required" });
+    if (!note)
+      return res.status(400).json({ error: "Note content is required" });
 
     // Create a new note entry linked to the contact
     const newNote = await prisma.note.create({
@@ -372,7 +379,6 @@ export const removeTag = async (req: Request, res: Response) => {
   }
 };
 
-
 export const getChatHistory = async (req: Request, res: Response) => {
   const { contactId } = req.params;
   try {
@@ -394,10 +400,12 @@ export const getChatHistory = async (req: Request, res: Response) => {
  */
 export const updateChatStatus = async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { newStatus} = req.body; // `changedById` is the user ID (agent/bot)
+  const { newStatus } = req.body; // `changedById` is the user ID (agent/bot)
 
   try {
-    const contact = await prisma.contact.findUnique({ where: { id: parseInt(id) } });
+    const contact = await prisma.contact.findUnique({
+      where: { id: parseInt(id) },
+    });
     if (!contact) return res.status(404).json({ error: "Contact not found" });
 
     // ✅ Update Contact's current status
@@ -405,14 +413,16 @@ export const updateChatStatus = async (req: Request, res: Response) => {
       where: { id: parseInt(id) },
       data: { ticketStatus: newStatus },
     });
-  const userId = req.user?.userId; // Assuming `req.user` contains the authenticated user
+    const userId = req.user?.userId; // Assuming `req.user` contains the authenticated user
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user || !user.accessToken) {
-      return res.status(403).json({ message: "User does not have a valid access token." });
+      return res
+        .status(403)
+        .json({ message: "User does not have a valid access token." });
     }
 
     // ✅ Add new entry in ChatStatusHistory
@@ -423,11 +433,12 @@ export const updateChatStatus = async (req: Request, res: Response) => {
         newStatus,
         changedById: user.id || null, // If it's a bot, this can be null
         changedAt: new Date(),
-        timerStartTime: newStatus === "Open" ? new Date() : contact.timerStartTime,
+        timerStartTime:
+          newStatus === "Open" ? new Date() : contact.timerStartTime,
       },
-      include: { changedBy: { select: { email: true } } }
+      include: { changedBy: { select: { email: true } } },
     });
-    const io = req.app.get("socketio"); 
+    const io = req.app.get("socketio");
     io.emit("chatStatusUpdated", {
       contactId: parseInt(id),
       chatStatus: newStatus,
@@ -449,7 +460,9 @@ export const expireInactiveChats = async (req: Request, res: Response) => {
     const currentTime = new Date();
     const expiredChats = await prisma.chatStatusHistory.findMany({
       where: {
-        timerStartTime: { lte: new Date(currentTime.getTime() - 60 * 60 * 1000) }, // 1 hour inactivity
+        timerStartTime: {
+          lte: new Date(currentTime.getTime() - 60 * 60 * 1000),
+        }, // 1 hour inactivity
         timerEndTime: null,
       },
     });
@@ -478,7 +491,6 @@ export const expireInactiveChats = async (req: Request, res: Response) => {
   }
 };
 
-
 export const sendMessageController = async (req: Request, res: Response) => {
   try {
     const contactId = Number(req.params.contactId); // Ensure it's a number
@@ -505,7 +517,7 @@ export const sendMessageController = async (req: Request, res: Response) => {
         contentType: file.mimetype, // ✅ Ensure correct MIME type
       });
       const uploadResponse = await axios.post(
-        "http://localhost:5000/upload", // Change to your actual upload API URL
+        `${process.env.BASE_URL}/upload`, // Change to your actual upload API URL
         formData,
         { headers: { ...formData.getHeaders() } }
       );
@@ -534,11 +546,17 @@ export const sendMessageController = async (req: Request, res: Response) => {
           messageType = "document";
         }
 
-        messageContent = { message: { url: fileUrl, name: fileUrl.split("/").pop() } };
+        messageContent = {
+          message: { url: fileUrl, name: fileUrl.split("/").pop() },
+        };
       }
 
       // Send message to WhatsApp using your existing function
-      await sendMessage(contact.phoneNumber, { type: messageType, ...messageContent }, chatbotId);
+      await sendMessage(
+        contact.phoneNumber,
+        { type: messageType, ...messageContent },
+        chatbotId
+      );
     }
 
     // ✅ Store Message in Database
@@ -556,12 +574,12 @@ export const sendMessageController = async (req: Request, res: Response) => {
     });
 
     // ✅ Emit message to frontend via socket
-    const io = req.app.get("socketio"); 
+    const io = req.app.get("socketio");
     io.emit("newMessage", {
       recipient: contact.phoneNumber, // Ensure correct recipient
       message: savedMessage, // Send the saved message object
     });
-    
+
     if (filePath) {
       fs.unlink(filePath, (err) => {
         if (err) console.error("Failed to delete file:", err);

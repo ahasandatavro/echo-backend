@@ -1,3 +1,0 @@
-name,phoneNumber,source,userId,tags,attributes
-John Doe,+123456789,WhatsApp,1,"VIP,Lead","{\"location\": \"New York\"}"
-Jane Smith,+987654321,WhatsApp,2,"Customer","{\"interest\": \"Tech\"}"
