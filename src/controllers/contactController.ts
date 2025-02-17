@@ -496,7 +496,7 @@ export const sendMessageController = async (req: Request, res: Response) => {
     const contactId = Number(req.params.contactId); // Ensure it's a number
     const { text, template, chatbotId } = req.body;
     const file = req.file; // Handle file uploads
-
+    const filePath = req?.file?.path||"";
     if (!text && !template && !file) {
       return res.status(400).json({ error: "Message content is required" });
     }
