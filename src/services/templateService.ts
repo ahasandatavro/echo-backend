@@ -25,7 +25,7 @@ export const syncTemplatesWithWhatsApp = async () => {
     }
 
     console.log("✅ Templates updated in DB");
-  } catch (error) {
+  } catch (error:any) {
     console.error("❌ Failed to sync templates:", error.message);
   }
 };

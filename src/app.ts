@@ -15,7 +15,7 @@ import templateRoutes from "./routes/templateRoute";
 import conversationRoutes from "./routes/conversationRoute";
 import teamRoutes from "./routes/teamRoutes";
 import { Server } from "socket.io";
-//import { authenticateJWT } from "./utils/jwtUtils";
+import { authenticateJWT } from "./middlewares/authMiddleware"
 import passport from "passport";
 import dotenv, { config } from "dotenv";
 import "./config/passportConfig";
@@ -54,19 +54,19 @@ app.use(express.json());
 app.use(passport.initialize());
 app.use("/auth", authRoutes);
 // app.use('/nodes', authenticateJWT, nodeRoutes);
-app.use("/nodes", nodeRoutes);
-app.use("/users", userRoutes);
-app.use("/webhook", webhookRoutes);
-app.use("/variables", variableRoute);
-app.use("/textMaterials",textMaterialRoutes);
-app.use('/keyword',keywordRoutes);
-app.use('/gdrive',gdriveRoutes);
-app.use('/contacts',contactRoutes);
-app.use("/conversations", conversationRoutes);
-app.use('/analytics', analyticsRoutes);
-app.use("/teams", teamRoutes);
-app.use("/templates", templateRoutes);
-app.post("/upload", upload.single("file"), async (req, res) => {
+app.use("/nodes", authenticateJWT,nodeRoutes);
+app.use("/users", authenticateJWT,userRoutes);
+app.use("/webhook", authenticateJWT,webhookRoutes);
+app.use("/variables", authenticateJWT,variableRoute);
+app.use("/textMaterials",authenticateJWT,textMaterialRoutes);
+app.use('/keyword',authenticateJWT,keywordRoutes);
+app.use('/gdrive',authenticateJWT,gdriveRoutes);
+app.use('/contacts',authenticateJWT,contactRoutes);
+app.use("/conversations", authenticateJWT,conversationRoutes);
+app.use('/analytics', authenticateJWT,analyticsRoutes);
+app.use("/teams", authenticateJWT,teamRoutes);
+app.use("/templates", authenticateJWT,templateRoutes);
+app.post("/upload", authenticateJWT,upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ message: "No file uploaded" });

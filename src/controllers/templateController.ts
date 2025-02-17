@@ -7,14 +7,13 @@ import FormData from "form-data";
 
 dotenv.config();
 
-const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN;
-const META_WHATSAPP_BUSINESS_ID = process.env.META_WHATSAPP_BUSINESS_ID;
-const WHATSAPP_GRAPH_API = `https://graph.facebook.com/v18.0/${META_WHATSAPP_BUSINESS_ID}/message_templates`;
+
+const WHATSAPP_GRAPH_API = `${process.env.META_BASE_URL}/${process.env.META_WHATSAPP_BUSINESS_ID}/message_templates`;
 
 // Axios instance with headers
 const axiosInstance = axios.create({
   headers: {
-    Authorization: `Bearer ${META_ACCESS_TOKEN}`,
+    Authorization: `Bearer ${process.env.META_ACCESS_TOKEN}`,
     "Content-Type": "application/json",
   },
 });
@@ -40,7 +39,6 @@ export const createTemplate = async (req: Request, res: Response) => {
     const filePath = req?.file?.path || "";
     const components = JSON.parse(req.body.components || "[]");
 
-
     // ✅ Preprocess only BODY type
     const processedComponents = components.map(async (component: any) => {
       if (component.type === "BODY") {
@@ -52,16 +50,16 @@ export const createTemplate = async (req: Request, res: Response) => {
 
       // ✅ Process HEADER with media (upload & replace header_handle)
       if (component.type === "HEADER" && req.file) {
-
         // ✅ Step 1: Upload Media to WhatsApp API
         const mediaUploadResponse = await axios.post(
-          `${process.env.META_BASE_URL}/${process.env.META_APP_ID}/uploads`, null,
+          `${process.env.META_BASE_URL}/${process.env.META_APP_ID}/uploads`,
+          null,
           {
             params: {
               file_name: req.file.originalname, // The name of the file being uploaded
               file_length: req.file.size, // The length of the file in bytes
-              file_type: req.file.mimetype, 
-              access_token:process.env.META_ACCESS_TOKEN
+              file_type: req.file.mimetype,
+              access_token: process.env.META_ACCESS_TOKEN,
             },
             headers: {
               Authorization: `Bearer ${process.env.META_ACCESS_TOKEN}`,
@@ -70,15 +68,14 @@ export const createTemplate = async (req: Request, res: Response) => {
         );
         let mediaUploadId = mediaUploadResponse.data.id; // Returns "upload:1233"
 
-
         const form = new FormData();
         form.append("file_offset", 0);
         form.append("file", fs.createReadStream(filePath));
-        const fileSize = fs.statSync(filePath).size; 
+        const fileSize = fs.statSync(filePath).size;
         const fileStreams = fs.createReadStream(filePath);
         const headers = {
           Authorization: `OAuth ${process.env.META_ACCESS_TOKEN}`,
-          "file_offset": "0",
+          file_offset: "0",
           "Content-Length": fileSize,
           ...form.getHeaders(),
         };
