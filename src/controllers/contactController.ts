@@ -8,6 +8,7 @@ import {
   sendMessage,
   sendTemplate,
 } from "../processors/webhook/webhookProcessor";
+import { handleChatbotTrigger } from "../subProcessors/webhook";
 const prisma = new PrismaClient();
 import FormData from "form-data";
 import axios from "axios";
@@ -216,6 +217,9 @@ export const getMessagesByContactId = async (req: Request, res: Response) => {
     const messages = await prisma.message.findMany({
       where: { contactId: parseInt(id) },
       orderBy: { time: "asc" },
+      include: {
+        template: true, // ✅ Fetch template details alongside messages
+      },
     });
 
     res.status(200).json(messages);
@@ -525,14 +529,44 @@ export const sendMessageController = async (req: Request, res: Response) => {
       fileUrl = uploadResponse.data.fileUrl; // Get uploaded file URL
     }
     // ✅ Handle WhatsApp Template Messages
+    let savedMessage;
+    let templateDetails = null;
+    let templateId = null;
     if (template) {
+      const dbTemplate = await prisma.template.findFirst({
+        where: { name: template },
+      });
+
+      if (!dbTemplate) {
+        return res.status(404).json({ error: "Template not found in DB" });
+      }
+
+      templateId = dbTemplate.id;
+      templateDetails = dbTemplate;
       await sendTemplate(contact.phoneNumber, template, chatbotId);
+      savedMessage = await prisma.message.create({
+        data: {
+          contact: { connect: { id: contactId } },
+          sender: "user",
+          text: `Template: ${template}`,
+          time: new Date(),
+          status: "SENT",
+          attachment: fileUrl,
+          messageType: "template",
+          template: { connect: { id: templateId } },
+        },
+        include: {
+          template: true, // Include template details in response
+        },
+      });
     }
     // ✅ Handle Regular Messages (Text, Media)
     else {
       let messageType = "text";
       let messageContent: any = { message: text };
-
+      if (text && text.startsWith("TriggerChatbot:"))
+        {
+          await handleChatbotTrigger(text,contact.phoneNumber);}
       if (fileUrl) {
         // Determine message type based on file extension
         const fileExtension = fileUrl.split(".").pop()?.toLowerCase();
@@ -560,13 +594,13 @@ export const sendMessageController = async (req: Request, res: Response) => {
     }
 
     // ✅ Store Message in Database
-    const savedMessage = await prisma.message.create({
+  savedMessage = await prisma.message.create({
       data: {
         contact: {
           connect: { id: contactId }, // ✅ Explicitly linking the contact
         },
         sender: "user",
-        text: text || `Template: ${template}`,
+        text: text || "",
         time: new Date(),
         status: "SENT",
         attachment: fileUrl,
@@ -578,6 +612,7 @@ export const sendMessageController = async (req: Request, res: Response) => {
     io.emit("newMessage", {
       recipient: contact.phoneNumber, // Ensure correct recipient
       message: savedMessage, // Send the saved message object
+      template: templateDetails,
     });
 
     if (filePath) {
@@ -592,3 +627,4 @@ export const sendMessageController = async (req: Request, res: Response) => {
     res.status(500).json({ error: "Internal server error" });
   }
 };
+

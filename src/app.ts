@@ -65,7 +65,7 @@ app.use("/conversations", authenticateJWT,conversationRoutes);
 app.use('/analytics', authenticateJWT,analyticsRoutes);
 app.use("/teams", authenticateJWT,teamRoutes);
 app.use("/templates", authenticateJWT,templateRoutes);
-app.post("/upload", authenticateJWT,upload.single("file"), async (req, res) => {
+app.post("/upload",upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ message: "No file uploaded" });

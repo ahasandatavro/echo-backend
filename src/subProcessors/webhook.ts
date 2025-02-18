@@ -1,6 +1,7 @@
 import { google } from "googleapis";
 import { prisma } from '../models/prismaClient';
 import { resolveVariables } from "../helpers/validation";
+import { processChatFlow } from "../processors/webhook/webhookProcessor";
 /**
  * Perform a Google Sheet action using the chatbot's owner's access token.
  * @param {Object} payload - The payload for the Google Sheets action.
@@ -265,3 +266,38 @@ const isTokenExpired = (expirationTimestamp: number): boolean => {
   const now = Math.floor(Date.now() / 1000); // Current time in seconds
   return now >= expirationTimestamp; // Token is expired if current time is past the expiration time
 };
+
+export const handleChatbotTrigger=async(text:string, recipient:string)=>{
+  const chatbotName = text.split(":")[1].trim();
+
+  const chatbot = await prisma.chatbot.findFirst({
+    where: { name: chatbotName },
+  });
+
+  let conversation = await prisma.conversation.findFirst({
+    where: { recipient },
+    orderBy: {
+      updatedAt: 'desc', // Orders by the most recently updated conversation
+    },
+  });
+    if (!conversation) {
+        
+            conversation = await prisma.conversation.create({
+              data: {
+                recipient,
+                chatbotId:chatbot?.id,
+                answeringQuestion: true,
+              },
+            });
+  
+            console.log("New conversation created:", conversation);
+          }
+          
+  if (chatbot) {
+    await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: { answeringQuestion: false },
+    });
+    await processChatFlow(chatbot.id, recipient);
+  }
+}

@@ -70,6 +70,8 @@ model Message {
   chatbot        Chatbot?      @relation("ChatbotMessages", fields: [chatbotId], references: [id])
   contact        Contact       @relation(fields: [contactId], references: [id])
   conversation   Conversation?  @relation(fields: [conversationId], references: [id])
+   templateId     Int?         // Store reference to template
+  template       Template?    @relation(fields: [templateId], references: [id])  
 }
 
 model Contact {
@@ -221,6 +223,7 @@ model Template {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   user      User?     @relation(fields: [userId], references: [id])
+  messages  Message[]
 }
 
 model TextMaterial {

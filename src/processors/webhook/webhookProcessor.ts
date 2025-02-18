@@ -5,6 +5,9 @@ import { convertHtmlToWhatsAppText } from "../../helpers/index";
 import { resolveVariables } from "../../helpers/validation";
 import { ListMessage } from "../../interphases";
 import { performGoogleSheetAction } from "../../subProcessors/webhook";
+import { MessageStatus } from "../../interphases"; // ✅ Import the correct enum
+import { Prisma } from "@prisma/client"; // ✅ Import Prisma types
+
 export const processChatFlow = async (chatbotId: number, recipient: string) => {
   try {
     const chatbotData = await prisma.chatbot.findUnique({
@@ -65,7 +68,6 @@ export const processChatFlow = async (chatbotId: number, recipient: string) => {
     console.error("Error processing chatbot flow:", error);
   }
 };
-
 
 export const processNode = async (
   nodeId: string,
@@ -1378,11 +1380,6 @@ export const sendQuestion = async (recipient: string, questionMessage: any, curr
     );
   }
 };
-
-
-import { MessageStatus } from "../../interphases"; // ✅ Import the correct enum
-
-import { Prisma } from "@prisma/client"; // ✅ Import Prisma types
 
 export const storeMessage = async ({
   recipient,
