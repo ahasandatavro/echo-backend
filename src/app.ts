@@ -33,7 +33,12 @@ const io = new Server(server, {
     methods: ["GET", "POST"],
   },
 });
+declare global {
+  var io: Server;
+}
 
+// ✅ Assign the properly typed `io` instance to `global`
+global.io = io;
 app.set("socketio", io);
 
 const upload = multer({
@@ -94,3 +99,4 @@ app.post("/upload",upload.single("file"), async (req, res) => {
 server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
+export { io };

@@ -7,7 +7,7 @@ import { ListMessage } from "../../interphases";
 import { performGoogleSheetAction } from "../../subProcessors/webhook";
 import { MessageStatus } from "../../interphases"; // ✅ Import the correct enum
 import { Prisma } from "@prisma/client"; // ✅ Import Prisma types
-
+import { io } from "../../app";
 export const processChatFlow = async (chatbotId: number, recipient: string) => {
   try {
     const chatbotData = await prisma.chatbot.findUnique({
@@ -1389,6 +1389,7 @@ export const storeMessage = async ({
   status = MessageStatus.SENT,
   buttonOptions,
   listItems,
+  
 }: {
   recipient: string;
   chatbotId?: number;
@@ -1436,7 +1437,10 @@ export const storeMessage = async ({
       },
     });
 
-    console.log("✅ Stored business message:", savedMessage);
+    io.emit("newMessage", {
+      recipient: contact.phoneNumber,
+      message: savedMessage,
+    });
     return savedMessage;
   } catch (error) {
     console.error("❌ Error storing message:", error);
