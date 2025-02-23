@@ -5,7 +5,7 @@ import jwt from 'jsonwebtoken';
 import { prisma } from '../models/prismaClient';
 import passport from 'passport';
 import "../config/passportConfig";
-
+import axios from 'axios';
 export const registerUser = async (req: Request, res: Response) => {
   const { email, password, role } = req.body;
   try {
@@ -98,3 +98,29 @@ export const googleCallback = [
     }
   },
 ];
+
+
+export const getAccessToken = async (req: Request, res: Response): Promise<void> => {
+  const { code } = req.body;
+
+  if (!code) {
+      res.status(400).json({ error: "Authorization code is required" });
+      return;
+  }
+
+  try {
+      const response = await axios.get(`${process.env.META_BASE_URL}/oauth/access_token`, {
+          params: {
+              client_id: process.env.META_APP_ID,
+              client_secret: process.env.META_APP_SECRET,
+              code: code,
+              redirect_uri: process.env.FB_REDIRECT_URI,
+          },
+      });
+
+      res.json({ success: true, accessToken: response.data.access_token });
+  } catch (error: any) {
+      console.error("Error fetching access token:", error.response?.data || error.message);
+      res.status(500).json({ error: "Failed to fetch access token" });
+  }
+};
