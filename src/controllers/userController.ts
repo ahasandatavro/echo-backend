@@ -106,3 +106,41 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
     res.status(500).json({ error: "Error deleting user" });
   }
 };
+
+
+
+export const getContacts = async (req: Request, res: Response): Promise<void> => {
+  try {
+    // Get the logged-in user's ID (set by your auth middleware)
+    const userId = 1;
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
+    // Retrieve the user's business account and its associated phone numbers
+    const businessAccount = await prisma.businessAccount.findUnique({
+      where: { userId },
+      include: { phoneNumbers: true },
+    });
+
+    if (!businessAccount) {
+      res.status(404).json({ error: "Business account not found" });
+      return;
+    }
+
+    // Map the phone numbers to the expected UI format
+    const contacts = businessAccount.phoneNumbers.map((phone:any) => ({
+      displayName: phone.displayName || "",
+      phoneNumber: phone.phoneNumber || "",
+      phoneNumberId: phone.metaPhoneNumberId,
+      connectionStatus: phone.connectionStatus || "",
+      subscription: phone.subscription || "",
+    }));
+
+    res.status(200).json(contacts);
+  } catch (error: any) {
+    console.error("Error retrieving contacts:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};

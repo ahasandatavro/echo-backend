@@ -36,9 +36,50 @@ model User {
   conversations        Conversation[]
   templates            Template[]
   teams                Team[]         @relation("UserTeams")
-   chatStatusChanges    ChatStatusHistory[] 
+  chatStatusChanges    ChatStatusHistory[] 
+  businessAccount   BusinessAccount?
 }
 
+model BusinessAccount {
+  id                 Int      @id @default(autoincrement())
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  // Link back to User
+  userId             Int      @unique
+  user               User     @relation(fields: [userId], references: [id])
+
+  // Screenshot-1 fields
+  timeZone           String?  // e.g. "Asia/Kolkata"
+  businessName       String?  // e.g. "Durga Medicals"
+  businessVerification String? // e.g. "Verified", "Unverified"
+  accountStatus      String?  // e.g. "Approved", "Pending"
+  paymentMethod      String?  // e.g. "VISA ****" or "PayPal"
+
+  // Meta-specific fields
+  metaAccessToken    String?
+  metaWabaId         String?
+
+  // One business account can have multiple phone numbers
+  phoneNumbers       BusinessPhoneNumber[]
+}
+
+model BusinessPhoneNumber {
+  id                Int      @id @default(autoincrement())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Link back to BusinessAccount
+  businessAccountId Int
+  businessAccount   BusinessAccount @relation(fields: [businessAccountId], references: [id])
+
+  // Screenshot-2 fields (example placeholders)
+  phoneNumber       String?   // e.g. "+91 98181 28065"
+  metaPhoneNumberId String    // e.g. "115045638165610"
+  displayName       String?   // e.g. "Sesame Workshop India"
+  connectionStatus  String?   // e.g. "CONNECTED"
+  subscription      String?   // e.g. "Free", "Premium"
+}
 model Team {
   id          Int       @id @default(autoincrement())
   name        String    @unique
