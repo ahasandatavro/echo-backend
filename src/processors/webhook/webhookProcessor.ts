@@ -18,7 +18,7 @@ export const processChatFlow = async (chatbotId: number, recipient: string) => {
     if (chatbotData) {
       const startNode = chatbotData.nodes.find((node) => node.type === "start");
       if (!startNode) {
-        await sendMessage(recipient, "Chatbot start node not configured.",chatbotData?.id);
+        await sendMessage(recipient, "Chatbot start node not configured.",chatbotData?.id,1);
         return;
       }
           // Fetch all conversations for the recipient
@@ -103,7 +103,7 @@ export const processNode = async (
 
       if (messageData && messageData.length > 0) {
         for (const message of messageData) {
-          await sendMessage(recipient, message,currentNode?.chatId );
+          await sendMessage(recipient, message,currentNode?.chatId,1 );
         }
       }
 
@@ -1097,9 +1097,19 @@ export const processNode = async (
   }
 };
 
-export const sendMessage = async (recipient: string, message: any, chatbotId:number,plainText?:boolean) => {
+export const sendMessage = async (recipient: string, message: any, chatbotId:number,userId:number,plainText?:boolean) => {
   try {
-    const url = `${metaWhatsAppAPI.baseURL}/${metaWhatsAppAPI.phoneNumberId}/messages`;
+    const userRecord = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { 
+        selectedPhoneNumberId: true,
+        selectedWabaId: true
+      }
+    });
+    if (!userRecord || !userRecord.selectedPhoneNumberId || !userRecord.selectedWabaId) {
+      throw new Error("User's selected contact details are not set.");
+    }
+    const url = `${metaWhatsAppAPI.baseURL}/${userRecord.selectedPhoneNumberId}/messages`;
     let messageBody;
     const payload: any = {
       messaging_product: "whatsapp",
@@ -1381,6 +1391,72 @@ export const sendQuestion = async (recipient: string, questionMessage: any, curr
   }
 };
 
+// export const storeMessage = async ({
+//   recipient,
+//   chatbotId,
+//   messageType,
+//   text,
+//   status = MessageStatus.SENT,
+//   buttonOptions,
+//   listItems,
+  
+// }: {
+//   recipient: string;
+//   chatbotId?: number;
+//   messageType: string;
+//   text?: string;
+//   status?: MessageStatus;
+//   buttonOptions?: { id: string; title: string }[]; // ✅ Store button options as JSON
+//   listItems?: { id: string; title: string; description?: string }[]; // ✅ Store list items as JSON
+// }) => {
+//   try {
+//     let contact = await prisma.contact.findUnique({ where: { phoneNumber: recipient } });
+
+//     if (!contact) {
+//       contact = await prisma.contact.create({
+//         data: { phoneNumber: recipient, name: "Unknown", source: "WhatsApp" },
+//       });
+//       console.log("✅ New contact created:", contact);
+//     }
+
+//     let conversation = await prisma.conversation.findFirst({
+//       where: { recipient },
+//       orderBy: { updatedAt: "desc" },
+//     });
+
+//     if (!conversation) {
+//       conversation = await prisma.conversation.create({
+//         data: { recipient, contactId: contact.id, chatbotId },
+//       });
+//       console.log("✅ New conversation created:", conversation);
+//     }
+
+//     // ✅ Correctly handle JSON fields using Prisma.JsonNull when needed
+//     const savedMessage = await prisma.message.create({
+//       data: {
+//         conversationId: conversation.id,
+//         contactId: contact.id,
+//         chatbotId,
+//         sender: "user",
+//         text,
+//         messageType,
+//         buttonOptions: buttonOptions && buttonOptions.length > 0 ? buttonOptions : Prisma.JsonNull, // ✅ Fix here
+//         listItems: listItems && listItems.length > 0 ? listItems : Prisma.JsonNull, // ✅ Fix here
+//         status,
+//         time: new Date(),
+//       },
+//     });
+
+//     io.emit("newMessage", {
+//       recipient: contact.phoneNumber,
+//       message: savedMessage,
+//     });
+//     return savedMessage;
+//   } catch (error) {
+//     console.error("❌ Error storing message:", error);
+//   }
+// };
+
 export const storeMessage = async ({
   recipient,
   chatbotId,
@@ -1389,39 +1465,55 @@ export const storeMessage = async ({
   status = MessageStatus.SENT,
   buttonOptions,
   listItems,
-  
 }: {
   recipient: string;
   chatbotId?: number;
   messageType: string;
   text?: string;
   status?: MessageStatus;
-  buttonOptions?: { id: string; title: string }[]; // ✅ Store button options as JSON
-  listItems?: { id: string; title: string; description?: string }[]; // ✅ Store list items as JSON
+  buttonOptions?: { id: string; title: string }[]; // Store button options as JSON
+  listItems?: { id: string; title: string; description?: string }[]; // Store list items as JSON
 }) => {
   try {
-    let contact = await prisma.contact.findUnique({ where: { phoneNumber: recipient } });
+    // Attempt to find an existing contact by phone number
+    let contact = await prisma.contact.findUnique({
+      where: { phoneNumber: recipient },
+    });
+    let conversation;
 
     if (!contact) {
-      contact = await prisma.contact.create({
-        data: { phoneNumber: recipient, name: "Unknown", source: "WhatsApp" },
+      // If no contact exists, create it along with a nested conversation
+      const newContact = await prisma.contact.create({
+        data: {
+          phoneNumber: recipient,
+          name: "Unknown",
+          source: "WhatsApp",
+          conversations: {
+            create: { recipient, chatbotId },
+          },
+        },
+        include: { conversations: true }, // Include nested conversation(s)
       });
-      console.log("✅ New contact created:", contact);
+      contact = newContact;
+      // Retrieve the nested conversation that was just created
+      conversation = newContact.conversations[0];
+      console.log("✅ New contact and conversation created:", contact, conversation);
+    } else {
+      // If the contact exists, try to find an existing conversation linked to it
+      conversation = await prisma.conversation.findFirst({
+        where: { recipient, contactId: contact.id },
+        orderBy: { updatedAt: "desc" },
+      });
+      if (!conversation) {
+        // Create a new conversation if one isn't found
+        conversation = await prisma.conversation.create({
+          data: { recipient, contactId: contact.id, chatbotId },
+        });
+        console.log("✅ New conversation created:", conversation);
+      }
     }
 
-    let conversation = await prisma.conversation.findFirst({
-      where: { recipient },
-      orderBy: { updatedAt: "desc" },
-    });
-
-    if (!conversation) {
-      conversation = await prisma.conversation.create({
-        data: { recipient, contactId: contact.id, chatbotId },
-      });
-      console.log("✅ New conversation created:", conversation);
-    }
-
-    // ✅ Correctly handle JSON fields using Prisma.JsonNull when needed
+    // Create a new message attached to the conversation and contact
     const savedMessage = await prisma.message.create({
       data: {
         conversationId: conversation.id,
@@ -1430,8 +1522,8 @@ export const storeMessage = async ({
         sender: "user",
         text,
         messageType,
-        buttonOptions: buttonOptions && buttonOptions.length > 0 ? buttonOptions : Prisma.JsonNull, // ✅ Fix here
-        listItems: listItems && listItems.length > 0 ? listItems : Prisma.JsonNull, // ✅ Fix here
+        buttonOptions: buttonOptions && buttonOptions.length > 0 ? buttonOptions : Prisma.JsonNull,
+        listItems: listItems && listItems.length > 0 ? listItems : Prisma.JsonNull,
         status,
         time: new Date(),
       },
@@ -1446,4 +1538,3 @@ export const storeMessage = async ({
     console.error("❌ Error storing message:", error);
   }
 };
-

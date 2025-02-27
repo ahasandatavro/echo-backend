@@ -102,148 +102,6 @@ export const googleCallback = [
 
 
 
-// export const getAccessToken = async (req: Request, res: Response): Promise<void> => {
-//   // Only these fields come from req.body
-//   const { code, wabaId, phoneNumberId } = req.body;
-
-//   if (!code) {
-//   res.status(400).json({ error: "Authorization code is required" });
-//   }
-
-//   try {
-//     // 1) Get the access token from Meta
-//     const tokenResponse = await axios.get(`${process.env.META_BASE_URL}/oauth/access_token`, {
-//       params: {
-//         client_id: process.env.META_APP_ID,
-//         client_secret: process.env.META_APP_SECRET,
-//         code,
-//       },
-//     });
-//     const businessToken = tokenResponse.data.access_token;
-
-//     // 2) Subscribe to webhooks on the customer's WABA (optional)
-//     await axios.post(
-//       `${process.env.META_BASE_URL}/${wabaId}/subscribed_apps`,
-//       null,
-//       {
-//         headers: {
-//           Authorization: `Bearer ${businessToken}`,
-//         },
-//       }
-//     );
-
-//     // 3) Register the phone number with a desired PIN (optional)
-//     await axios.post(
-//       `https://graph.facebook.com/v21.0/${phoneNumberId}/register`,
-//       {
-//         messaging_product: "whatsapp",
-//         pin: process.env.DESIRED_PIN, // desired PIN value
-//       },
-//       {
-//         headers: {
-//           "Content-Type": "application/json",
-//           Authorization: `Bearer ${businessToken}`,
-//         },
-//       }
-//     );
-
-//     // 4) Send a WhatsApp message (optional)
-//     await axios.post(
-//       `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`,
-//       {
-//         messaging_product: "whatsapp",
-//         recipient_type: "individual",
-//         to: process.env.WHATSAPP_USER_NUMBER, // the WhatsApp user's number
-//         type: "text",
-//         text: {
-//           body: "Your message text here", // replace with your desired message
-//         },
-//       },
-//       {
-//         headers: {
-//           "Content-Type": "application/json",
-//           Authorization: `Bearer ${businessToken}`,
-//         },
-//       }
-//     );
-
-//     // 5) Retrieve phone number details from Meta
-//     //    Adjust the fields param to match the data you need. For example:
-//     //    display_phone_number, verified_name, etc.
-//     const phoneDataResponse = await axios.get(
-//       `https://graph.facebook.com/v16.0/${phoneNumberId}`,
-//       {
-//         params: {
-//           fields: "display_phone_number,verified_name", // Add more fields as needed
-//           access_token: businessToken,
-//         },
-//       }
-//     );
-
-//     // Extract phone details from the response
-//     const phoneNumberFromAPI = phoneDataResponse.data.display_phone_number || "";
-//     const displayNameFromAPI = phoneDataResponse.data.verified_name || "Default Name";
-
-//     // If you have no direct API fields for these, use defaults or logic
-//     const connectionStatusFromAPI = "CONNECTED"; // or derive from an endpoint
-//     const subscriptionFromAPI = "Free";          // or derive from an endpoint
-
-//     // 6) Save the Meta data in your database via Prisma
-//     // For demonstration, we hardcode userId=1; in production, retrieve from auth (req.user.id).
-//     const userId = 1;
-//     if (!userId) {
-//       console.warn("User ID not found in request; skipping DB update.");
-//       res.status(200).json({ success: true, warning: "No user ID found" });
-//     }
-
-//     // a) Find or create the BusinessAccount for this user
-//     let businessAccount = await prisma.businessAccount.findUnique({
-//       where: { userId },
-//     });
-
-//     if (!businessAccount) {
-//       // Create a new BusinessAccount if none exists
-//       businessAccount = await prisma.businessAccount.create({
-//         data: {
-//           userId,
-//           metaAccessToken: businessToken,
-//           metaWabaId: wabaId,
-//           // Additional fields if needed:
-//           // timeZone, businessName, businessVerification, accountStatus, paymentMethod, ...
-//         },
-//       });
-//     } else {
-//       // Update the existing BusinessAccount
-//       businessAccount = await prisma.businessAccount.update({
-//         where: { id: businessAccount.id },
-//         data: {
-//           metaAccessToken: businessToken,
-//           metaWabaId: wabaId,
-//         },
-//       });
-//     }
-
-//     // b) Create a new phone number record under this BusinessAccount
-//     await prisma.businessPhoneNumber.create({
-//       data: {
-//         businessAccountId: businessAccount.id,
-//         metaPhoneNumberId: phoneNumberId,
-//         phoneNumber: phoneNumberFromAPI,
-//         displayName: displayNameFromAPI,
-//         connectionStatus: connectionStatusFromAPI,
-//         subscription: subscriptionFromAPI,
-//       },
-//     });
-
-//     // Return success
-//     res.status(200).json({ success: true });
-//   } catch (error: any) {
-//     console.error("Error fetching access token:", error.response?.data || error.message);
-//     res.status(500).json({ error: "Failed to fetch access token" });
-//   }
-// };
-
-
 export const getAccessToken = async (req: Request, res: Response): Promise<void> => {
   // Only these fields come from req.body
   const { code, wabaId, phoneNumberId } = req.body;
@@ -353,8 +211,8 @@ export const getAccessToken = async (req: Request, res: Response): Promise<void>
     }
 
     // a) Find or create the BusinessAccount for this user
-    let businessAccount = await prisma.businessAccount.findUnique({
-      where: { userId },
+    let businessAccount = await prisma.businessAccount.findFirst({
+      where: { userId, metaWabaId: wabaId },
     });
 
     if (!businessAccount) {
@@ -388,6 +246,18 @@ export const getAccessToken = async (req: Request, res: Response): Promise<void>
     }
 
     // b) Create a new phone number record under this BusinessAccount
+    const existingPhone = await prisma.businessPhoneNumber.findFirst({
+      where: {
+        businessAccountId: businessAccount.id,
+        metaPhoneNumberId: phoneNumberId,
+      },
+    });
+
+    if (existingPhone) {
+     res.status(400).json({ error: "Phone number already exists for this business account" });
+    }
+
+    // c) Create a new phone number record under this BusinessAccount
     await prisma.businessPhoneNumber.create({
       data: {
         businessAccountId: businessAccount.id,

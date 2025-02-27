@@ -1,4 +1,4 @@
-// @ts-nocheck
+//@ts-nocheck
 import { Request, Response } from "express";
 import { PrismaClient } from "@prisma/client";
 import fs from "fs";
@@ -13,21 +13,91 @@ const prisma = new PrismaClient();
 import FormData from "form-data";
 import axios from "axios";
 /** 📌 Get All Contacts */
+// export const getAllContacts = async (req: Request, res: Response) => {
+//   try {
+//     const contacts = await prisma.contact.findMany({
+//       select: {
+//         id: true,
+//         name: true,
+//         phoneNumber: true,
+//         attributes: true, // Fetch attributes as JSON
+//         subscribed: true,
+//         sendSMS: true,
+//         ticketStatus: true,
+//       },
+//     });
+
+//     // Ensure attributes is an array
+//     const formattedContacts = contacts.map((contact) => ({
+//       ...contact,
+//       attributes: Array.isArray(contact.attributes)
+//         ? contact.attributes
+//         : Object.entries(contact.attributes || {}).map(([key, value]) => ({
+//             key,
+//             value,
+//           })),
+//     }));
+
+//     res.json(formattedContacts);
+//   } catch (error) {
+//     console.error("Error fetching contacts:", error);
+//     res.status(500).json({ error: "Internal Server Error" });
+//   }
+// };
 export const getAllContacts = async (req: Request, res: Response) => {
   try {
+    // Extract selectedPhoneNumberId from user
+    const user:any=req.user;
+    const dbUser=await prisma.user.findFirst({
+      where: { id: user.userId },
+      select: { selectedPhoneNumberId: true },
+    })
+    const selectedPhoneNumberId = dbUser?.selectedPhoneNumberId;
+
+    if (!selectedPhoneNumberId) {
+      return res.status(400).json({ error: "selectedPhoneNumberId is required" });
+    }
+
+    // Step 1: Find businessPhoneNumberId from BusinessPhoneNumber table
+    const businessPhone = await prisma.businessPhoneNumber.findFirst({
+      where: { metaPhoneNumberId: selectedPhoneNumberId },
+      select: { id: true }, // We only need the businessPhoneNumberId
+    });
+
+    if (!businessPhone) {
+      return res.status(404).json({ error: "Business phone number not found" });
+    }
+
+    const businessPhoneNumberId = businessPhone.id;
+
+    // Step 2: Find unique contact IDs from Conversation table linked to this businessPhoneNumberId
+    const conversationContacts = await prisma.conversation.findMany({
+      where: { businessPhoneNumberId },
+      select: { contactId: true },
+      distinct: ["contactId"], // Get unique contact IDs
+    });
+
+    const contactIds = conversationContacts.map((c) => c.contactId).filter((id) => id !== null);
+
+    if (contactIds.length === 0) {
+      return res.json([]); // No contacts found
+    }
+
+    // Step 3: Fetch only the contacts that are linked via conversations
     const contacts = await prisma.contact.findMany({
+      where: { id: { in: contactIds } },
       select: {
         id: true,
         name: true,
         phoneNumber: true,
-        attributes: true, // Fetch attributes as JSON
+        attributes: true,
         subscribed: true,
         sendSMS: true,
         ticketStatus: true,
       },
     });
 
-    // Ensure attributes is an array
+    // Ensure attributes is always an array
     const formattedContacts = contacts.map((contact) => ({
       ...contact,
       attributes: Array.isArray(contact.attributes)
@@ -204,22 +274,79 @@ const parseAttributes = (attributes: string): Record<string, string> => {
   }
 };
 
+// export const getMessagesByContactId = async (req: Request, res: Response) => {
+//   try {
+//     const { id } = req.params;
+
+//     // Validate input
+//     if (!id) {
+//       return res.status(400).json({ message: "Contact ID is required" });
+//     }
+
+//     // Fetch messages
+//     const messages = await prisma.message.findMany({
+//       where: { contactId: parseInt(id) },
+//       orderBy: { time: "asc" },
+//       include: {
+//         template: true, // ✅ Fetch template details alongside messages
+//       },
+//     });
+
+//     res.status(200).json(messages);
+//   } catch (error) {
+//     console.error("Error fetching messages:", error);
+//     res.status(500).json({ message: "Error retrieving messages" });
+//   }
+// };
+
 export const getMessagesByContactId = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const user: any = req.user;
 
     // Validate input
     if (!id) {
       return res.status(400).json({ message: "Contact ID is required" });
     }
 
-    // Fetch messages
+    // ✅ Step 1: Find businessPhoneNumberId from selectedPhoneNumberId
+    const dbUser = await prisma.user.findFirst({
+      where: { id: user.userId },
+      select: { selectedPhoneNumberId: true },
+    });
+
+    if (!dbUser?.selectedPhoneNumberId) {
+      return res.status(400).json({ message: "Selected phone number ID is missing" });
+    }
+
+    const businessPhone = await prisma.businessPhoneNumber.findFirst({
+      where: { metaPhoneNumberId: dbUser.selectedPhoneNumberId },
+      select: { id: true },
+    });
+
+    if (!businessPhone) {
+      return res.status(404).json({ message: "Business phone number not found" });
+    }
+
+    const businessPhoneNumberId = businessPhone.id;
+
+    // ✅ Step 2: Find all conversation IDs matching contactId and businessPhoneNumberId
+    const conversations = await prisma.conversation.findMany({
+      where: { contactId: parseInt(id), businessPhoneNumberId },
+      select: { id: true },
+    });
+
+    const conversationIds = conversations.map((c) => c.id);
+
+    if (conversationIds.length === 0) {
+      return res.status(200).json([]); // No messages if no matching conversations
+    }
+
+    // ✅ Step 3: Fetch messages linked to the found conversation IDs
     const messages = await prisma.message.findMany({
-      where: { contactId: parseInt(id) },
+      where: { conversationId: { in: conversationIds } },
       orderBy: { time: "asc" },
-      include: {
-        template: true, // ✅ Fetch template details alongside messages
-      },
+      include: { template: true }, // ✅ Include template details
     });
 
     res.status(200).json(messages);
@@ -228,6 +355,7 @@ export const getMessagesByContactId = async (req: Request, res: Response) => {
     res.status(500).json({ message: "Error retrieving messages" });
   }
 };
+
 
 export const getAttributes = async (req: Request, res: Response) => {
   try {
@@ -497,6 +625,7 @@ export const expireInactiveChats = async (req: Request, res: Response) => {
 
 export const sendMessageController = async (req: Request, res: Response) => {
   try {
+    const user:any=req.user;
     const contactId = Number(req.params.contactId); // Ensure it's a number
     const { text, template, chatbotId } = req.body;
     const file = req.file; // Handle file uploads
@@ -589,31 +718,32 @@ export const sendMessageController = async (req: Request, res: Response) => {
       await sendMessage(
         contact.phoneNumber,
         { type: messageType, ...messageContent },
-        chatbotId
+        chatbotId,
+        user.userId
       );
     }
 
     // ✅ Store Message in Database
-  savedMessage = await prisma.message.create({
-      data: {
-        contact: {
-          connect: { id: contactId }, // ✅ Explicitly linking the contact
-        },
-        sender: "user",
-        text: text || "",
-        time: new Date(),
-        status: "SENT",
-        attachment: fileUrl,
-      },
-    });
+  // savedMessage = await prisma.message.create({
+  //     data: {
+  //       contact: {
+  //         connect: { id: contactId }, // ✅ Explicitly linking the contact
+  //       },
+  //       sender: "user",
+  //       text: text || "",
+  //       time: new Date(),
+  //       status: "SENT",
+  //       attachment: fileUrl,
+  //     },
+  //   });
 
-    // ✅ Emit message to frontend via socket
-    const io = req.app.get("socketio");
-    io.emit("newMessage", {
-      recipient: contact.phoneNumber, // Ensure correct recipient
-      message: savedMessage, // Send the saved message object
-      template: templateDetails,
-    });
+  //   // ✅ Emit message to frontend via socket
+  //   const io = req.app.get("socketio");
+  //   io.emit("newMessage", {
+  //     recipient: contact.phoneNumber, // Ensure correct recipient
+  //     message: savedMessage, // Send the saved message object
+  //     template: templateDetails,
+  //   });
 
     if (filePath) {
       fs.unlink(filePath, (err) => {

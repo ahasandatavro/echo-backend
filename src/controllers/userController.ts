@@ -119,28 +119,64 @@ export const getContacts = async (req: Request, res: Response): Promise<void> =>
     }
 
     // Retrieve the user's business account and its associated phone numbers
-    const businessAccount = await prisma.businessAccount.findUnique({
+    const businessAccounts = await prisma.businessAccount.findMany({
       where: { userId },
       include: { phoneNumbers: true },
     });
 
-    if (!businessAccount) {
+    if (!businessAccounts|| businessAccounts.length === 0) {
       res.status(404).json({ error: "Business account not found" });
       return;
     }
 
     // Map the phone numbers to the expected UI format
-    const contacts = businessAccount.phoneNumbers.map((phone:any) => ({
-      displayName: phone.displayName || "",
-      phoneNumber: phone.phoneNumber || "",
-      phoneNumberId: phone.metaPhoneNumberId,
-      connectionStatus: phone.connectionStatus || "",
-      subscription: phone.subscription || "",
+    const groupedContacts = businessAccounts.map((account) => ({
+      businessAccountId: account.metaWabaId,
+      phoneNumbers: account.phoneNumbers.map((phone) => ({
+        displayName: phone.displayName || "",
+        phoneNumber: phone.phoneNumber || "",
+        phoneNumberId: phone.metaPhoneNumberId,
+        connectionStatus: phone.connectionStatus || "",
+        subscription: phone.subscription || "",
+      })),
     }));
 
-    res.status(200).json(contacts);
+    res.status(200).json(groupedContacts);
   } catch (error: any) {
     console.error("Error retrieving contacts:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+
+export const updateSelectedContact = async (req: Request, res: Response): Promise<void> => {
+  try {
+    // Get the logged-in user's ID (assumed to be set by your authentication middleware)
+    const user:any = req.user; // Replace with actual user id retrieval
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
+    // Get the selected phone number id and waba id from the request body
+    const { selectedPhoneNumberId, selectedWabaId } = req.body;
+    if (!selectedPhoneNumberId || !selectedWabaId) {
+      res.status(400).json({ error: "Both selectedPhoneNumberId and selectedWabaId are required" });
+      return;
+    }
+
+    // Update the user record
+    const updatedUser = await prisma.user.update({
+      where: { id: user.userId },
+      data: {
+        selectedPhoneNumberId,
+        selectedWabaId,
+      },
+    });
+
+    res.status(200).json(updatedUser.id);
+  } catch (error: any) {
+    console.error("Error updating selected contact:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 };

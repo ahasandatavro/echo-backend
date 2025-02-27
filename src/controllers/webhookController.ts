@@ -41,8 +41,10 @@ export const webhookVerification = async (req: Request, res: Response) => {
       if (!changes || !Array.isArray(changes)) continue;
 
       for (const change of changes) {
+        const agentPhoneNumber=change.value?.metadata?.display_phone_number;
+        const agentPhoneNumberId=change.value?.metadata?.phone_number_id;
         const message = change.value?.messages?.[0];
-        const recipient = message?.from;
+        const recipient = message?.from;//customer
         if (recipient) {
           const allowedTestNumbers = process.env.ALLOWED_TEST_NUMBERS
           ? process.env.ALLOWED_TEST_NUMBERS.split(",").map((num) => num.trim())
@@ -53,7 +55,7 @@ export const webhookVerification = async (req: Request, res: Response) => {
           //console.log("❌ Ignoring message from an unknown sender:", recipient);
           return res.sendStatus(200); // ✅ Ignore and exit
         }
-          const processedMessage = await processWebhookMessage(recipient, message);
+          const processedMessage = await processWebhookMessage(recipient, message,agentPhoneNumber);
           io.emit("newMessage", { recipient, message: processedMessage });
         }
 

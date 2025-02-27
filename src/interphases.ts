@@ -8,6 +8,7 @@ export interface User {
     id: string; // or number, depending on your system
     role: string;
     email?: string; // Optional, add other properties as needed
+    selectedPhoneNumberId?:string;
   }
   
     export interface IQuestion extends BaseNodeData {
