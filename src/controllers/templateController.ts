@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 import { preprocessHtmlForWhatsApp } from "../helpers";
 import fs from "fs";
 import FormData from "form-data";
-
+import { prisma } from "../models/prismaClient";
 dotenv.config();
 
 
@@ -18,11 +18,59 @@ const axiosInstance = axios.create({
   },
 });
 
-// **Get All Templates**
-export const getAllTemplates = async (_req: Request, res: Response) => {
+
+export const getAllTemplates = async (req: Request, res: Response) => {
   try {
-    const response = await axiosInstance.get(WHATSAPP_GRAPH_API);
-    res.status(200).json(response.data);
+    const user: any = req.user;
+    const userRecord = await prisma.user.findUnique({
+      where: { id: user.userId },
+      select: { 
+        selectedWabaId: true
+      }
+    });
+    const templates = await prisma.template.findMany({
+      where: { userId: user.userId,
+        wabaId: userRecord?.selectedWabaId
+       },
+    });
+
+    const formattedTemplates = templates.map((tmpl:any) => {
+      let parsedContent = {};
+      try {
+        // Try to parse the stored content (which should be in your desired format)
+        parsedContent = JSON.parse(tmpl.content);
+      } catch (e) {
+        // Fallback: if parsing fails, we build the object from DB fields.
+        parsedContent = {
+          name: tmpl.name,
+          parameter_format: "POSITIONAL",
+          components: [],
+          language: tmpl.language,
+          status: tmpl.status,
+          category: tmpl.category,
+          id: tmpl.id.toString(),
+        };
+      }
+      return {
+        ...parsedContent,
+        // Ensure the main fields are present and correctly formatted:
+        name: tmpl.name,
+        language: tmpl.language,
+        status: tmpl.status,
+        category: tmpl.category,
+        id: tmpl.id.toString(),
+      };
+    });
+
+    // Create a dummy paging object. In a real-world scenario you might generate these cursors.
+    const paging = {
+      cursors: {
+        before: "MAZDZD",
+        after: "MjQZD",
+      },
+    };
+
+    res.status(200).json({ data: formattedTemplates, paging });
   } catch (error: any) {
     res.status(500).json({
       error: "Failed to fetch templates",
@@ -31,9 +79,16 @@ export const getAllTemplates = async (_req: Request, res: Response) => {
   }
 };
 
+
 // **Create a New Template**
 export const createTemplate = async (req: Request, res: Response) => {
   try {
+    const user:any=req.user;
+    const dbUser = await prisma.user.findFirst({
+      where: { id: user.userId },
+      select: { selectedWabaId: true },
+    });
+    const selectedWabaId = dbUser?.selectedWabaId;
     const { name, category, language } = req.body;
     const file = req.file;
     const filePath = req?.file?.path || "";
@@ -111,6 +166,31 @@ export const createTemplate = async (req: Request, res: Response) => {
       language,
       components: resolvedComponents,
     });
+    const templateContent = {
+      name,
+      parameter_format: "POSITIONAL",
+      components: resolvedComponents, // the processed components array
+      language,
+      // Use response.data.status if available, otherwise default to "PENDING"
+      status: response.data.status || "PENDING",
+      category,
+      // Ensure id is a string; if response.data.id exists, convert it to string
+      id: response.data.id ? response.data.id.toString() : undefined,
+    };
+
+    // Create the template in the database with the new structure in the content field.
+    const dbTemplate = await prisma.template.create({
+      data: {
+        name,
+        language,
+        category,
+        status: "PENDING", // We store pending status initially
+        content: JSON.stringify(templateContent),
+        userId: user?.userId,
+        wabaId: selectedWabaId,
+      },
+    });
+
     res.status(201).json(response.data);
   } catch (error: any) {
     res.status(500).json({

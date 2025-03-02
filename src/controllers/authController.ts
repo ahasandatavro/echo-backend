@@ -202,9 +202,8 @@ export const getAccessToken = async (req: Request, res: Response): Promise<void>
     const connectionStatusFromAPI = "CONNECTED"; // Default/derived value
     const subscriptionFromAPI = "Free";            // Default/derived value
 
-    // 7) Save the Meta data in your database via Prisma.
-    // Replace with the actual authenticated user ID (here hard-coded for demonstration).
-    const userId = 1;
+    const user:any=req.user;
+    const userId:any = user?.userId;
     if (!userId) {
       console.warn("User ID not found in request; skipping DB update.");
        res.status(200).json({ success: true, warning: "No user ID found" });

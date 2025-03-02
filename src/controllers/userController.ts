@@ -112,7 +112,8 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
 export const getContacts = async (req: Request, res: Response): Promise<void> => {
   try {
     // Get the logged-in user's ID (set by your auth middleware)
-    const userId = 1;
+    const user:any=req.user;
+    const userId:any = user?.userId;
     if (!userId) {
       res.status(401).json({ error: "Unauthorized" });
       return;

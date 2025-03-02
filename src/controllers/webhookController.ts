@@ -27,10 +27,9 @@ export const handleIncomingMessage = async (req: Request, res: Response) => {
 };
 
 export const webhookVerification = async (req: Request, res: Response) => {
-  
   try {
     const { entry } = req.body;
-    const io = req.app.get("socketio"); 
+    const io = req.app.get("socketio");
     if (!entry || !Array.isArray(entry)) {
       return res.status(400).send("Invalid request");
     }
@@ -41,39 +40,383 @@ export const webhookVerification = async (req: Request, res: Response) => {
       if (!changes || !Array.isArray(changes)) continue;
 
       for (const change of changes) {
-        const agentPhoneNumber=change.value?.metadata?.display_phone_number;
-        const agentPhoneNumberId=change.value?.metadata?.phone_number_id;
-        const message = change.value?.messages?.[0];
-        const recipient = message?.from;//customer
-        if (recipient) {
-          const allowedTestNumbers = process.env.ALLOWED_TEST_NUMBERS
-          ? process.env.ALLOWED_TEST_NUMBERS.split(",").map((num) => num.trim())
-          : [];
+        if (change.field === "message_template_status_update") {
+          // Call the function to update the template in the DB.
+          await updateTemplateInDb(change.value);
+        } else {
+          const agentPhoneNumber = change.value?.metadata?.display_phone_number;
+          const agentPhoneNumberId = change.value?.metadata?.phone_number_id;
+          const message = change.value?.messages?.[0];
+          const recipient = message?.from;
 
-        // ✅ Ignore messages from unknown senders
-        if (!allowedTestNumbers.includes(recipient)) {
-          //console.log("❌ Ignoring message from an unknown sender:", recipient);
-          return res.sendStatus(200); // ✅ Ignore and exit
-        }
-          const processedMessage = await processWebhookMessage(recipient, message,agentPhoneNumber);
-          io.emit("newMessage", { recipient, message: processedMessage });
-        }
+          if (recipient) {
+            const allowedTestNumbers = process.env.ALLOWED_TEST_NUMBERS
+              ? process.env.ALLOWED_TEST_NUMBERS.split(",").map((num) =>
+                  num.trim()
+                )
+              : [];
 
-        let conversation = await prisma.conversation.findFirst({
-          where: { recipient },
-          orderBy: {
-            updatedAt: 'desc', // Orders by the most recently updated conversation
-          },
-        });
+            // ✅ Ignore messages from unknown senders
+            if (!allowedTestNumbers.includes(recipient)) {
+              //console.log("❌ Ignoring message from an unknown sender:", recipient);
+              return res.sendStatus(200); // ✅ Ignore and exit
+            }
+            const processedMessage = await processWebhookMessage(
+              recipient,
+              message,
+              agentPhoneNumber
+            );
+            io.emit("newMessage", { recipient, message: processedMessage });
+          }
 
-        const text = message?.text?.body?.toLowerCase();
+          let conversation = await prisma.conversation.findFirst({
+            where: { recipient },
+            orderBy: {
+              updatedAt: "desc", // Orders by the most recently updated conversation
+            },
+          });
 
-        // Create or update conversation
-        if (!conversation) {
-          console.log("No conversation found for recipient. Attempting to create a new one...");
+          const text = message?.text?.body?.toLowerCase();
 
-          let chatbotId: number | null = null;
+          // Create or update conversation
+          if (!conversation) {
+            console.log(
+              "No conversation found for recipient. Attempting to create a new one..."
+            );
 
+            let chatbotId: number | null = null;
+
+            if (text) {
+              const keyword = await prisma.keyword.findFirst({
+                where: {
+                  value: {
+                    contains: text,
+                    mode: "insensitive",
+                  },
+                },
+                include: { chatbot: true },
+              });
+
+              if (keyword?.chatbot) {
+                chatbotId = keyword.chatbot.id;
+                console.log(`Keyword matched. Using chatbot ID: ${chatbotId}`);
+              }
+            }
+            if (!chatbotId) {
+              console.warn(
+                "No keyword match found. Unable to associate a chatbot."
+              );
+              await sendMessage(
+                recipient,
+                "Sorry, no chatbot is available for your query."
+              );
+              continue;
+            }
+
+            conversation = await prisma.conversation.create({
+              data: {
+                recipient,
+                chatbotId,
+                answeringQuestion: true,
+              },
+            });
+
+            console.log("New conversation created:", conversation);
+          }
+
+          let chatbotData;
+          if (conversation && conversation.chatbotId) {
+            chatbotData = await prisma.chatbot.findUnique({
+              where: { id: conversation.chatbotId },
+              include: { nodes: true, edges: true },
+            });
+
+            if (!chatbotData) {
+              console.warn(
+                `Chatbot with ID ${conversation.chatbotId} not found.`
+              );
+              // await sendMessage(recipient, "Sorry, the associated chatbot is unavailable.");
+              continue;
+            }
+          }
+
+          if (message?.interactive?.button_reply) {
+            const parts = message?.interactive?.button_reply.id.split("_node_");
+            const buttonId = "source_" + parts[0];
+            const nodeId = parseInt(parts[1]);
+
+            const selectedEdge = chatbotData.edges.find(
+              (edge) =>
+                edge.sourceHandle === buttonId && edge.sourceId === nodeId
+            );
+
+            const nextNodeId = selectedEdge
+              ? chatbotData.nodes.find(
+                  (node) => node.id === selectedEdge.targetId
+                )?.nodeId
+              : null;
+
+            // Find the current node data
+            const currentNode = chatbotData.nodes.find(
+              (node) => node.id === nodeId
+            );
+
+            if (currentNode?.data?.buttons_data?.saveAnswerVariable) {
+              const variableName =
+                currentNode?.data?.buttons_data?.saveAnswerVariable.startsWith(
+                  "@"
+                )
+                  ? currentNode?.data?.buttons_data?.saveAnswerVariable.slice(1)
+                  : currentNode?.data?.buttons_data?.saveAnswerVariable;
+
+              // Find the conversation
+              const conversation = await prisma.conversation.findFirst({
+                where: { recipient, chatbotId: currentNode.chatId },
+              });
+
+              if (conversation) {
+                // Check if the variable already exists
+                const existingVariable = await prisma.variable.findFirst({
+                  where: {
+                    name: variableName,
+                    chatbotId: currentNode.chatId,
+                    conversationId: conversation.id,
+                  },
+                });
+
+                if (existingVariable) {
+                  // Update the existing variable with the button reply title
+                  await prisma.variable.update({
+                    where: { id: existingVariable.id },
+                    data: {
+                      value: message.interactive.button_reply.title,
+                      nodeId: currentNode.id,
+                    },
+                  });
+                } else {
+                  // Create a new variable with the button reply title
+                  await prisma.variable.create({
+                    data: {
+                      name: variableName,
+                      value: message.interactive.button_reply.title,
+                      chatbotId: currentNode.chatId,
+                      conversationId: conversation.id,
+                    },
+                  });
+                }
+              }
+            }
+
+            if (nextNodeId) {
+              await processNode(
+                nextNodeId,
+                chatbotData.nodes,
+                chatbotData.edges,
+                recipient
+              );
+            }
+            continue;
+          }
+          if (message?.interactive?.list_reply) {
+            const listReplyId = message.interactive.list_reply.id;
+            const nodeId = parseInt(listReplyId.split("_node_")[1]);
+            const buttonId = listReplyId.split("_node_")[0];
+            const currentNode = chatbotData.nodes.find(
+              (node) => node.id === nodeId
+            );
+            if (currentNode?.data?.list_data?.saveAnswerVariable) {
+              const variableName =
+                currentNode?.data?.list_data?.saveAnswerVariable.startsWith("@")
+                  ? currentNode?.data?.list_data?.saveAnswerVariable.slice(1)
+                  : currentNode?.data?.list_data?.saveAnswerVariable;
+
+              // Find the conversation
+              const conversation = await prisma.conversation.findFirst({
+                where: { recipient, chatbotId: currentNode.chatId },
+              });
+
+              if (conversation) {
+                // Check if the variable already exists
+                const existingVariable = await prisma.variable.findFirst({
+                  where: {
+                    name: variableName,
+                    chatbotId: currentNode.chatId,
+                    conversationId: conversation.id,
+                  },
+                });
+
+                if (existingVariable) {
+                  // Update the existing variable with the list reply title
+                  await prisma.variable.update({
+                    where: { id: existingVariable.id },
+                    data: {
+                      value: message.interactive.list_reply.title,
+                      nodeId: currentNode.id,
+                    },
+                  });
+                } else {
+                  // Create a new variable with the list reply title
+                  await prisma.variable.create({
+                    data: {
+                      name: variableName,
+                      value: message.interactive.list_reply.title,
+                      chatbotId: currentNode.chatId,
+                      conversationId: conversation.id,
+                    },
+                  });
+                }
+              }
+            }
+
+            const selectedEdge = chatbotData.edges.find(
+              (edge) =>
+                edge.sourceId === currentNode?.id &&
+                edge.sourceHandle === buttonId
+            );
+
+            const nextNodeId = selectedEdge
+              ? chatbotData.nodes.find(
+                  (node) => node.id === selectedEdge.targetId
+                )?.nodeId
+              : null;
+
+            if (nextNodeId) {
+              await processNode(
+                nextNodeId,
+                chatbotData.nodes,
+                chatbotData.edges,
+                recipient
+              );
+            }
+          }
+
+          // Handle text responses to questions
+          if (conversation.answeringQuestion) {
+            const currentNode = await prisma.node.findFirst({
+              where: { id: conversation.currentNodeId },
+            });
+
+            if (currentNode?.type === "question") {
+              const {
+                validation,
+                validationFailureExitCount = 3,
+                saveAnswerVariable,
+              } = currentNode.data?.question_data || {};
+
+              let failureCount = conversation.validationFailureCount;
+
+              if (message?.type === "text" && text) {
+                const isValid = validateUserResponse(text, validation);
+
+                if (isValid) {
+                  await prisma.conversation.update({
+                    where: { id: conversation.id },
+                    data: {
+                      answeringQuestion: false,
+                      validationFailureCount: 0,
+                    },
+                  });
+
+                  // Save the response to the variable table if saveAnswerVariable exists
+                  if (saveAnswerVariable) {
+                    const variableName = saveAnswerVariable.startsWith("@")
+                      ? saveAnswerVariable.slice(1)
+                      : saveAnswerVariable;
+
+                    const existingVariable = await prisma.variable.findFirst({
+                      where: {
+                        name: variableName,
+                        chatbotId: currentNode.chatId,
+                        conversationId: conversation.id,
+                      },
+                    });
+
+                    if (existingVariable) {
+                      await prisma.variable.update({
+                        where: { id: existingVariable.id },
+                        data: { value: text },
+                      });
+                    } else {
+                      await prisma.variable.create({
+                        data: {
+                          name: variableName,
+                          value: text,
+                          chatbotId: currentNode.chatId,
+                          conversationId: conversation.id,
+                        },
+                      });
+                    }
+                  }
+
+                  console.log(
+                    "Text response is valid. Proceeding to the next node..."
+                  );
+                  const nextNodeId = getNextNodeIdFromQuestion(
+                    chatbotData,
+                    null,
+                    currentNode.id
+                  );
+                  if (nextNodeId) {
+                    await processNode(
+                      nextNodeId,
+                      chatbotData.nodes,
+                      chatbotData.edges,
+                      recipient
+                    );
+                  }
+                } else {
+                  // Increment failure count
+                  failureCount += 1;
+
+                  if (failureCount >= validationFailureExitCount) {
+                    // End the chat flow after exceeding failure limit
+                    await prisma.conversation.update({
+                      where: { id: conversation.id },
+                      data: {
+                        answeringQuestion: false,
+                        validationFailureCount: 0,
+                      },
+                    });
+
+                    await sendMessage(
+                      recipient,
+                      {
+                        type: "text",
+                        message: `You have given incorrect answers ${validationFailureExitCount} times. Closing chatflow.`,
+                      },
+                      true
+                    );
+
+                    console.warn(
+                      "Chatflow ended due to repeated invalid responses."
+                    );
+                  } else {
+                    // Update failure count and send error message
+                    await prisma.conversation.update({
+                      where: { id: conversation.id },
+                      data: { validationFailureCount: failureCount },
+                    });
+
+                    console.warn(
+                      `Response is invalid. Failure count: ${failureCount}`
+                    );
+                    await sendMessage(
+                      recipient,
+                      {
+                        type: "text",
+                        message:
+                          validation?.errorMessage ||
+                          "Invalid response. Please try again.",
+                      },
+                      true
+                    );
+                  }
+                }
+              }
+            }
+          }
+
+          // Handle keyword-based text messages
           if (text) {
             const keyword = await prisma.keyword.findFirst({
               where: {
@@ -86,281 +429,13 @@ export const webhookVerification = async (req: Request, res: Response) => {
             });
 
             if (keyword?.chatbot) {
-              chatbotId = keyword.chatbot.id;
-              console.log(`Keyword matched. Using chatbot ID: ${chatbotId}`);
-            }
-          }
-          if (!chatbotId) {
-            console.warn("No keyword match found. Unable to associate a chatbot.");
-            await sendMessage(recipient, "Sorry, no chatbot is available for your query.");
-            continue;
-          }
-
-          conversation = await prisma.conversation.create({
-            data: {
-              recipient,
-              chatbotId,
-              answeringQuestion: true,
-            },
-          });
-
-          console.log("New conversation created:", conversation);
-        }
-        let chatbotData;
-   if(conversation && conversation.chatbotId){
-  chatbotData = await prisma.chatbot.findUnique({
-      where: { id: conversation.chatbotId},
-      include: { nodes: true, edges: true },
-    });
-    
-    if (!chatbotData) {
-      console.warn(`Chatbot with ID ${conversation.chatbotId} not found.`);
-     // await sendMessage(recipient, "Sorry, the associated chatbot is unavailable.");
-      continue;
-    }
-
-   }
-   
-        if (message?.interactive?.button_reply) {
-          const parts = message?.interactive?.button_reply.id.split("_node_");
-          const buttonId = "source_" + parts[0];
-          const nodeId = parseInt(parts[1]);
-        
-          const selectedEdge = chatbotData.edges.find(
-            (edge) =>
-              edge.sourceHandle === buttonId && edge.sourceId === nodeId
-          );
-        
-          const nextNodeId = selectedEdge
-            ? chatbotData.nodes.find((node) => node.id === selectedEdge.targetId)?.nodeId
-            : null;
-        
-          // Find the current node data
-          const currentNode = chatbotData.nodes.find((node) => node.id === nodeId);
-        
-          if (currentNode?.data?.buttons_data?.saveAnswerVariable) {
-            const variableName = currentNode?.data?.buttons_data?.saveAnswerVariable.startsWith("@")
-              ? currentNode?.data?.buttons_data?.saveAnswerVariable.slice(1)
-              : currentNode?.data?.buttons_data?.saveAnswerVariable;
-        
-            // Find the conversation
-            const conversation = await prisma.conversation.findFirst({
-              where: { recipient, chatbotId: currentNode.chatId },
-            });
-        
-            if (conversation) {
-              // Check if the variable already exists
-              const existingVariable = await prisma.variable.findFirst({
-                where: {
-                  name: variableName,
-                  chatbotId: currentNode.chatId,
-                  conversationId: conversation.id,
-                },
+              const chatbotId = keyword.chatbot.id;
+              await prisma.conversation.update({
+                where: { id: conversation.id },
+                data: { answeringQuestion: false },
               });
-        
-              if (existingVariable) {
-                // Update the existing variable with the button reply title
-                await prisma.variable.update({
-                  where: { id: existingVariable.id },
-                  data: { value: message.interactive.button_reply.title, nodeId:currentNode.id },
-                });
-              } else {
-                // Create a new variable with the button reply title
-                await prisma.variable.create({
-                  data: {
-                    name: variableName,
-                    value: message.interactive.button_reply.title,
-                    chatbotId: currentNode.chatId,
-                    conversationId: conversation.id,
-                  },
-                });
-              }
+              await processChatFlow(chatbotId, recipient);
             }
-          }
-        
-          if (nextNodeId) {
-            await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient);
-          }
-          continue;
-        }
-        if (message?.interactive?.list_reply) {
-          const listReplyId = message.  interactive.list_reply.id;
-          const nodeId = parseInt(listReplyId.split("_node_")[1]);
-          const buttonId = (listReplyId.split("_node_")[0]);
-          const currentNode = chatbotData.nodes.find((node) => node.id === nodeId);
-          if (currentNode?.data?.list_data?.saveAnswerVariable) {
-            const variableName = currentNode?.data?.list_data?.saveAnswerVariable.startsWith("@")
-              ? currentNode?.data?.list_data?.saveAnswerVariable.slice(1)
-              : currentNode?.data?.list_data?.saveAnswerVariable;
-        
-            // Find the conversation
-            const conversation = await prisma.conversation.findFirst({
-              where: { recipient, chatbotId: currentNode.chatId },
-            });
-        
-            if (conversation) {
-              // Check if the variable already exists
-              const existingVariable = await prisma.variable.findFirst({
-                where: {
-                  name: variableName,
-                  chatbotId: currentNode.chatId,
-                  conversationId: conversation.id,
-                },
-              });
-        
-              if (existingVariable) {
-                // Update the existing variable with the list reply title
-                await prisma.variable.update({
-                  where: { id: existingVariable.id },
-                  data: { value: message.interactive.list_reply.title, nodeId: currentNode.id },
-                });
-              } else {
-                // Create a new variable with the list reply title
-                await prisma.variable.create({
-                  data: {
-                    name: variableName,
-                    value: message.interactive.list_reply.title,
-                    chatbotId: currentNode.chatId,
-                    conversationId: conversation.id,
-                  },
-                });
-              }
-            }
-          }
-        
-          const selectedEdge = chatbotData.edges.find(
-            (edge) => edge.sourceId === currentNode?.id &&  edge.sourceHandle === buttonId
-          );
-        
-          const nextNodeId = selectedEdge
-            ? chatbotData.nodes.find((node) => node.id === selectedEdge.targetId)?.nodeId
-            : null;
-        
-          if (nextNodeId) {
-            await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient);
-          }
-        }
-
-        // Handle text responses to questions
-        if (conversation.answeringQuestion) {
-          const currentNode = await prisma.node.findFirst({
-            where: { id: conversation.currentNodeId },
-          });
-        
-          if (currentNode?.type === "question") {
-            const { validation, validationFailureExitCount = 3, saveAnswerVariable } =
-              currentNode.data?.question_data || {};
-          
-            let failureCount = conversation.validationFailureCount;
-          
-            if (message?.type === "text" && text) {
-              const isValid = validateUserResponse(text, validation);
-          
-              if (isValid) {
-                await prisma.conversation.update({
-                  where: { id: conversation.id },
-                  data: { answeringQuestion: false, validationFailureCount: 0 },
-                });
-          
-                // Save the response to the variable table if saveAnswerVariable exists
-                if (saveAnswerVariable) {
-                  const variableName = saveAnswerVariable.startsWith("@")
-                    ? saveAnswerVariable.slice(1)
-                    : saveAnswerVariable;
-          
-                  const existingVariable = await prisma.variable.findFirst({
-                    where: {
-                      name: variableName,
-                      chatbotId: currentNode.chatId,
-                      conversationId: conversation.id,
-                    },
-                  });
-          
-                  if (existingVariable) {
-                    await prisma.variable.update({
-                      where: { id: existingVariable.id },
-                      data: { value: text },
-                    });
-                  } else {
-                    await prisma.variable.create({
-                      data: {
-                        name: variableName,
-                        value: text,
-                        chatbotId: currentNode.chatId,
-                        conversationId: conversation.id,
-                      },
-                    });
-                  }
-                }
-          
-                console.log("Text response is valid. Proceeding to the next node...");
-                const nextNodeId = getNextNodeIdFromQuestion(chatbotData, null, currentNode.id);
-                if (nextNodeId) {
-                  await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient);
-                }
-              } else {
-                // Increment failure count
-                failureCount += 1;
-          
-                if (failureCount >= validationFailureExitCount) {
-                  // End the chat flow after exceeding failure limit
-                  await prisma.conversation.update({
-                    where: { id: conversation.id },
-                    data: { answeringQuestion: false, validationFailureCount: 0 },
-                  });
-          
-                  await sendMessage(
-                    recipient,
-                    {
-                      type: "text",
-                      message: `You have given incorrect answers ${validationFailureExitCount} times. Closing chatflow.`,
-                    },
-                    true
-                  );
-          
-                  console.warn("Chatflow ended due to repeated invalid responses.");
-                } else {
-                  // Update failure count and send error message
-                  await prisma.conversation.update({
-                    where: { id: conversation.id },
-                    data: { validationFailureCount: failureCount },
-                  });
-          
-                  console.warn(`Response is invalid. Failure count: ${failureCount}`);
-                  await sendMessage(
-                    recipient,
-                    {
-                      type: "text",
-                      message: validation?.errorMessage || "Invalid response. Please try again.",
-                    },
-                    true
-                  );
-                }
-              }
-            }
-          }
-          
-        }
-        
-        // Handle keyword-based text messages
-        if (text) {
-          const keyword = await prisma.keyword.findFirst({
-            where: {
-              value: {
-                contains: text,
-                mode: "insensitive",
-              },
-            },
-            include: { chatbot: true },
-          });
-
-          if (keyword?.chatbot) {
-            const chatbotId = keyword.chatbot.id;
-            await prisma.conversation.update({
-              where: { id: conversation.id },
-              data: { answeringQuestion: false },
-            });
-            await processChatFlow(chatbotId, recipient);
           }
         }
       }
@@ -373,6 +448,29 @@ export const webhookVerification = async (req: Request, res: Response) => {
   }
 };
 
+const updateTemplateInDb = async (data: any) => {
+  // Extract the fields from the webhook payload
+  const {
+    event, // e.g. "APPROVED", "REJECTED"
+    message_template_id,
+    message_template_name,
+    message_template_language,
+    reason,
+  } = data;
+
+  // Update the template record in your database by unique name.
+  // Adjust this logic if you prefer to use a different unique field.
+  await prisma.template.update({
+    where: { name: message_template_name },
+    data: {
+      status: event,
+      language: message_template_language,
+      // Optionally, store "reason" or additional data if your model supports it.
+      updatedAt: new Date(),
+    },
+  });
+};
+
 const getNextNodeIdFromQuestion = (
   chatbotData: any, // The chatbot data with nodes and edges
   buttonId: string | null, // Optional button ID for branching logic
@@ -382,7 +480,10 @@ const getNextNodeIdFromQuestion = (
   const outgoingEdge = chatbotData.edges.find((edge: any) => {
     // Match the sourceId with the current node's ID
     // Optionally check for buttonId in the sourceHandle for branching
-    return edge.sourceId === currentNodeId && (!buttonId || edge.sourceHandle === buttonId);
+    return (
+      edge.sourceId === currentNodeId &&
+      (!buttonId || edge.sourceHandle === buttonId)
+    );
   });
 
   if (!outgoingEdge) {
@@ -391,10 +492,14 @@ const getNextNodeIdFromQuestion = (
   }
 
   // Find the target node ID from the edge
-  const nextNode = chatbotData.nodes.find((node: any) => node.id === outgoingEdge.targetId);
+  const nextNode = chatbotData.nodes.find(
+    (node: any) => node.id === outgoingEdge.targetId
+  );
 
   if (!nextNode) {
-    console.warn(`No target node found for edge from node ID: ${currentNodeId}`);
+    console.warn(
+      `No target node found for edge from node ID: ${currentNodeId}`
+    );
     return null;
   }
 
