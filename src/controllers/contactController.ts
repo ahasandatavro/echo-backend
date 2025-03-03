@@ -12,38 +12,8 @@ import { handleChatbotTrigger } from "../subProcessors/webhook";
 const prisma = new PrismaClient();
 import FormData from "form-data";
 import axios from "axios";
-/** 📌 Get All Contacts */
-// export const getAllContacts = async (req: Request, res: Response) => {
-//   try {
-//     const contacts = await prisma.contact.findMany({
-//       select: {
-//         id: true,
-//         name: true,
-//         phoneNumber: true,
-//         attributes: true, // Fetch attributes as JSON
-//         subscribed: true,
-//         sendSMS: true,
-//         ticketStatus: true,
-//       },
-//     });
 
-//     // Ensure attributes is an array
-//     const formattedContacts = contacts.map((contact) => ({
-//       ...contact,
-//       attributes: Array.isArray(contact.attributes)
-//         ? contact.attributes
-//         : Object.entries(contact.attributes || {}).map(([key, value]) => ({
-//             key,
-//             value,
-//           })),
-//     }));
 
-//     res.json(formattedContacts);
-//   } catch (error) {
-//     console.error("Error fetching contacts:", error);
-//     res.status(500).json({ error: "Internal Server Error" });
-//   }
-// };
 export const getAllContacts = async (req: Request, res: Response) => {
   try {
     // Extract selectedPhoneNumberId from user
@@ -274,31 +244,6 @@ const parseAttributes = (attributes: string): Record<string, string> => {
   }
 };
 
-// export const getMessagesByContactId = async (req: Request, res: Response) => {
-//   try {
-//     const { id } = req.params;
-
-//     // Validate input
-//     if (!id) {
-//       return res.status(400).json({ message: "Contact ID is required" });
-//     }
-
-//     // Fetch messages
-//     const messages = await prisma.message.findMany({
-//       where: { contactId: parseInt(id) },
-//       orderBy: { time: "asc" },
-//       include: {
-//         template: true, // ✅ Fetch template details alongside messages
-//       },
-//     });
-
-//     res.status(200).json(messages);
-//   } catch (error) {
-//     console.error("Error fetching messages:", error);
-//     res.status(500).json({ message: "Error retrieving messages" });
-//   }
-// };
-
 export const getMessagesByContactId = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -355,7 +300,6 @@ export const getMessagesByContactId = async (req: Request, res: Response) => {
     res.status(500).json({ message: "Error retrieving messages" });
   }
 };
-
 
 export const getAttributes = async (req: Request, res: Response) => {
   try {
@@ -451,9 +395,6 @@ export const getTags = async (req: Request, res: Response) => {
   }
 };
 
-/**
- * Add a tag to a contact
- */
 export const addTag = async (req: Request, res: Response) => {
   try {
     const contactId = parseInt(req.params.id);
@@ -483,9 +424,6 @@ export const addTag = async (req: Request, res: Response) => {
   }
 };
 
-/**
- * Remove a tag from a contact
- */
 export const removeTag = async (req: Request, res: Response) => {
   try {
     const contactId = parseInt(req.params.id);
@@ -527,9 +465,6 @@ export const getChatHistory = async (req: Request, res: Response) => {
   }
 };
 
-/**
- * ✅ Update chat status & track in history
- */
 export const updateChatStatus = async (req: Request, res: Response) => {
   const { id } = req.params;
   const { newStatus } = req.body; // `changedById` is the user ID (agent/bot)

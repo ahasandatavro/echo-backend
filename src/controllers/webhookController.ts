@@ -9,7 +9,7 @@ import {
 import { prisma } from "../models/prismaClient";
 import { validateUserResponse } from "../helpers/validation";
 import { processWebhookMessage } from "../processors/inboxProcessor";
-
+import { processBroadcastStatus } from "../subProcessors/webhook";
 // Webhook Verification for WhatsApp
 export const handleIncomingMessage = async (req: Request, res: Response) => {
   const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN;
@@ -40,6 +40,10 @@ export const webhookVerification = async (req: Request, res: Response) => {
       if (!changes || !Array.isArray(changes)) continue;
 
       for (const change of changes) {
+        
+        const statuses = change.value?.statuses;
+       if(statuses) await processBroadcastStatus(statuses);
+
         if (change.field === "message_template_status_update") {
           // Call the function to update the template in the DB.
           await updateTemplateInDb(change.value);

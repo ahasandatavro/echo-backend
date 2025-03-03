@@ -5,8 +5,9 @@ import { preprocessHtmlForWhatsApp } from "../helpers";
 import fs from "fs";
 import FormData from "form-data";
 import { prisma } from "../models/prismaClient";
-dotenv.config();
+import { brodcastTemplate } from "../processors/template/templateProcessor";
 
+dotenv.config();
 
 const WHATSAPP_GRAPH_API = `${process.env.META_BASE_URL}/${process.env.META_WHATSAPP_BUSINESS_ID}/message_templates`;
 
@@ -212,6 +213,91 @@ export const deleteTemplate = async (req: Request, res: Response) => {
     res.status(500).json({
       error: "Failed to delete template",
       details: error.response?.data || error.message,
+    });
+  }
+};
+
+export const createBroadcast = async (req: Request, res: Response) => {
+  try {
+    const { broadcastName, templateName, userId, contacts, chatbotId } = req.body;
+    const user:any=req.user;
+    const dbUser=await prisma.user.findFirst({
+      where: { id: user.userId },
+      select: { id:true,selectedPhoneNumberId: true },
+    })
+    const phoneNumberId = dbUser?.selectedPhoneNumberId;
+    const contactsToConnect = await prisma.contact.findMany({
+      where: {
+        phoneNumber: { in: contacts },
+      },
+      select: { id: true },
+    });
+    const broadcast = await prisma.broadcast.create({
+      data: {
+        name: broadcastName,
+        templateName,
+        userId:dbUser?.id || 1,
+        phoneNumberId, 
+        recipients: {
+          create: contactsToConnect.map((contact) => ({
+            contact: { connect: { id: contact.id } },
+          })),
+        },
+      },
+    });
+
+    for (const phoneNumber of contacts) {
+      // Call sendTemplate and pass broadcast.id in the opaque callback (for tracking in webhook)
+      await brodcastTemplate(phoneNumber, templateName, chatbotId, broadcast.id);
+    }
+
+    res.status(200).json({
+      success: true,
+      broadcastId: broadcast.id,
+      message: "Broadcast created successfully!",
+    });
+  } catch (error: any) {
+    console.error("Error creating broadcast:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to create broadcast",
+      error: error.message,
+    });
+  }
+};
+
+export const getBroadcastStats = async (req: Request, res: Response) => {
+  try {
+    const broadcastId = parseInt(req.params.id, 10);
+    if (isNaN(broadcastId)) {
+      return res.status(400).json({ error: "Invalid broadcast id" });
+    }
+
+    // Group the broadcast recipients by status for the given broadcast
+    const stats = await prisma.broadcastRecipient.groupBy({
+      by: ["status"],
+      where: { broadcastId },
+      _count: { _all: true },
+    });
+
+    // Create a default stats object with zeros.
+    const defaultStats: { [key: string]: number } = {
+      SENT: 0,
+      DELIVERED: 0,
+      READ: 0,
+      FAILED: 0,
+    };
+
+    // Map the groupBy results into the defaultStats object.
+    stats.forEach((stat) => {
+      defaultStats[stat.status] = stat._count._all;
+    });
+
+    res.status(200).json({ data: defaultStats });
+  } catch (error: any) {
+    res.status(500).json({
+      error: "Failed to fetch broadcast stats",
+      details: error.message,
     });
   }
 };

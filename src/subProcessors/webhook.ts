@@ -1,5 +1,6 @@
 import { google } from "googleapis";
 import { prisma } from '../models/prismaClient';
+import { BroadcastStatus } from "@prisma/client";
 import { resolveVariables } from "../helpers/validation";
 import { processChatFlow } from "../processors/webhook/webhookProcessor";
 /**
@@ -299,5 +300,48 @@ export const handleChatbotTrigger=async(text:string, recipient:string)=>{
       data: { answeringQuestion: false },
     });
     await processChatFlow(chatbot.id, recipient);
+  }
+}
+
+export async function processBroadcastStatus(statuses: any[]): Promise<void> {
+  for (const statusObj of statuses) {
+    const phoneNumber = statusObj.recipient_id; // e.g. "1234567890"
+    const newStatus = statusObj.status;         // e.g. "delivered", "read", "failed"
+    // If you included "biz_opaque_callback_data" in the message
+    const broadcastIdString = statusObj.biz_opaque_callback_data; 
+    // e.g. "broadcastId=123"
+    let broadcastId: number | undefined;
+    
+    if (broadcastIdString && broadcastIdString.startsWith("broadcastId=")) {
+      broadcastId = parseInt(broadcastIdString.replace("broadcastId=", ""), 10);
+    }
+    
+    // Convert WhatsApp status to your enum
+    let updatedStatus: BroadcastStatus = "SENT";
+    switch (newStatus) {
+      case "delivered":
+        updatedStatus = "DELIVERED";
+        break;
+      case "read":
+        updatedStatus = "READ";
+        break;
+      case "failed":
+        updatedStatus = "FAILED";
+        break;
+      // Add more cases if needed
+    }
+    
+    if (broadcastId && phoneNumber) {
+      // Update the BroadcastRecipient record matching broadcastId and phoneNumber
+      await prisma.broadcastRecipient.updateMany({
+        where: {
+          broadcastId,
+          contact: { phoneNumber }, // Using nested condition on the related Contact
+        },
+        data: {
+          status: updatedStatus,
+        },
+      });
+    }
   }
 }

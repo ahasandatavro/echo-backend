@@ -106,6 +106,33 @@ model Message {
   template       Template?    @relation(fields: [templateId], references: [id])  
 }
 
+model Broadcast {
+  id            Int       @id @default(autoincrement())
+  name          String
+  templateName  String
+  userId        Int
+  phoneNumberId String?   // e.g. your BusinessPhoneNumber metaPhoneNumberId
+  createdAt     DateTime  @default(now())
+   recipients BroadcastRecipient[]
+}
+
+model BroadcastRecipient {
+  id          Int              @id @default(autoincrement())
+  broadcast   Broadcast        @relation(fields: [broadcastId], references: [id])
+  broadcastId Int
+  contact     Contact          @relation(fields: [contactId], references: [id])
+  contactId   Int
+  status      BroadcastStatus  @default(SENT)
+  createdAt   DateTime         @default(now())
+}
+
+enum BroadcastStatus {
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
 model Contact {
   id                                                              Int                 @id @default(autoincrement())
   name                                                            String?
@@ -131,6 +158,7 @@ model Contact {
   lastMessageTime      DateTime?           
   timerStartTime       DateTime?          
   timerEndTime         DateTime? 
+  broadcasts BroadcastRecipient[]
 }
 
 model Note {
