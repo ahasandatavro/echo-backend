@@ -270,9 +270,18 @@ export const getBroadcastStats = async (req: Request, res: Response) => {
   try {
     const broadcastId = parseInt(req.params.id, 10);
     if (isNaN(broadcastId)) {
-      return res.status(400).json({ error: "Invalid broadcast id" });
+       res.status(400).json({ error: "Invalid broadcast id" });
     }
-
+    const broadcast = await prisma.broadcast.findUnique({
+      where: { id: broadcastId },
+      include: {
+        recipients: true,
+      },
+    });
+    if (!broadcast) {
+       res.status(404).json({ error: "Broadcast not found" });
+    }
+    const totalRecipients = broadcast?.recipients.length;
     // Group the broadcast recipients by status for the given broadcast
     const stats = await prisma.broadcastRecipient.groupBy({
       by: ["status"],
@@ -293,7 +302,11 @@ export const getBroadcastStats = async (req: Request, res: Response) => {
       defaultStats[stat.status] = stat._count._all;
     });
 
-    res.status(200).json({ data: defaultStats });
+    res.status(200).json({data: {
+      ...defaultStats,
+      totalRecipients,
+    },
+});
   } catch (error: any) {
     res.status(500).json({
       error: "Failed to fetch broadcast stats",
@@ -301,3 +314,159 @@ export const getBroadcastStats = async (req: Request, res: Response) => {
     });
   }
 };
+
+export const getBroadcasts = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { startDate, endDate, dateRange } = req.query;
+    let where: any = {};
+  
+    if (dateRange && dateRange !== "customRange") {
+      const today = new Date();
+      let start: Date | null = null;
+      if (dateRange === "7days") {
+        start = new Date(today);
+        start.setDate(today.getDate() - 7);
+      } else if (dateRange === "30days") {
+        start = new Date(today);
+        start.setDate(today.getDate() - 30);
+      }
+      if (start) {
+        where.createdAt = { gte: start, lte: today };
+      } else if (startDate && endDate) {
+        // fallback to custom range if dateRange value is unsupported
+        where.createdAt = {
+          gte: new Date(startDate as string),
+          lte: new Date(endDate as string),
+        };
+      }
+    } else if (startDate && endDate) {
+      // Use custom date range if dateRange is "customRange" or not provided
+      where.createdAt = {
+        gte: new Date(startDate as string),
+        lte: new Date(endDate as string),
+      };
+    }
+    const broadcasts = await prisma.broadcast.findMany({
+      where,
+      include: { recipients: true },
+    });
+    res.status(200).json(broadcasts);
+  } catch (error) {
+    console.error('Error fetching broadcasts:', error);
+    res.status(500).json({ error: 'Failed to fetch broadcasts' });
+  }
+};
+
+export const getTemplateByName = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { templateName } = req.params;
+
+    // Fetch the template record from the DB
+    const tmpl = await prisma.template.findUnique({
+      where: { name: templateName },
+    });
+
+    if (!tmpl) {
+       res.status(404).json({ error: 'Template not found' });
+    }
+    if(tmpl){
+      const formattedTemplates = (() => {
+        let parsedContent = {};
+        try {
+          // Try to parse the stored content (which should be in your desired format)
+          parsedContent = JSON.parse(tmpl?.content ||"{}");
+        } catch (e) {
+          // Fallback: if parsing fails, we build the object from DB fields.
+          parsedContent = {
+            name: tmpl.name,
+            parameter_format: "POSITIONAL",
+            components: [],
+            language: tmpl.language,
+            status: tmpl.status,
+            category: tmpl.category,
+            id: tmpl.id.toString(),
+          };
+        }
+        return {
+          ...parsedContent,
+          // Ensure the main fields are present and correctly formatted:
+          name: tmpl.name,
+          language: tmpl.language,
+          status: tmpl.status,
+          category: tmpl.category,
+          id: tmpl.id.toString(),
+        };
+      })();
+  
+      // Create a dummy paging object. In a real-world scenario you might generate these cursors.
+      const paging = {
+        cursors: {
+          before: "MAZDZD",
+          after: "MjQZD",
+        },
+      };
+  
+      res.status(200).json({ data: formattedTemplates, paging });
+    }
+
+  } catch (error) {
+    console.error('Error fetching template by name:', error);
+    res.status(500).json({ error: 'Failed to fetch template' });
+  }
+};
+
+// export const getTemplateByName = async (req: Request, res: Response): Promise<void> => {
+//   try {
+//     const { templateName } = req.params;
+
+//     // Fetch the template record from the DB
+//     const tmpl = await prisma.template.findUnique({
+//       where: { name: templateName },
+//     });
+
+//     if (!tmpl) {
+//      res.status(404).json({ error: 'Template not found' });
+//     }
+
+//     const formattedTemplates = (() => {
+//       let parsedContent: any = {};
+//       try {
+//         // Try to parse the stored content (which should be in your desired format)
+//         parsedContent = JSON.parse(tmpl.content|| "{}");
+//       } catch (e) {
+//         // Fallback: if parsing fails, we build the object from DB fields.
+//         parsedContent = {
+//           name: tmpl.name,
+//           parameter_format: "POSITIONAL",
+//           components: [],
+//           language: tmpl.language,
+//           status: tmpl.status,
+//           category: tmpl.category,
+//           id: tmpl.id.toString(),
+//         };
+//       }
+//       return {
+//         ...parsedContent,
+//         // Ensure the main fields are present and correctly formatted:
+//         name: tmpl.name,
+//         language: tmpl.language,
+//         status: tmpl.status,
+//         category: tmpl.category,
+//         id: tmpl.id.toString(),
+//       };
+//     })(); // Immediately invoke the function
+
+//     // Create a dummy paging object. In a real-world scenario you might generate these cursors.
+//     const paging = {
+//       cursors: {
+//         before: "MAZDZD",
+//         after: "MjQZD",
+//       },
+//     };
+
+//     res.status(200).json({ data: formattedTemplates, paging });
+//   } catch (error) {
+//     console.error('Error fetching template by name:', error);
+//     res.status(500).json({ error: 'Failed to fetch template' });
+//   }
+// };
