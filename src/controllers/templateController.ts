@@ -5,8 +5,15 @@ import { preprocessHtmlForWhatsApp } from "../helpers";
 import fs from "fs";
 import FormData from "form-data";
 import { prisma } from "../models/prismaClient";
-import { brodcastTemplate } from "../processors/template/templateProcessor";
-
+import { brodcastTemplate } from "../processors/template/templateProcessor";interface ButtonData {
+  id?: number;
+  type: string;      // e.g. "Visit Website", "Call Phone", "Copy offer code", "Quick replies"
+  label?: string;    // The text you want displayed on the button
+  url?: string;
+  phone?: string;
+  code?: string;
+  [key: string]: any;
+}
 dotenv.config();
 
 const WHATSAPP_GRAPH_API = `${process.env.META_BASE_URL}/${process.env.META_WHATSAPP_BUSINESS_ID}/message_templates`;
@@ -19,23 +26,20 @@ const axiosInstance = axios.create({
   },
 });
 
-
 export const getAllTemplates = async (req: Request, res: Response) => {
   try {
     const user: any = req.user;
     const userRecord = await prisma.user.findUnique({
       where: { id: user.userId },
-      select: { 
-        selectedWabaId: true
-      }
+      select: {
+        selectedWabaId: true,
+      },
     });
     const templates = await prisma.template.findMany({
-      where: { userId: user.userId,
-        wabaId: userRecord?.selectedWabaId
-       },
+      where: { userId: user.userId, wabaId: userRecord?.selectedWabaId },
     });
 
-    const formattedTemplates = templates.map((tmpl:any) => {
+    const formattedTemplates = templates.map((tmpl: any) => {
       let parsedContent = {};
       try {
         // Try to parse the stored content (which should be in your desired format)
@@ -80,11 +84,10 @@ export const getAllTemplates = async (req: Request, res: Response) => {
   }
 };
 
-
 // **Create a New Template**
 export const createTemplate = async (req: Request, res: Response) => {
   try {
-    const user:any=req.user;
+    const user: any = req.user;
     const dbUser = await prisma.user.findFirst({
       where: { id: user.userId },
       select: { selectedWabaId: true },
@@ -160,7 +163,58 @@ export const createTemplate = async (req: Request, res: Response) => {
 
     // ✅ Resolve all async component modifications
     const resolvedComponents = await Promise.all(processedComponents);
+    const buttonsData: ButtonData[] = JSON.parse(req.body.buttons || "[]");
 
+    // 3) Transform them into Meta's "BUTTONS" component if any exist
+    if (buttonsData.length > 0) {
+      // Map each frontend button to a Meta button object
+      const metaButtons = buttonsData.map((button) => {
+        // Remove unwanted keys like "id", "labelLimit", etc.
+        const { id, labelLimit, urlLimit, phoneLimit, codeLimit, ...rest } = button;
+    
+        // We'll convert your custom "type" to Meta's "type" ("PHONE_NUMBER", "URL", or "QUICK_REPLY")
+        switch (rest.type) {
+          case "Call Phone":
+            return {
+              type: "PHONE_NUMBER",
+              text: rest.label || "Call",
+              phone_number: rest.phone || "",
+            };
+    
+          case "Visit Website":
+            return {
+              type: "URL",
+              text: rest.label || "Visit us",
+              url: rest.url || "",
+            };
+    
+          case "Copy offer code":
+            // Typically a quick reply with some text
+            return {
+              type: "QUICK_REPLY",
+              text: rest.label || "Offer Code",
+            };
+    
+          case "Quick replies":
+            return {
+              type: "QUICK_REPLY",
+              text: rest.label || "Reply",
+            };
+    
+          default:
+            // Fallback to QUICK_REPLY if unrecognized
+            return {
+              type: "QUICK_REPLY",
+              text: rest.label || "Reply",
+            };
+        }
+      });
+    
+      resolvedComponents.push({
+        type: "BUTTONS",
+        buttons: metaButtons,
+      });}
+      console.log(resolvedComponents);
     const response = await axiosInstance.post(WHATSAPP_GRAPH_API, {
       name,
       category,
@@ -219,12 +273,13 @@ export const deleteTemplate = async (req: Request, res: Response) => {
 
 export const createBroadcast = async (req: Request, res: Response) => {
   try {
-    const { broadcastName, templateName, userId, contacts, chatbotId } = req.body;
-    const user:any=req.user;
-    const dbUser=await prisma.user.findFirst({
+    const { broadcastName, templateName, userId, contacts, chatbotId } =
+      req.body;
+    const user: any = req.user;
+    const dbUser = await prisma.user.findFirst({
       where: { id: user.userId },
-      select: { id:true,selectedPhoneNumberId: true },
-    })
+      select: { id: true, selectedPhoneNumberId: true },
+    });
     const phoneNumberId = dbUser?.selectedPhoneNumberId;
     const contactsToConnect = await prisma.contact.findMany({
       where: {
@@ -236,8 +291,8 @@ export const createBroadcast = async (req: Request, res: Response) => {
       data: {
         name: broadcastName,
         templateName,
-        userId:dbUser?.id || 1,
-        phoneNumberId, 
+        userId: dbUser?.id || 1,
+        phoneNumberId,
         recipients: {
           create: contactsToConnect.map((contact) => ({
             contact: { connect: { id: contact.id } },
@@ -248,7 +303,12 @@ export const createBroadcast = async (req: Request, res: Response) => {
 
     for (const phoneNumber of contacts) {
       // Call sendTemplate and pass broadcast.id in the opaque callback (for tracking in webhook)
-      await brodcastTemplate(phoneNumber, templateName, chatbotId, broadcast.id);
+      await brodcastTemplate(
+        phoneNumber,
+        templateName,
+        chatbotId,
+        broadcast.id
+      );
     }
 
     res.status(200).json({
@@ -270,7 +330,7 @@ export const getBroadcastStats = async (req: Request, res: Response) => {
   try {
     const broadcastId = parseInt(req.params.id, 10);
     if (isNaN(broadcastId)) {
-       res.status(400).json({ error: "Invalid broadcast id" });
+      res.status(400).json({ error: "Invalid broadcast id" });
     }
     const broadcast = await prisma.broadcast.findUnique({
       where: { id: broadcastId },
@@ -279,7 +339,7 @@ export const getBroadcastStats = async (req: Request, res: Response) => {
       },
     });
     if (!broadcast) {
-       res.status(404).json({ error: "Broadcast not found" });
+      res.status(404).json({ error: "Broadcast not found" });
     }
     const totalRecipients = broadcast?.recipients.length;
     // Group the broadcast recipients by status for the given broadcast
@@ -302,11 +362,12 @@ export const getBroadcastStats = async (req: Request, res: Response) => {
       defaultStats[stat.status] = stat._count._all;
     });
 
-    res.status(200).json({data: {
-      ...defaultStats,
-      totalRecipients,
-    },
-});
+    res.status(200).json({
+      data: {
+        ...defaultStats,
+        totalRecipients,
+      },
+    });
   } catch (error: any) {
     res.status(500).json({
       error: "Failed to fetch broadcast stats",
@@ -315,11 +376,14 @@ export const getBroadcastStats = async (req: Request, res: Response) => {
   }
 };
 
-export const getBroadcasts = async (req: Request, res: Response): Promise<void> => {
+export const getBroadcasts = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
   try {
     const { startDate, endDate, dateRange } = req.query;
     let where: any = {};
-  
+
     if (dateRange && dateRange !== "customRange") {
       const today = new Date();
       let start: Date | null = null;
@@ -352,12 +416,15 @@ export const getBroadcasts = async (req: Request, res: Response): Promise<void> 
     });
     res.status(200).json(broadcasts);
   } catch (error) {
-    console.error('Error fetching broadcasts:', error);
-    res.status(500).json({ error: 'Failed to fetch broadcasts' });
+    console.error("Error fetching broadcasts:", error);
+    res.status(500).json({ error: "Failed to fetch broadcasts" });
   }
 };
 
-export const getTemplateByName = async (req: Request, res: Response): Promise<void> => {
+export const getTemplateByName = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
   try {
     const { templateName } = req.params;
 
@@ -367,14 +434,14 @@ export const getTemplateByName = async (req: Request, res: Response): Promise<vo
     });
 
     if (!tmpl) {
-       res.status(404).json({ error: 'Template not found' });
+      res.status(404).json({ error: "Template not found" });
     }
-    if(tmpl){
+    if (tmpl) {
       const formattedTemplates = (() => {
         let parsedContent = {};
         try {
           // Try to parse the stored content (which should be in your desired format)
-          parsedContent = JSON.parse(tmpl?.content ||"{}");
+          parsedContent = JSON.parse(tmpl?.content || "{}");
         } catch (e) {
           // Fallback: if parsing fails, we build the object from DB fields.
           parsedContent = {
@@ -397,7 +464,7 @@ export const getTemplateByName = async (req: Request, res: Response): Promise<vo
           id: tmpl.id.toString(),
         };
       })();
-  
+
       // Create a dummy paging object. In a real-world scenario you might generate these cursors.
       const paging = {
         cursors: {
@@ -405,68 +472,12 @@ export const getTemplateByName = async (req: Request, res: Response): Promise<vo
           after: "MjQZD",
         },
       };
-  
+
       res.status(200).json({ data: formattedTemplates, paging });
     }
-
   } catch (error) {
-    console.error('Error fetching template by name:', error);
-    res.status(500).json({ error: 'Failed to fetch template' });
+    console.error("Error fetching template by name:", error);
+    res.status(500).json({ error: "Failed to fetch template" });
   }
 };
 
-// export const getTemplateByName = async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const { templateName } = req.params;
-
-//     // Fetch the template record from the DB
-//     const tmpl = await prisma.template.findUnique({
-//       where: { name: templateName },
-//     });
-
-//     if (!tmpl) {
-//      res.status(404).json({ error: 'Template not found' });
-//     }
-
-//     const formattedTemplates = (() => {
-//       let parsedContent: any = {};
-//       try {
-//         // Try to parse the stored content (which should be in your desired format)
-//         parsedContent = JSON.parse(tmpl.content|| "{}");
-//       } catch (e) {
-//         // Fallback: if parsing fails, we build the object from DB fields.
-//         parsedContent = {
-//           name: tmpl.name,
-//           parameter_format: "POSITIONAL",
-//           components: [],
-//           language: tmpl.language,
-//           status: tmpl.status,
-//           category: tmpl.category,
-//           id: tmpl.id.toString(),
-//         };
-//       }
-//       return {
-//         ...parsedContent,
-//         // Ensure the main fields are present and correctly formatted:
-//         name: tmpl.name,
-//         language: tmpl.language,
-//         status: tmpl.status,
-//         category: tmpl.category,
-//         id: tmpl.id.toString(),
-//       };
-//     })(); // Immediately invoke the function
-
-//     // Create a dummy paging object. In a real-world scenario you might generate these cursors.
-//     const paging = {
-//       cursors: {
-//         before: "MAZDZD",
-//         after: "MjQZD",
-//       },
-//     };
-
-//     res.status(200).json({ data: formattedTemplates, paging });
-//   } catch (error) {
-//     console.error('Error fetching template by name:', error);
-//     res.status(500).json({ error: 'Failed to fetch template' });
-//   }
-// };
