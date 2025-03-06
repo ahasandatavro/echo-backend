@@ -146,9 +146,15 @@ export const processNode = async (
           throw new Error("No selectedTemplate provided in template_data.");
         }
         const selectedTemplate: string = templateData.selectedTemplate;
+        if (selectedTemplate) {
+          const dbTemplate = await prisma.template.findFirst({
+            where: { name: selectedTemplate },
+          });
+
     
+          let templateId = dbTemplate?.id ||1;
         // Call the sendTemplate function
-        await sendTemplate(recipient, selectedTemplate, currentNode.chatbotId);
+        await sendTemplate(recipient, selectedTemplate, currentNode.chatbotId,dbTemplate);}
     
         // Find and process the outgoing edge on success (handle "source_1")
         const nextEdge = edges.find(
@@ -1140,10 +1146,12 @@ export const sendMessage = async (recipient: string, message: any, chatbotId:num
             link: message.message.url,
             caption: message.message.name || "",
           };
+          messageBody = `Image: ${message.message.name} (${message.message.url})`;
           break;
         case "audio":
           payload.type = "audio";
           payload.audio = { link: message.message.url };
+          messageBody = `Audio: ${message.message.url}`;
           break;
         case "video":
           payload.type = "video";
@@ -1151,6 +1159,7 @@ export const sendMessage = async (recipient: string, message: any, chatbotId:num
             link: message.message.url,
             caption: message.message.name || "",
           };
+          messageBody = `Video: ${message.message.name} (${message.message.url})`;
           break;
         case "document":
           payload.type = "document";
@@ -1158,6 +1167,7 @@ export const sendMessage = async (recipient: string, message: any, chatbotId:num
             link: message.message.url,
             caption: message.message.name || "",
           };
+          messageBody = `Document: ${message.message.name} (${message.message.url})`;
           break;
         default:
           console.error("Unsupported media type:", message.type);
@@ -1171,7 +1181,7 @@ export const sendMessage = async (recipient: string, message: any, chatbotId:num
         "Content-Type": "application/json",
       },
     });
-    await storeMessage({ recipient, chatbotId, messageType: "text", text: messageBody });
+    await storeMessage({ recipient, chatbotId, messageType: message.type, text: messageBody });
   } catch (error) {
     console.error("Error sending message:", error);
   }
@@ -1180,7 +1190,8 @@ export const sendMessage = async (recipient: string, message: any, chatbotId:num
 export const sendTemplate = async (
   recipient: string,
   selectedTemplate: string,
-  chatbotId: number
+  chatbotId: number,
+  templateDetails: any
 ) => {
   try {
     const url = `${metaWhatsAppAPI.baseURL}/${metaWhatsAppAPI.phoneNumberId}/messages`;
@@ -1201,7 +1212,7 @@ export const sendTemplate = async (
         "Content-Type": "application/json",
       },
     });
-    await storeMessage({ recipient, chatbotId, messageType: "template", text: `Template: ${selectedTemplate}` });
+    await storeMessage({ recipient, chatbotId, messageType: "template", text: `Template: ${selectedTemplate}`,templateDetails:templateDetails });
    
   } catch (error) {
     console.error("Error sending template message:", error);
@@ -1465,6 +1476,7 @@ export const storeMessage = async ({
   status = MessageStatus.SENT,
   buttonOptions,
   listItems,
+  templateDetails
 }: {
   recipient: string;
   chatbotId?: number;
@@ -1473,6 +1485,7 @@ export const storeMessage = async ({
   status?: MessageStatus;
   buttonOptions?: { id: string; title: string }[]; // Store button options as JSON
   listItems?: { id: string; title: string; description?: string }[]; // Store list items as JSON
+  templateDetails?:any;
 }) => {
   try {
     // Attempt to find an existing contact by phone number
@@ -1526,12 +1539,13 @@ export const storeMessage = async ({
         listItems: listItems && listItems.length > 0 ? listItems : Prisma.JsonNull,
         status,
         time: new Date(),
+        templateId: templateDetails?.id || null,
       },
     });
-
     io.emit("newMessage", {
       recipient: contact.phoneNumber,
       message: savedMessage,
+      template: templateDetails || null
     });
     return savedMessage;
   } catch (error) {

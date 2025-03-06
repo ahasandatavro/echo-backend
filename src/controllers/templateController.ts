@@ -54,6 +54,7 @@ export const getAllTemplates = async (req: Request, res: Response) => {
           status: tmpl.status,
           category: tmpl.category,
           id: tmpl.id.toString(),
+          lastUpdated:tmpl.updatedAt.toISOString().split("T")[0]
         };
       }
       return {
@@ -64,6 +65,7 @@ export const getAllTemplates = async (req: Request, res: Response) => {
         status: tmpl.status,
         category: tmpl.category,
         id: tmpl.id.toString(),
+        lastUpdated:tmpl.updatedAt.toISOString().split("T")[0]
       };
     });
 

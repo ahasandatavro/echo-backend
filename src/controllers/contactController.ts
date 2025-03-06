@@ -607,22 +607,22 @@ export const sendMessageController = async (req: Request, res: Response) => {
 
       templateId = dbTemplate.id;
       templateDetails = dbTemplate;
-      await sendTemplate(contact.phoneNumber, template, chatbotId);
-      savedMessage = await prisma.message.create({
-        data: {
-          contact: { connect: { id: contactId } },
-          sender: "user",
-          text: `Template: ${template}`,
-          time: new Date(),
-          status: "SENT",
-          attachment: fileUrl,
-          messageType: "template",
-          template: { connect: { id: templateId } },
-        },
-        include: {
-          template: true, // Include template details in response
-        },
-      });
+      await sendTemplate(contact.phoneNumber, template, chatbotId, templateDetails);
+      // savedMessage = await prisma.message.create({
+      //   data: {
+      //     contact: { connect: { id: contactId } },
+      //     sender: "user",
+      //     text: `Template: ${template}`,
+      //     time: new Date(),
+      //     status: "SENT",
+      //     attachment: fileUrl,
+      //     messageType: "template",
+      //     template: { connect: { id: templateId } },
+      //   },
+      //   include: {
+      //     template: true, // Include template details in response
+      //   },
+      // });
     }
     // ✅ Handle Regular Messages (Text, Media)
     else {
