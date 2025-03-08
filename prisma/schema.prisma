@@ -268,7 +268,8 @@ model Keyword {
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   chatbot      Chatbot?      @relation(fields: [chatbotId], references: [id])
-  text         TextMaterial? @relation(fields: [textId], references: [id])
+  replyMaterialId  Int? 
+  replyMaterial   ReplyMaterial? @relation(fields: [replyMaterialId], references: [id])
 }
 
 model Template {
@@ -286,12 +287,16 @@ model Template {
   wabaId    String?
 }
 
-model TextMaterial {
-  id        Int       @id @default(autoincrement())
+
+model ReplyMaterial {
+  id        Int          @id @default(autoincrement())
+  type      MaterialType
   name      String
-  content   String
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @default(now())
+  // For TEXT type, store content; for file-based types, fileUrl holds the URL from DigitalOcean Spaces
+  content   String?
+  fileUrl   String?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
   keywords  Keyword[]
 }
 
@@ -347,3 +352,13 @@ enum MatchType {
   EXACT
   CONTAINS
 }
+
+enum MaterialType {
+  TEXT
+  IMAGE
+  VIDEO
+  DOCUMENT
+  STICKER
+  CONTACT_ATTRIBUTES
+}
+

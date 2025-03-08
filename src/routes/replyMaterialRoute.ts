@@ -1,0 +1,164 @@
+// import { Router } from 'express';
+// import {
+//   createTextMaterial,
+//   getAllTextMaterials,
+//   updateTextMaterial,
+//   deleteTextMaterial,
+// } from '../controllers/textMaterialController';
+
+// const router: Router = Router();
+
+// // Define CRUD routes
+// router.post('/', createTextMaterial);
+// router.get('/', getAllTextMaterials);
+// router.put('/:id', updateTextMaterial);
+// router.delete('/:id', deleteTextMaterial);
+
+// export default router;
+
+// replyMaterials.ts
+import express, { Request, Response } from 'express';
+import multer from 'multer';
+import axios from 'axios';
+import FormData from 'form-data';
+import { PrismaClient, MaterialType } from '@prisma/client';
+
+const prisma = new PrismaClient();
+const router = express.Router();
+
+// Configure multer to use in-memory storage
+const upload = multer({ storage: multer.memoryStorage() });
+
+// Helper: Call the existing /upload endpoint to store the file in DigitalOcean Spaces
+const uploadFileToDigitalOcean = async (file: Express.Multer.File): Promise<string> => {
+  const formData = new FormData();
+  // Append file buffer with its original name
+  formData.append('file', file.buffer, file.originalname);
+
+  // Use an internal URL (adjust port/hostname as needed or use an env variable)
+  const uploadUrl =  'http://localhost:5000/upload';
+  
+  const response = await axios.post(uploadUrl, formData, {
+    headers: formData.getHeaders(),
+  });
+
+  return response.data.fileUrl;
+};
+
+router.get('/', async (req: Request, res: Response) => {
+  const { type } = req.query;
+  try {
+    const materialType = type ? type as MaterialType : undefined;
+    const materials = materialType
+      ? await prisma.replyMaterial.findMany({
+          where: { type: materialType },
+        })
+      : await prisma.replyMaterial.findMany();
+    res.json(materials);
+  } catch (error) {
+    console.error('Error fetching reply materials:', error);
+    res.status(500).json({ message: 'Failed to fetch reply materials', error });
+  }
+});
+
+
+// GET a single reply material by ID
+router.get('/:id', async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id);
+    const material = await prisma.replyMaterial.findUnique({ where: { id } });
+    if (!material) {
+      return res.status(404).json({ message: 'Reply material not found' });
+    }
+    res.json(material);
+  } catch (error) {
+    console.error('Error fetching material:', error);
+    res.status(500).json({ message: 'Failed to fetch reply material', error });
+  }
+});
+
+// POST create a new reply material
+// Use multer middleware to accept an optional file (field name "file")
+router.post('/', upload.single('file'), async (req: Request, res: Response) => {
+  try {
+    // Expected fields in req.body: type, (name and content for TEXT type)
+    const { type } = req.body;
+    let content = req.body.content || null;
+    let name = req.body.name || '';
+    let fileUrl: string | null = null;
+
+    // For file-based types, automatically use the file's name and upload it to DO Spaces
+    if (type !== MaterialType.TEXT && type !== "CONTACT_ATTRIBUTES" && req.file) {
+      name = req.file.originalname;
+      fileUrl = await uploadFileToDigitalOcean(req.file);
+    }
+    if (type === "CONTACT_ATTRIBUTES") {
+      // Assume req.body.contactAttributes contains your attribute data (as JSON or a string)
+      const contactAttributes = req.body.contactAttributes;
+      content = typeof contactAttributes === "string" ? contactAttributes : JSON.stringify(contactAttributes);
+    }
+
+
+    const newMaterial = await prisma.replyMaterial.create({
+      data: {
+        type: type as MaterialType,
+        name,
+        content: (type === MaterialType.TEXT|| type === "CONTACT_ATTRIBUTES") ? content : null,
+        fileUrl,
+      },
+    });
+
+    res.status(201).json(newMaterial);
+  } catch (error) {
+    console.error('Error creating material:', error);
+    res.status(500).json({ message: 'Failed to create reply material', error });
+  }
+});
+
+// PUT update an existing reply material
+// Also use multer in case a new file is provided
+router.put('/:id', upload.single('file'), async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id);
+    const { type, content } = req.body;
+    let name = req.body.name || '';
+    let fileUrl: string | undefined;
+
+    // For file-based materials, if a new file is provided, update the file URL
+    if (type !== MaterialType.TEXT && req.file) {
+      name = req.file.originalname;
+      fileUrl = await uploadFileToDigitalOcean(req.file);
+    }
+
+    const updatedMaterial = await prisma.replyMaterial.update({
+      where: { id },
+      data: {
+        type: type as MaterialType,
+        name,
+        content: type === MaterialType.TEXT ? content : null,
+        // Only update fileUrl if a new one was generated
+        ...(fileUrl && { fileUrl }),
+      },
+    });
+
+    res.json(updatedMaterial);
+  } catch (error) {
+    console.error('Error updating material:', error);
+    res.status(500).json({ message: 'Failed to update reply material', error });
+  }
+});
+
+// DELETE a reply material
+router.delete('/:id', async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id);
+    await prisma.replyMaterial.delete({ where: { id } });
+    res.json({ message: 'Reply material deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting material:', error);
+    res.status(500).json({ message: 'Failed to delete reply material', error });
+  }
+});
+
+export default router;
+
