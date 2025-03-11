@@ -14,7 +14,7 @@ model User {
   role                 Role           @default(USER)
   createdAt            DateTime       @default(now())
   about                String?
-  attributes           Json?
+  attributes           String[]
   businessAddress      String?
   businessDescription  String?
   businessIndustry     String?
@@ -56,6 +56,12 @@ model BusinessAccount {
   metaAccessToken    String?
   metaWabaId         String?
   phoneNumbers       BusinessPhoneNumber[]
+  workingHours       Json?  
+  language           String?
+  contentDirection   String?
+  holidayMode        Boolean?  @default(false)
+  supportButtonEnabled Boolean? @default(false)
+  supportButtonWebsite String?
 }
 
 model BusinessPhoneNumber {

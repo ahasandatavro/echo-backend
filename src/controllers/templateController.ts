@@ -87,7 +87,7 @@ export const getAllTemplates = async (req: Request, res: Response) => {
 };
 
 // **Create a New Template**
-export const createTemplate = async (req: Request, res: Response) => {
+export const   createTemplate = async (req: Request, res: Response) => {
   try {
     const user: any = req.user;
     const dbUser = await prisma.user.findFirst({

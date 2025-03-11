@@ -313,34 +313,100 @@ export const getAttributes = async (req: Request, res: Response) => {
   }
 };
 
+// export const updateAttribute = async (req: Request, res: Response) => {
+//   try {
+//     const { key, value } = req.body;
+//     const contactId = parseInt(req.params.id);
+
+//     const contact = await prisma.contact.findUnique({
+//       where: { id: contactId },
+//     });
+
+//     if (!contact) return res.status(404).json({ message: "Contact not found" });
+
+//     if (contact.userId) {
+//       const user = await prisma.user.findUnique({
+//         where: { id: contact.userId },
+//       });
+//       const existingUserAttributes = (user?.attributes as Record<string, any>) || {};
+//       const updatedUserAttributes = { ...existingUserAttributes, [key]: value };
+
+//       await prisma.user.update({
+//         where: { id: contact.userId },
+//         data: { attributes: updatedUserAttributes },
+//       });
+//     }
+//     // Ensure attributes is an object before updating
+//     const existingAttributes =
+//       (contact.attributes as Record<string, any>) || {};
+//     const updatedAttributes = { ...existingAttributes, [key]: value };
+
+//     // Update the contact's attributes in the database
+//     await prisma.contact.update({
+//       where: { id: contactId },
+//       data: { attributes: updatedAttributes },
+//     });
+
+//     res.json({ message: "Attribute updated", attributes: updatedAttributes });
+//   } catch (error) {
+//     console.error("Error updating attribute:", error);
+//     res.status(500).json({ error: "Failed to update attribute" });
+//   }
+// };
+
 export const updateAttribute = async (req: Request, res: Response) => {
   try {
-    const { key, value } = req.body;
-    const contactId = parseInt(req.params.id);
+    // Now, req.body is an object with the attribute updates,
+    // for example: { role: "developer" }
+    const updateData = req.body;
+    const contactId = parseInt(req.params.id, 10);
 
+    // Find the contact by id
     const contact = await prisma.contact.findUnique({
       where: { id: contactId },
     });
+    if (!contact) {
+      return res.status(404).json({ message: "Contact not found" });
+    }
 
-    if (!contact) return res.status(404).json({ message: "Contact not found" });
+    // Update attributes for the user if contact.userId exists
+    if (contact.userId) {
+      const user = await prisma.user.findUnique({
+        where: { id: contact.userId },
+      });
+      if (user) {
+        const existingUserAttributeKeys: string[] = user.attributes || [];
+        const newKeys = Object.keys(updateData); // keys from the update data
+        const updatedUserAttributeKeys = Array.from(
+          new Set([...existingUserAttributeKeys, ...newKeys])
+        );
 
-    // Ensure attributes is an object before updating
-    const existingAttributes =
-      (contact.attributes as Record<string, any>) || {};
-    const updatedAttributes = { ...existingAttributes, [key]: value };
+        await prisma.user.update({
+          where: { id: contact.userId },
+          data: { attributes: { set: updatedUserAttributeKeys } },
+        });
+      }
+    }
 
-    // Update the contact's attributes in the database
-    await prisma.contact.update({
+    // Update the contact's attributes
+    const existingContactAttributes = (contact.attributes as Record<string, any>) || {};
+    const updatedContactAttributes = { ...existingContactAttributes, ...updateData };
+
+    const updatedContact = await prisma.contact.update({
       where: { id: contactId },
-      data: { attributes: updatedAttributes },
+      data: { attributes: { set: updatedContactAttributes } },
     });
 
-    res.json({ message: "Attribute updated", attributes: updatedAttributes });
+    res.json({
+      message: "Attribute updated",
+      attributes: updatedContact.attributes,
+    });
   } catch (error) {
     console.error("Error updating attribute:", error);
     res.status(500).json({ error: "Failed to update attribute" });
   }
 };
+
 
 export const getNotes = async (req: Request, res: Response) => {
   try {
@@ -407,6 +473,19 @@ export const addTag = async (req: Request, res: Response) => {
     });
 
     if (!contact) return res.status(404).json({ message: "Contact not found" });
+    if (contact.userId) {
+      const user = await prisma.user.findUnique({
+        where: { id: contact.userId },
+      });
+      let updatedUserTags = user?.tags || [];
+      if (!updatedUserTags.includes(tag)) {
+        updatedUserTags = [...updatedUserTags, tag];
+        await prisma.user.update({
+          where: { id: contact.userId },
+          data: { tags: updatedUserTags },
+        });
+      }
+    }
 
     if (contact.tags.includes(tag)) {
       return res.status(400).json({ error: "Tag already exists" });
@@ -434,6 +513,17 @@ export const removeTag = async (req: Request, res: Response) => {
     });
 
     if (!contact) return res.status(404).json({ message: "Contact not found" });
+
+    if (contact.userId) {
+      const user = await prisma.user.findUnique({
+        where: { id: contact.userId },
+      });
+      const updatedUserTags = user?.tags.filter((tag: string) => tag !== tagToRemove) || [];
+      await prisma.user.update({
+        where: { id: contact.userId },
+        data: { tags: updatedUserTags },
+      });
+    }
 
     const updatedTags = contact.tags.filter((tag) => tag !== tagToRemove);
 
