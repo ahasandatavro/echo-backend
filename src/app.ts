@@ -5,6 +5,7 @@ import nodeRoutes from "./routes/nodeRoute";
 import authRoutes from "./routes/authRoute";
 import webhookRoutes from "./routes/webhookRoute";
 import replyMaterialRoutes from "./routes/replyMaterialRoute";
+import routingMaterialRoutes from "./routes/routingMaterialRoute";
 import keywordRoutes from "./routes/keywordRoute";
 import variableRoute from "./routes/variableRoute";
 import gdriveRoutes from "./routes/gdriveRoute";
@@ -68,6 +69,7 @@ app.use("/businessAccount",authenticateJWT, businessAccountRoutes)
 app.use("/webhook",webhookRoutes);
 app.use("/variables", authenticateJWT,variableRoute);
 app.use("/replyMaterials",authenticateJWT,replyMaterialRoutes);
+app.use("/routingMaterials",authenticateJWT,routingMaterialRoutes);
 app.use('/keyword',authenticateJWT,keywordRoutes);
 app.use('/gdrive',authenticateJWT,gdriveRoutes);
 app.use('/contacts',authenticateJWT,contactRoutes);

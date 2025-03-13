@@ -3,6 +3,7 @@ import { createAgent, updateAgent, deleteAgent} from "../controllers/agentContro
 
 const router = express.Router();
 
+
 router.post("/", createAgent); // Create Agent
 router.put("/:id", updateAgent); // Update Agent
 router.delete("/:id",  deleteAgent); // Delete Agent

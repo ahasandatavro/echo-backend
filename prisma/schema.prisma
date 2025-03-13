@@ -44,6 +44,13 @@ model User {
   createdById          Int? 
   createdBy            User? @relation("CreatedUsers", fields: [createdById], references: [id])
   createdUsers         User[] @relation("CreatedUsers")
+  isOnline             Boolean        @default(false) 
+  lastActive           DateTime?  
+
+  // ✅ New relations for RoutingMaterial assignments
+  receivedMaterials    RoutingMaterial[] @relation("RoutingMaterialUsers") // For Notification type
+  assignedMaterials    RoutingMaterial[] @relation("RoutingMaterialAssignedUser") // For AssignUser type
+
 }
 
 model BusinessAccount {
@@ -90,6 +97,7 @@ model Team {
   updatedAt   DateTime  @updatedAt
   contacts    Contact[] @relation("ContactTeams")
   users       User[]    @relation("UserTeams")
+  routingMaterials RoutingMaterial[] @relation("RoutingMaterialTeam")
 }
 
 model Message {
@@ -302,13 +310,36 @@ model ReplyMaterial {
   id        Int          @id @default(autoincrement())
   type      MaterialType
   name      String
-  // For TEXT type, store content; for file-based types, fileUrl holds the URL from DigitalOcean Spaces
   content   String?
   fileUrl   String?
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
   keywords  Keyword[]
 }
+
+model RoutingMaterial {
+  id            Int             @id @default(autoincrement())
+  type          RoutingType
+  materialName  String
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  // ✅ Relations for notification and assignments
+  users         User[]          @relation("RoutingMaterialUsers") // For Notification type
+  assignedUser  User?           @relation("RoutingMaterialAssignedUser", fields: [assignedUserId], references: [id]) // For AssignUser type
+  assignedUserId Int?
+
+  team         Team?            @relation("RoutingMaterialTeam", fields: [teamId], references: [id]) // For AssignTeam type
+  teamId       Int?
+}
+
+enum RoutingType {
+  Notification
+  AssignUser
+  AssignTeam
+}
+
+
 
 model ChatStatusHistory {
   id                                                    Int           @id @default(autoincrement())
