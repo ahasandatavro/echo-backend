@@ -14,6 +14,7 @@ import userRoutes from "./routes/userRoute";
 import templateRoutes from "./routes/templateRoute";
 import conversationRoutes from "./routes/conversationRoute";
 import teamRoutes from "./routes/teamRoutes";
+import agentRoutes from "./routes/agentRoute";
 import businessAccountRoutes from "./routes/businessAccountRoute";
 import whatsAppRoute from "./routes/whatsAppRoute";
 import { Server } from "socket.io";
@@ -62,6 +63,7 @@ app.use(passport.initialize());
 app.use("/auth", authRoutes);
 app.use("/nodes", authenticateJWT,nodeRoutes);
 app.use("/users", authenticateJWT,userRoutes);
+app.use("/agents", authenticateJWT,agentRoutes);
 app.use("/businessAccount",authenticateJWT, businessAccountRoutes)
 app.use("/webhook",webhookRoutes);
 app.use("/variables", authenticateJWT,variableRoute);

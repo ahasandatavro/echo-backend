@@ -40,6 +40,10 @@ model User {
   businessAccount      BusinessAccount[]
   selectedPhoneNumberId String?
   selectedWabaId        String?
+  agent                Boolean?  @default(false)
+  createdById          Int? 
+  createdBy            User? @relation("CreatedUsers", fields: [createdById], references: [id])
+  createdUsers         User[] @relation("CreatedUsers")
 }
 
 model BusinessAccount {
