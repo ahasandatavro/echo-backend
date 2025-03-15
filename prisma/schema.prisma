@@ -50,7 +50,7 @@ model User {
   // ✅ New relations for RoutingMaterial assignments
   receivedMaterials    RoutingMaterial[] @relation("RoutingMaterialUsers") // For Notification type
   assignedMaterials    RoutingMaterial[] @relation("RoutingMaterialAssignedUser") // For AssignUser type
-
+  keywords  Keyword[]
 }
 
 model BusinessAccount {
@@ -286,10 +286,36 @@ model Keyword {
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   chatbot      Chatbot?      @relation(fields: [chatbotId], references: [id])
-  replyMaterialId  Int? 
-  replyMaterial   ReplyMaterial? @relation(fields: [replyMaterialId], references: [id])
+   userId          Int?
+  user            User?         @relation(fields: [userId], references: [id])
+  replyMaterials  KeywordReplyMaterial[]
+  routingMaterials KeywordRoutingMaterial[]
+  keywordTemplates KeywordTemplate[] 
+}
+model KeywordReplyMaterial {
+  id              Int          @id @default(autoincrement())
+  keywordId       Int
+  replyMaterialId Int
+
+  keyword         Keyword       @relation(fields: [keywordId], references: [id])
+  replyMaterial   ReplyMaterial @relation(fields: [replyMaterialId], references: [id])
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 }
 
+
+model KeywordRoutingMaterial {
+  id              Int          @id @default(autoincrement())
+  keywordId       Int
+  routingMaterialId Int
+
+  keyword         Keyword         @relation(fields: [keywordId], references: [id])
+  routingMaterial RoutingMaterial @relation(fields: [routingMaterialId], references: [id])
+
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
 model Template {
   id        Int      @id @default(autoincrement())
   name      String   @unique
@@ -303,9 +329,18 @@ model Template {
   user      User?     @relation(fields: [userId], references: [id])
   messages  Message[]
   wabaId    String?
+  keywordTemplates KeywordTemplate[]
 }
 
-
+model KeywordTemplate {
+  id          Int       @id @default(autoincrement())
+  keywordId   Int
+  templateId  Int
+  keyword     Keyword   @relation(fields: [keywordId], references: [id], onDelete: Cascade)
+  template    Template  @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
 model ReplyMaterial {
   id        Int          @id @default(autoincrement())
   type      MaterialType
@@ -314,7 +349,7 @@ model ReplyMaterial {
   fileUrl   String?
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
-  keywords  Keyword[]
+  keywords  KeywordReplyMaterial[]
 }
 
 model RoutingMaterial {
@@ -331,6 +366,7 @@ model RoutingMaterial {
 
   team         Team?            @relation("RoutingMaterialTeam", fields: [teamId], references: [id]) // For AssignTeam type
   teamId       Int?
+  keywords     KeywordRoutingMaterial[]
 }
 
 enum RoutingType {
@@ -401,5 +437,8 @@ enum MaterialType {
   DOCUMENT
   STICKER
   CONTACT_ATTRIBUTES
+  Notification
+  AssignUser
+  AssignTeam
 }
 

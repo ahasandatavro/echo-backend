@@ -45,19 +45,66 @@ const uploadFileToDigitalOcean = async (file: Express.Multer.File): Promise<stri
   return response.data.fileUrl;
 };
 
+// router.get('/', async (req: Request, res: Response) => {
+//   const { type } = req.query;
+//   try {
+//     const materialType = type ? type as MaterialType : undefined;
+//     const materials = materialType
+//       ? await prisma.replyMaterial.findMany({
+//           where: { type: materialType },
+//         })
+//       : await prisma.replyMaterial.findMany();
+//     res.json(materials);
+//   } catch (error) {
+//     console.error('Error fetching reply materials:', error);
+//     res.status(500).json({ message: 'Failed to fetch reply materials', error });
+//   }
+// });
 router.get('/', async (req: Request, res: Response) => {
   const { type } = req.query;
+
   try {
-    const materialType = type ? type as MaterialType : undefined;
-    const materials = materialType
-      ? await prisma.replyMaterial.findMany({
-          where: { type: materialType },
-        })
-      : await prisma.replyMaterial.findMany();
+    if (!type) {
+      return res.status(400).json({ message: "Type parameter is required" });
+    }
+
+    let materials;
+
+    if (type === "Notification" || type === "AssignUser" || type === "AssignTeam") {
+      // ✅ Fetch from `RoutingMaterial`
+      materials = await prisma.routingMaterial.findMany({
+        where: { type: type as any },
+        include: {
+          users: {
+            select: {               // ✅ Select only required user fields
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+          assignedUser: {
+            select: {               // ✅ Select only required fields
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+          team: true, // Include team for AssignTeam
+        },
+      });
+    } else {
+      // ✅ Fetch from `ReplyMaterial`
+      materials = await prisma.replyMaterial.findMany({
+        where: { type: type as MaterialType },
+      });
+    }
+
     res.json(materials);
   } catch (error) {
-    console.error('Error fetching reply materials:', error);
-    res.status(500).json({ message: 'Failed to fetch reply materials', error });
+    console.error('Error fetching materials:', error);
+    res.status(500).json({ message: 'Failed to fetch materials', error });
   }
 });
 
