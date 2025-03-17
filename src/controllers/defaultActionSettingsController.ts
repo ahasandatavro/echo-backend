@@ -6,6 +6,7 @@ const prisma = new PrismaClient();
 /**
  * ✅ Get Default Action Settings for a specific BusinessPhoneNumber
  */
+
 export const getDefaultActionSettings = async (req: Request, res: Response) => {
   const { businessPhoneNumberId } = req.params;
 
@@ -18,12 +19,70 @@ export const getDefaultActionSettings = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Settings not found" });
     }
 
-    res.json(settings);
+    // ✅ Ensure workingHours is always returned in the correct format
+    const formattedWorkingHours = settings.workingHours || {
+      Monday: { open: false, times: [] },
+      Tuesday: { open: false, times: [] },
+      Wednesday: { open: false, times: [] },
+      Thursday: { open: false, times: [] },
+      Friday: { open: false, times: [] },
+      Saturday: { open: false, times: [] },
+      Sunday: { open: false, times: [] },
+    };
+
+    // ✅ Format response properly
+    const responsePayload = {
+      businessPhoneNumberId: settings.businessPhoneNumberId,
+      workingHours: formattedWorkingHours, // Ensure working hours are always structured properly
+
+      // ✅ Checkbox states mapped correctly
+      cb1: settings.outsideWorkingHoursEnabled || false,
+      cb2: settings.noAgentOnlineEnabled || false,
+      cb3: settings.fallbackMessageEnabled || false,
+      cb4: settings.noResponseAfter24hEnabled || false,
+      cb5: settings.expiredChatReassignmentDisabled || false,
+      cb6: settings.noKeywordMatchReplyEnabled || false,
+      cb7: settings.roundRobinAssignmentEnabled || false,
+
+      // ✅ Selected materials correctly formatted
+      selectedMaterials: {
+        cb1: settings.outsideWorkingHoursMaterialId
+          ? {
+              materialId: settings.outsideWorkingHoursMaterialId.toString(),
+              materialType: settings.outsideWorkingHoursMaterialType,
+            }
+          : null,
+
+        cb2: settings.noAgentOnlineMaterialId
+          ? {
+              materialId: settings.noAgentOnlineMaterialId.toString(),
+              materialType: settings.noAgentOnlineMaterialType,
+            }
+          : null,
+
+        cb3: settings.fallbackMessageMaterialId
+          ? {
+              materialId: settings.fallbackMessageMaterialId.toString(),
+              materialType: settings.fallbackMessageMaterialType,
+            }
+          : null,
+
+        cb4: settings.noResponseAfter24hMaterialId
+          ? {
+              materialId: settings.noResponseAfter24hMaterialId.toString(),
+              materialType: settings.noResponseAfter24hMaterialType,
+            }
+          : null,
+      },
+    };
+
+    return res.status(200).json(responsePayload);
   } catch (error) {
     console.error("Error fetching settings:", error);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
+
 
 /**
  * ✅ Create or Update Default Action Settings for a specific BusinessPhoneNumber
