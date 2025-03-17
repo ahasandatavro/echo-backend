@@ -15,6 +15,7 @@ import userRoutes from "./routes/userRoute";
 import templateRoutes from "./routes/templateRoute";
 import conversationRoutes from "./routes/conversationRoute";
 import teamRoutes from "./routes/teamRoutes";
+import defaultActionSettingsRoutes from "./routes/defaultActionSettingsRoute";
 import agentRoutes from "./routes/agentRoute";
 import businessAccountRoutes from "./routes/businessAccountRoute";
 import whatsAppRoute from "./routes/whatsAppRoute";
@@ -70,6 +71,7 @@ app.use("/webhook",webhookRoutes);
 app.use("/variables", authenticateJWT,variableRoute);
 app.use("/replyMaterials",authenticateJWT,replyMaterialRoutes);
 app.use("/routingMaterials",authenticateJWT,routingMaterialRoutes);
+app.use("/defaultActionSettings",authenticateJWT, defaultActionSettingsRoutes)
 app.use('/keyword',authenticateJWT,keywordRoutes);
 app.use('/gdrive',authenticateJWT,gdriveRoutes);
 app.use('/contacts',authenticateJWT,contactRoutes);

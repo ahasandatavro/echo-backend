@@ -1,0 +1,120 @@
+import { Request, Response } from "express";
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
+
+/**
+ * ✅ Get Default Action Settings for a specific BusinessPhoneNumber
+ */
+export const getDefaultActionSettings = async (req: Request, res: Response) => {
+  const { businessPhoneNumberId } = req.params;
+
+  try {
+    const settings = await prisma.defaultActionSettings.findUnique({
+      where: { businessPhoneNumberId: Number(businessPhoneNumberId) },
+    });
+
+    if (!settings) {
+      return res.status(404).json({ message: "Settings not found" });
+    }
+
+    res.json(settings);
+  } catch (error) {
+    console.error("Error fetching settings:", error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+/**
+ * ✅ Create or Update Default Action Settings for a specific BusinessPhoneNumber
+ */
+export const createOrUpdateDefaultActionSettings = async (req: Request, res: Response) => {
+  const {
+    businessPhoneNumberId,
+    workingHours,
+    selectedMaterials, // ✅ Contains cb1, cb2, etc. with materialId & materialType
+    cb1, cb2, cb3, cb4, cb5, cb6, cb7, // ✅ Extract checkboxes
+  } = req.body;
+
+  try {
+    // ✅ Mapping checkboxes to Prisma fields
+    const updateData = {
+      businessPhoneNumberId: Number(businessPhoneNumberId),
+      workingHours,
+
+      // ✅ Map checkbox flags to Prisma fields
+      outsideWorkingHoursEnabled: cb1 || false,
+      noAgentOnlineEnabled: cb2 || false,
+      fallbackMessageEnabled: cb3 || false,
+      noResponseAfter24hEnabled: cb4 || false,
+      expiredChatReassignmentDisabled: cb5 || false,
+      noKeywordMatchReplyEnabled: cb6 || false,
+      roundRobinAssignmentEnabled: cb7 || false,
+
+      // ✅ Map selectedMaterials dynamically
+      outsideWorkingHoursMaterialId: Number(selectedMaterials.cb1?.materialId) || null,
+      outsideWorkingHoursMaterialType: selectedMaterials.cb1?.materialType || null,
+
+      noAgentOnlineMaterialId: Number(selectedMaterials.cb2?.materialId) || null,
+      noAgentOnlineMaterialType: selectedMaterials.cb2?.materialType || null,
+
+      fallbackMessageMaterialId: Number(selectedMaterials.cb3?.materialId) || null,
+      fallbackMessageMaterialType: selectedMaterials.cb3?.materialType || null,
+
+      noResponseAfter24hMaterialId: Number(selectedMaterials.cb4?.materialId) || null,
+      noResponseAfter24hMaterialType: selectedMaterials.cb4?.materialType || null,
+    };
+
+    // ✅ Check if settings already exist
+    const existingSettings = await prisma.defaultActionSettings.findUnique({
+      where: { businessPhoneNumberId: Number(businessPhoneNumberId) },
+    });
+
+    if (existingSettings) {
+      // ✅ Update existing settings
+      const updatedSettings = await prisma.defaultActionSettings.update({
+        where: { businessPhoneNumberId: Number(businessPhoneNumberId) },
+        data: updateData,
+      });
+
+      return res.status(200).json(updatedSettings);
+    } else {
+      // ✅ Create new settings
+      const newSettings = await prisma.defaultActionSettings.create({
+        data: updateData,
+      });
+
+      return res.status(201).json(newSettings);
+    }
+  } catch (error) {
+    console.error("Error updating settings:", error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+
+/**
+ * ✅ Delete Default Action Settings for a specific BusinessPhoneNumber
+ */
+export const deleteDefaultActionSettings = async (req: Request, res: Response) => {
+  const { businessPhoneNumberId } = req.params;
+
+  try {
+    const existingSettings = await prisma.defaultActionSettings.findUnique({
+      where: { businessPhoneNumberId: Number(businessPhoneNumberId) },
+    });
+
+    if (!existingSettings) {
+      return res.status(404).json({ message: "Settings not found" });
+    }
+
+    await prisma.defaultActionSettings.delete({
+      where: { businessPhoneNumberId: Number(businessPhoneNumberId) },
+    });
+
+    res.status(200).json({ message: "Settings deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting settings:", error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};

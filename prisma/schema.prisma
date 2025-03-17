@@ -87,7 +87,43 @@ model BusinessPhoneNumber {
   connectionStatus  String?  
   subscription      String?  
   conversations     Conversation[]
+  defaultActionSettings DefaultActionSettings?
 }
+
+model DefaultActionSettings {
+  id                    Int      @id @default(autoincrement())
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  businessPhoneNumberId Int      @unique
+  businessPhoneNumber   BusinessPhoneNumber @relation(fields: [businessPhoneNumberId], references: [id])
+
+  workingHours          Json?  // ✅ Stores working hours in JSON
+
+  // ✅ Default action settings (Boolean fields)
+  outsideWorkingHoursEnabled   Boolean @default(false) // When it is not working hours
+  noAgentOnlineEnabled         Boolean @default(false) // When no customer service is online
+  fallbackMessageEnabled       Boolean @default(false) // When no keyword match
+  noResponseAfter24hEnabled    Boolean @default(false) // If customer does not respond
+
+  // ✅ Selected material/chatbot/template for default actions
+  outsideWorkingHoursMaterialId  Int?  // Associated material/chatbot/template
+  outsideWorkingHoursMaterialType String? // Type: chatbot, template, sticker, etc.
+
+  noAgentOnlineMaterialId        Int?
+  noAgentOnlineMaterialType      String?
+
+  fallbackMessageMaterialId      Int?
+  fallbackMessageMaterialType    String?
+
+  noResponseAfter24hMaterialId   Int?
+  noResponseAfter24hMaterialType String?
+
+  // ✅ Additional settings from pic-2 (Boolean fields)
+  expiredChatReassignmentDisabled  Boolean @default(false) // Expired chat not reassigned
+  noKeywordMatchReplyEnabled       Boolean @default(false) // Reply after X minutes if no match
+  roundRobinAssignmentEnabled      Boolean @default(false) // Assign chats in round-robin
+}
+
 model Team {
   id          Int       @id @default(autoincrement())
   name        String    @unique
