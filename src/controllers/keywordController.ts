@@ -116,7 +116,77 @@ export const getAllKeywords = async (req: Request, res: Response) => {
     res.status(500).json({ error: "Failed to fetch Keywords" });
   }
 };
+export const getKeywordById = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
 
+    // Fetch keyword by ID, including all related entities
+    const keyword = await prisma.keyword.findUnique({
+      where: { id: Number(id) },
+      include: {
+        replyMaterials: {
+          include: {
+            replyMaterial: {
+              select: { id: true, type: true, name: true, fileUrl: true },
+            },
+          },
+        },
+        routingMaterials: {
+          include: {
+            routingMaterial: {
+              select: { id: true, type: true, materialName: true },
+            },
+          },
+        },
+        chatbot: {
+          select: { id: true, name: true },
+        },
+        keywordTemplates: {
+          include: { template: { select: { id: true, name: true } } },
+        },
+      },
+    });
+
+    // If keyword not found, return a 404 error
+    if (!keyword) {
+      return res.status(404).json({ error: "Keyword not found" });
+    }
+
+    // ✅ Format Data to Match UI Requirements
+    const formattedKeyword = {
+      id: keyword.id,
+      value: keyword.value,
+      triggered: 0, // Placeholder for trigger count
+      matchType: keyword.matchType,
+      fuzzyPercent: keyword.fuzzyPercent,
+      chatbot: keyword.chatbot
+        ? { id: keyword.chatbot.id, name: keyword.chatbot.name }
+        : null,
+      templates: keyword.keywordTemplates.map((item) => ({
+        id: item.template.id,
+        name: item.template.name,
+      })),
+      replyMaterials: [
+        ...keyword.replyMaterials.map((item) => ({
+          id: item.replyMaterial.id,
+          type: item.replyMaterial.type,
+          name: item.replyMaterial.name,
+          fileUrl: item.replyMaterial.fileUrl,
+        })),
+        ...keyword.routingMaterials.map((item) => ({
+          id: item.routingMaterial.id,
+          type: item.routingMaterial.type,
+          name: item.routingMaterial.materialName,
+        })),
+      ],
+    };
+
+    res.status(200).json(formattedKeyword);
+  } catch (error) {
+    console.error("Error fetching keyword by ID:", error);
+    res.status(500).json({ error: "Failed to fetch keyword" });
+  }
+};
 
 // Update a Keyword
 export const updateKeyword = async (req: Request, res: Response) => {

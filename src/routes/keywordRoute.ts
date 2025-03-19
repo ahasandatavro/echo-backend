@@ -5,6 +5,7 @@ import {
   getAllKeywords,
   updateKeyword,
   deleteKeyword,
+  getKeywordById
 } from '../controllers/keywordController';
 
 const router = express.Router();
@@ -14,6 +15,7 @@ router.post('/', createKeyword);
 
 // Get all Keywords
 router.get('/', getAllKeywords);
+router.get("/:id", getKeywordById);
 
 // Update a Keyword by ID
 router.put('/:id', updateKeyword);
