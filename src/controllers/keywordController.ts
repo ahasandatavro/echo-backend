@@ -6,7 +6,7 @@ import { prisma } from '../models/prismaClient';
 // Create a new Keyword
 
 export const createKeyword = async (req: Request, res: Response) => {
-  const { value, chatbotId, textId, matchType, fuzzyPercent, replyMaterialIds, routingMaterialIds, userIds, assignedUserId, teamId,templateIds } = req.body;
+  const {  id, value, chatbotId, textId, matchType, fuzzyPercent, replyMaterialIds, routingMaterialIds, userIds, assignedUserId, teamId,templateIds } = req.body;
 
   try {
     // Ensure user is authenticated
@@ -14,42 +14,90 @@ export const createKeyword = async (req: Request, res: Response) => {
       return res.status(401).json({ error: "Unauthorized. User not found." });
     }
 
-    // Create keyword associated with the user
-    const keyword = await prisma.keyword.create({
-      data: {
-        value,
-        chatbotId,
-        textId,
-        matchType,
-        fuzzyPercent,
-        userId: req.user.userId, // ✅ Associate with logged-in user
-        replyMaterials: {
-          create: replyMaterialIds.map((replyMaterialId: number) => ({
-            replyMaterial: { connect: { id: replyMaterialId } },
-          })),
-        },
-        routingMaterials: {
-          create: routingMaterialIds.map((routingMaterialId: number) => ({
-            routingMaterial: { connect: { id: routingMaterialId } },
-          })),
-        },
-        keywordTemplates: {
-          create: templateIds.map((templateId: number) => ({
-            template: { connect: { id: Number(templateId) } }, // ✅ Connect each template
-          })),
-        },
-      },
-      include: {
-        replyMaterials: { include: { replyMaterial: true } },
-        routingMaterials: { include: { routingMaterial: true } },
-        keywordTemplates: { include: { template: true } },
-      },
-    });
+    let keyword;
 
-    res.status(201).json({ message: "Keyword created successfully", keyword });
+    if (id) {
+      // ✅ Update existing keyword
+      keyword = await prisma.keyword.update({
+        where: { id: Number(id) },
+        data: {
+          value,
+          chatbotId,
+          textId,
+          matchType,
+          fuzzyPercent,
+          userId: req.user.userId, // ✅ Associate with logged-in user
+
+          // ✅ Update replyMaterials (First, remove all then add new ones)
+          replyMaterials: {
+            deleteMany: {}, // Remove existing associations
+            create: replyMaterialIds.map((replyMaterialId: number) => ({
+              replyMaterial: { connect: { id: replyMaterialId } },
+            })),
+          },
+
+          // ✅ Update routingMaterials (Remove and re-add)
+          routingMaterials: {
+            deleteMany: {},
+            create: routingMaterialIds.map((routingMaterialId: number) => ({
+              routingMaterial: { connect: { id: routingMaterialId } },
+            })),
+          },
+
+          // ✅ Update keywordTemplates (Remove and re-add)
+          keywordTemplates: {
+            deleteMany: {},
+            create: templateIds.map((templateId: number) => ({
+              template: { connect: { id: Number(templateId) } },
+            })),
+          },
+        },
+        include: {
+          replyMaterials: { include: { replyMaterial: true } },
+          routingMaterials: { include: { routingMaterial: true } },
+          keywordTemplates: { include: { template: true } },
+        },
+      });
+
+      res.status(200).json({ message: "Keyword updated successfully", keyword });
+    } else {
+      // ✅ Create new keyword
+      keyword = await prisma.keyword.create({
+        data: {
+          value,
+          chatbotId,
+          textId,
+          matchType,
+          fuzzyPercent,
+          userId: req.user.userId, // ✅ Associate with logged-in user
+          replyMaterials: {
+            create: replyMaterialIds.map((replyMaterialId: number) => ({
+              replyMaterial: { connect: { id: replyMaterialId } },
+            })),
+          },
+          routingMaterials: {
+            create: routingMaterialIds.map((routingMaterialId: number) => ({
+              routingMaterial: { connect: { id: routingMaterialId } },
+            })),
+          },
+          keywordTemplates: {
+            create: templateIds.map((templateId: number) => ({
+              template: { connect: { id: Number(templateId) } }, // ✅ Connect each template
+            })),
+          },
+        },
+        include: {
+          replyMaterials: { include: { replyMaterial: true } },
+          routingMaterials: { include: { routingMaterial: true } },
+          keywordTemplates: { include: { template: true } },
+        },
+      });
+
+      res.status(201).json({ message: "Keyword created successfully", keyword });
+    }
   } catch (error) {
-    console.error("Error creating Keyword:", error);
-    res.status(500).json({ error: "Failed to create Keyword" });
+    console.error("Error creating/updating Keyword:", error);
+    res.status(500).json({ error: "Failed to create/update Keyword" });
   }
 };
 

@@ -85,6 +85,40 @@ export const getAllContacts = async (req: Request, res: Response) => {
   }
 };
 
+export const getAllImportedContacts = async (req: Request, res: Response) => {
+  try {
+    // Fetch all contacts from the database
+    const contacts = await prisma.contact.findMany({
+      select: {
+        id: true,
+        name: true,
+        phoneNumber: true,
+        attributes: true,
+        subscribed: true,
+        sendSMS: true,
+        ticketStatus: true,
+      },
+    });
+
+    // Ensure attributes is always returned as an array
+    const formattedContacts = contacts.map((contact) => ({
+      ...contact,
+      attributes: Array.isArray(contact.attributes)
+        ? contact.attributes
+        : Object.entries(contact.attributes || {}).map(([key, value]) => ({
+            key,
+            value,
+          })),
+    }));
+
+    res.json(formattedContacts);
+  } catch (error) {
+    console.error("Error fetching contacts:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+
 /** 📌 Get Contact by ID */
 export const getContactById = async (req: Request, res: Response) => {
   const { id } = req.params;

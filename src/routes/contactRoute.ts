@@ -18,13 +18,15 @@ import {
   getChatHistory,
   updateChatStatus,
   expireInactiveChats,
-  sendMessageController
+  sendMessageController,
+  getAllImportedContacts
 } from "../controllers/contactController";
 import { authenticateJWT } from '../middlewares/authMiddleware';
 const router = Router();
 const upload = multer({ dest: "uploads/" });
 
 router.get("/", getAllContacts);
+router.get("/imported", getAllImportedContacts);
 router.get("/:id", getContactById);
 router.get("/:id/messages", getMessagesByContactId);
 router.post("/", createContact);
