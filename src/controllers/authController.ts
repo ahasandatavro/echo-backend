@@ -287,8 +287,7 @@ export const getAccessToken = async (req: Request, res: Response): Promise<Respo
       params: {
         client_id: process.env.META_APP_ID,
         client_secret: process.env.META_APP_SECRET,
-        redirect_uri: process.env.REDIRECT_URI,
-        code,
+        code
       },
     });
     const businessToken = tokenResponse.data.access_token;
