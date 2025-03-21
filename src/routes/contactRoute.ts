@@ -19,36 +19,38 @@ import {
   updateChatStatus,
   expireInactiveChats,
   sendMessageController,
-  getAllImportedContacts
+  getAllImportedContacts,
+  uploadCSV,
+  importContacts
 } from "../controllers/contactController";
 import { authenticateJWT } from '../middlewares/authMiddleware';
 const router = Router();
 const upload = multer({ dest: "uploads/" });
 
-router.get("/", getAllContacts);
-router.get("/imported", getAllImportedContacts);
-router.get("/:id", getContactById);
-router.get("/:id/messages", getMessagesByContactId);
-router.post("/", createContact);
-router.put("/:id", updateContact);
-router.delete("/:id", deleteContact);
+router.get("/", authenticateJWT, getAllContacts);
+router.get("/imported", authenticateJWT, getAllImportedContacts);
+router.get("/:id", authenticateJWT, getContactById);
+router.get("/:id/messages", authenticateJWT, getMessagesByContactId);
+router.post("/", authenticateJWT, createContact);
+router.put("/:id", authenticateJWT, updateContact);
+router.delete("/:id", authenticateJWT, deleteContact);
 
-router.get("/:id/attributes", getAttributes);
-router.put("/:id/attributes", updateAttribute);
-router.get("/:id/notes", getNotes);
-router.post("/:id/notes", addNote);
+router.get("/:id/attributes", authenticateJWT, getAttributes);
+router.put("/:id/attributes", authenticateJWT, updateAttribute);
+router.get("/:id/notes", authenticateJWT, getNotes);
+router.post("/:id/notes", authenticateJWT, addNote);
 
-router.get("/:id/tags", getTags);
-router.post("/:id/tags", addTag);
-router.delete("/:id/tags/:tag", removeTag);
+router.get("/:id/tags", authenticateJWT, getTags);
+router.post("/:id/tags", authenticateJWT, addTag);
+router.delete("/:id/tags/:tag", authenticateJWT, removeTag);
 
-router.post("/upload", upload.single("file"), uploadContacts);
+router.post("/upload", authenticateJWT, upload.single("file"), uploadContacts);
+router.post("/upload-csv", authenticateJWT, upload.single("file"), uploadCSV);
+router.post("/import", authenticateJWT, importContacts);
 
+router.get("/:contactId/chat-history", authenticateJWT, getChatHistory);
+router.put("/:id/chat-status", authenticateJWT, updateChatStatus);
+router.post("/expire-timers", authenticateJWT, expireInactiveChats);
 
-router.get("/:contactId/chat-history", getChatHistory);
-router.put("/:id/chat-status", authenticateJWT,updateChatStatus);
-router.post("/expire-timers", expireInactiveChats);
-
-
-router.post("/:contactId/send-message",upload.single("file"),sendMessageController)
+router.post("/:contactId/send-message", authenticateJWT, upload.single("file"), sendMessageController);
 export default router;

@@ -12,6 +12,8 @@ import { handleChatbotTrigger } from "../subProcessors/webhook";
 const prisma = new PrismaClient();
 import FormData from "form-data";
 import axios from "axios";
+import { parse } from 'csv-parse/sync';
+import path from 'path';
 
 
 export const getAllContacts = async (req: Request, res: Response) => {
@@ -817,3 +819,229 @@ export const sendMessageController = async (req: Request, res: Response) => {
   }
 };
 
+// Process CSV upload and provide preview
+export const uploadCSV = async (req: Request, res: Response) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    const filePath = req.file.path;
+    const records: any[] = [];
+
+    // Use the same csvParser that's working in uploadContacts
+    await new Promise<void>((resolve, reject) => {
+      fs.createReadStream(filePath)
+        .pipe(csvParser())
+        .on("data", (row) => {
+          records.push(row);
+        })
+        .on("end", () => {
+          resolve();
+        })
+        .on("error", (error) => {
+          reject(error);
+        });
+    });
+
+    if (records.length === 0) {
+      return res.status(400).json({ error: "CSV file is empty" });
+    }
+
+    // Get column headers from first record
+    const columns = Object.keys(records[0]);
+    
+    // Create preview with first few records
+    const preview = records.slice(0, 5);
+
+    // Store the parsed data in temp file for later import
+    const tempFilePath = path.join(process.cwd(), 'uploads', `${req.file.originalname}_${Date.now()}.json`);
+    fs.writeFileSync(tempFilePath, JSON.stringify(records));
+
+    res.status(200).json({
+      message: "File uploaded successfully",
+      fileName: req.file.originalname,
+      tempFilePath,
+      preview,
+      totalRecords: records.length,
+      columns
+    });
+    
+    // Clean up the original uploaded file after processing
+    fs.unlinkSync(filePath);
+  } catch (error) {
+    console.error("Error processing CSV:", error);
+    // Clean up the file if it exists
+    if (req.file && req.file.path) {
+      fs.unlinkSync(req.file.path);
+    }
+    res.status(500).json({ 
+      error: "Failed to process CSV file",
+      message: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+};
+
+// Import contacts from uploaded CSV after mapping
+export const importContacts = async (req: Request, res: Response) => {
+  const { mappedColumns, fileName, tempFilePath, updateExisting = true } = req.body;
+
+  if (!mappedColumns || !tempFilePath) {
+    return res.status(400).json({ error: "Missing required parameters" });
+  }
+
+  try {
+    // Read the stored records from temp file
+    const rawData = fs.readFileSync(tempFilePath, 'utf8');
+    const records = JSON.parse(rawData);
+
+    if (!records || !Array.isArray(records) || records.length === 0) {
+      return res.status(400).json({ error: "No valid records found" });
+    }
+
+    // Process records in batches
+    const batchSize = 50;
+    const results = {
+      total: records.length,
+      successful: 0,
+      failed: 0,
+      new: 0,
+      updated: 0,
+      failures: [] as Array<{ rowIndex: number; data: any; error: string }>
+    };
+
+    for (let i = 0; i < records.length; i += batchSize) {
+      const batch = records.slice(i, i + batchSize);
+      
+      // Process each contact in the batch
+      const batchPromises = batch.map(async (record, index) => {
+        const rowIndex = i + index;
+        
+        try {
+          // Map fields according to user's selection
+          const contactData: any = {};
+          
+          // Process each mapped column
+          Object.entries(mappedColumns).forEach(([targetField, sourceField]) => {
+            if (sourceField && record[sourceField] !== undefined) {
+              // Handle special fields
+              if (targetField === 'tags' && typeof record[sourceField] === 'string') {
+                // Parse tags from comma-separated string
+                contactData[targetField] = record[sourceField]
+                  .replace(/^"(.*)"$/, '$1') // Remove surrounding quotes if present
+                  .split(',')
+                  .map((tag: string) => tag.trim())
+                  .filter((tag: string) => tag);
+              } 
+              else if (targetField === 'attributes' && typeof record[sourceField] === 'string') {
+                // Parse JSON attributes
+                try {
+                  contactData[targetField] = JSON.parse(record[sourceField]);
+                } catch (e) {
+                  // If JSON parsing fails, store as string
+                  contactData[targetField] = record[sourceField];
+                }
+              }
+              else if (targetField === 'allowbroadcast') {
+                // Convert to boolean for database
+                const value = record[sourceField];
+                contactData['subscribed'] = value === 'TRUE' || value === 'true' || value === true;
+              }
+              else if (targetField === 'allowsms') {
+                // Convert to boolean for database
+                const value = record[sourceField];
+                contactData['sendSMS'] = value === 'TRUE' || value === 'true' || value === true;
+              }
+              else {
+                // Default handling for other fields
+                contactData[targetField] = record[sourceField];
+              }
+            }
+          });
+
+          // Ensure required fields are present
+          if (!contactData.name || !contactData.phoneNumber) {
+            throw new Error("Name and phone number are required");
+          }
+
+          // Check if contact already exists
+          const existingContact = await prisma.contact.findFirst({
+            where: { phoneNumber: contactData.phoneNumber }
+          });
+
+          if (existingContact) {
+            if (updateExisting) {
+              // Update existing contact
+              await prisma.contact.update({
+                where: { id: existingContact.id },
+                data: {
+                  ...contactData,
+                  // Ensure these fields are not undefined
+                  name: contactData.name || existingContact.name,
+                  userId: contactData.userId || existingContact.userId,
+                  tags: contactData.tags || existingContact.tags,
+                  attributes: contactData.attributes || existingContact.attributes,
+                  subscribed: contactData.subscribed !== undefined ? contactData.subscribed : existingContact.subscribed,
+                  sendSMS: contactData.sendSMS !== undefined ? contactData.sendSMS : existingContact.sendSMS
+                }
+              });
+              
+              results.successful++;
+              results.updated++;
+            } else {
+              // Skip existing contacts if updateExisting is false
+              results.failed++;
+              results.failures.push({
+                rowIndex,
+                data: record,
+                error: "Contact with this phone number already exists"
+              });
+            }
+          } else {
+            // Create new contact
+            await prisma.contact.create({
+              data: {
+                ...contactData,
+                // Set defaults for optional fields
+                source: contactData.source || "import",
+                tags: contactData.tags || [],
+                attributes: contactData.attributes || {},
+                subscribed: contactData.subscribed !== undefined ? contactData.subscribed : false,
+                sendSMS: contactData.sendSMS !== undefined ? contactData.sendSMS : false
+              }
+            });
+            
+            results.successful++;
+            results.new++;
+          }
+        } catch (error) {
+          results.failed++;
+          results.failures.push({
+            rowIndex,
+            data: record,
+            error: error instanceof Error ? error.message : "Unknown error"
+          });
+        }
+      });
+
+      // Wait for all promises in this batch to complete
+      await Promise.all(batchPromises);
+    }
+
+    // Clean up the temporary file
+    if (fs.existsSync(tempFilePath)) {
+      fs.unlinkSync(tempFilePath);
+    }
+
+    res.status(200).json({
+      message: "Import completed",
+      results
+    });
+  } catch (error) {
+    console.error("Error importing contacts:", error);
+    res.status(500).json({ 
+      error: "Failed to import contacts", 
+      message: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+};
