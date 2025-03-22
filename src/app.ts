@@ -19,6 +19,7 @@ import defaultActionSettingsRoutes from "./routes/defaultActionSettingsRoute";
 import agentRoutes from "./routes/agentRoute";
 import businessAccountRoutes from "./routes/businessAccountRoute";
 import whatsAppRoute from "./routes/whatsAppRoute";
+import ruleRoutes from "./routes/ruleRoute";
 import { Server } from "socket.io";
 import { authenticateJWT } from "./middlewares/authMiddleware"
 import passport from "passport";
@@ -80,6 +81,7 @@ app.use('/analytics', authenticateJWT,analyticsRoutes);
 app.use("/teams", authenticateJWT,teamRoutes);
 app.use("/templates", authenticateJWT,templateRoutes);
 app.use("/whatsApp", authenticateJWT,whatsAppRoute);
+app.use("/rules", authenticateJWT, ruleRoutes);
 app.post("/upload",upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
