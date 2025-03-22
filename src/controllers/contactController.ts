@@ -165,32 +165,59 @@ export const createContact = async (req: Request, res: Response) => {
 };
 
 /** 📌 Update an Existing Contact */
+
 export const updateContact = async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { name, phoneNumber, source, tags, attributes } = req.body;
+  const { 
+    name, 
+    phoneNumber, 
+    source, 
+    tags, 
+    attributes, 
+    subscribed, // From allowBroadcast in frontend
+    sendSMS, // From allowSMS in frontend
+  } = req.body;
 
   try {
     // Fetch existing contact to preserve current tags/attributes if not provided
     const existingContact = await prisma.contact.findUnique({
       where: { id: parseInt(id) },
-      select: { tags: true, attributes: true }, // Only select necessary fields
+      select: { 
+        tags: true, 
+        attributes: true,
+        subscribed: true,
+        sendSMS: true,
+      },
     });
 
     if (!existingContact) {
       return res.status(404).json({ error: "Contact not found" });
     }
 
+    // Parse attributes if they're provided as a string
+    let parsedAttributes = existingContact.attributes;
+    if (attributes !== undefined) {
+      try {
+        // If it's already a string, parse it; otherwise, use as is
+        parsedAttributes = typeof attributes === 'string' 
+          ? JSON.parse(attributes) 
+          : attributes;
+      } catch (error) {
+        console.error("Error parsing attributes:", error);
+        return res.status(400).json({ error: "Invalid attributes format" });
+      }
+    }
+
     const updatedContact = await prisma.contact.update({
       where: { id: parseInt(id) },
       data: {
-        name,
-        phoneNumber,
-        source,
-        tags: tags !== undefined ? tags : existingContact.tags, // Keep existing tags if not provided
-        attributes:
-          attributes !== undefined
-            ? JSON.parse(attributes)
-            : existingContact.attributes, // Keep existing attributes if not provided
+        name: name !== undefined ? name : undefined,
+        phoneNumber: phoneNumber !== undefined ? phoneNumber : undefined,
+        source: source !== undefined ? source : undefined,
+        subscribed: subscribed !== undefined ? subscribed : existingContact.subscribed,
+        sendSMS: sendSMS !== undefined ? sendSMS : existingContact.sendSMS,
+        tags: tags !== undefined ? tags : existingContact.tags,
+        attributes: parsedAttributes,
       },
     });
 
@@ -200,7 +227,6 @@ export const updateContact = async (req: Request, res: Response) => {
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
-
 /** 📌 Delete a Contact */
 export const deleteContact = async (req: Request, res: Response) => {
   const { id } = req.params;

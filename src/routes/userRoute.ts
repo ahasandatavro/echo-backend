@@ -11,9 +11,11 @@ import {
   updateUserByEmail,
   getUserTagsAttributes,
   getTags,
+  createTag,
   updateTag,
   deleteTag,
   getAttributes,
+  createAttribute,
   updateAttribute,
   deleteAttribute
 } from "../controllers/userController"
@@ -29,12 +31,12 @@ router.post("/email/:email",upload.single("file"),updateUserByEmail);
 router.post("/", createUser);
 router.put("/selected-contact", updateSelectedContact);
 router.get("/tags", getTags);
-//router.post("/:id/tags", createTag);
+router.post("/tags", createTag);
 router.put("/tags/:oldTag", updateTag);
 router.delete("/tags/:tag", deleteTag);
 
 router.get("/attributes", getAttributes);
-//router.post("/:id/attributes", createAttribute);
+router.post("/attributes", createAttribute);
 router.put("/attributes/:oldAttr", updateAttribute);
 router.delete("/attributes/:attr", deleteAttribute);
 router.get("/tags-attributes", getUserTagsAttributes);

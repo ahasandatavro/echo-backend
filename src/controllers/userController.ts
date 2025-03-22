@@ -456,32 +456,34 @@ export const getTags = async (req: Request, res: Response) => {
   }
 };
 
-// POST /users/:id/tags  { "tag": "newTag" }
-// export const createTag = async (req: Request, res: Response) => {
-//   try {
-//     const userId = parseInt(req.params.id, 10);
-//     const { tag } = req.body;
+// POST /users/tags  { "tag": "newTag" }
+export const createTag = async (req: Request, res: Response) => {
+  try {
+    const reqUser: any = req.user;
+    const user = await prisma.user.findFirst({
+      where: { id: reqUser.userId },
+    });
+    if (!user) return res.status(404).json({ error: "User not found" });
+    const { tag } = req.body;
 
-//     if (!tag) return res.status(400).json({ error: "Tag is required" });
+    if (!tag) return res.status(400).json({ error: "Tag is required" });
 
-//     const user = await prisma.user.findUnique({ where: { id: userId } });
-//     if (!user) return res.status(404).json({ error: "User not found" });
+    const allTags = user.tags || [];
+    if (allTags.includes(tag)) {
+      return res.status(400).json({ error: "Tag already exists" });
+    }
 
-//     if (user.tags.includes(tag)) {
-//       return res.status(400).json({ error: "Tag already exists" });
-//     }
+    const updatedUser = await prisma.user.update({
+      where: { id: user.id },
+      data: { tags: [...allTags, tag] },
+    });
 
-//     const updatedUser = await prisma.user.update({
-//       where: { id: userId },
-//       data: { tags: [...user.tags, tag] },
-//     });
-
-//     res.json({ message: "Tag created", tags: updatedUser.tags });
-//   } catch (error: any) {
-//     console.error("Error creating tag:", error);
-//     return res.status(500).json({ error: error.message });
-//   }
-// };
+    res.json({ message: "Tag created", tags: updatedUser.tags });
+  } catch (error: any) {
+    console.error("Error creating tag:", error);
+    return res.status(500).json({ error: error.message });
+  }
+};
 
 // PUT /users/:id/tags/:oldTag   { "newTag": "renamedTag" }
 export const updateTag = async (req: Request, res: Response) => {
@@ -579,33 +581,34 @@ export const getAttributes = async (req: Request, res: Response) => {
   }
 };
 
-// POST /users/:id/attributes  { "attribute": "newAttr" }
-// export const createAttribute = async (req: Request, res: Response) => {
-//   try {
-//     const userId = parseInt(req.params.id, 10);
-//     const { attribute } = req.body;
+// POST /users/attributes  { "attribute": "newAttr" }
+export const createAttribute = async (req: Request, res: Response) => {
+  try {
+    const reqUser: any = req.user;
+    const user = await prisma.user.findFirst({
+      where: { id: reqUser.userId },
+    });
+    if (!user) return res.status(404).json({ error: "User not found" });
+    const { attribute } = req.body;
 
-//     if (!attribute) return res.status(400).json({ error: "Attribute is required" });
+    if (!attribute) return res.status(400).json({ error: "Attribute is required" });
 
-//     const user = await prisma.user.findUnique({ where: { id: userId } });
-//     if (!user) return res.status(404).json({ error: "User not found" });
+    const allAttrs = (user.attributes as string[]) || [];
+    if (allAttrs.includes(attribute)) {
+      return res.status(400).json({ error: "Attribute already exists" });
+    }
 
-//     const allAttrs = (user.attributes as string[]) || [];
-//     if (allAttrs.includes(attribute)) {
-//       return res.status(400).json({ error: "Attribute already exists" });
-//     }
+    const updatedUser = await prisma.user.update({
+      where: { id: user.id },
+      data: { attributes: [...allAttrs, attribute] },
+    });
 
-//     const updatedUser = await prisma.user.update({
-//       where: { id: userId },
-//       data: { attributes: [...allAttrs, attribute] },
-//     });
-
-//     res.json({ message: "Attribute created", attributes: updatedUser.attributes });
-//   } catch (error: any) {
-//     console.error("Error creating attribute:", error);
-//     return res.status(500).json({ error: error.message });
-//   }
-// };
+    res.json({ message: "Attribute created", attributes: updatedUser.attributes });
+  } catch (error: any) {
+    console.error("Error creating attribute:", error);
+    return res.status(500).json({ error: error.message });
+  }
+};
 
 // PUT /users/:id/attributes/:oldAttr   { "newAttr": "renamedAttr" }
 export const updateAttribute = async (req: Request, res: Response) => {
