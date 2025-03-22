@@ -442,7 +442,8 @@ export const getTags = async (req: Request, res: Response) => {
     const totalRows = filtered.length;
     const startIndex = (page - 1) * rowsPerPage;
     const endIndex = startIndex + rowsPerPage;
-    const pageData = filtered.slice(startIndex, endIndex);
+    //const pageData = filtered.slice(startIndex, endIndex);
+    const pageData = allTags;
 
     return res.json({
       data: pageData,
@@ -567,7 +568,8 @@ export const getAttributes = async (req: Request, res: Response) => {
     const totalRows = filtered.length;
     const startIndex = (page - 1) * rowsPerPage;
     const endIndex = startIndex + rowsPerPage;
-    const pageData = filtered.slice(startIndex, endIndex);
+   // const pageData = filtered.slice(startIndex, endIndex);
+   const pageData =allAttrs;
 
     return res.json({
       data: pageData,

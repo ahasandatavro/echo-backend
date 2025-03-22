@@ -146,16 +146,64 @@ export const createContact = async (req: Request, res: Response) => {
   const { name, phoneNumber, source, userId, tags, attributes } = req.body;
 
   try {
+    // Get the currently logged-in user if userId is not provided
+    let contactUserId = userId;
+    if (!contactUserId) {
+      const reqUser: any = req.user;
+      if (reqUser && reqUser.userId) {
+        contactUserId = reqUser.userId;
+      }
+    }
+
+    const parsedAttributes = attributes ? 
+      (typeof attributes === 'string' ? JSON.parse(attributes) : attributes) : 
+      {};
+
+    // Create the new contact
     const newContact = await prisma.contact.create({
       data: {
         name,
         phoneNumber,
-        source,
-        userId: userId ? parseInt(userId) : undefined,
+        source: source || 'manual',
+        userId: contactUserId ? parseInt(contactUserId) : undefined,
         tags: tags || [],
-        attributes: attributes ? JSON.parse(attributes) : {},
+        attributes: parsedAttributes,
       },
     });
+
+    // If we have a userId, update the user's tags and attributes
+    if (contactUserId) {
+      const user = await prisma.user.findUnique({
+        where: { id: parseInt(contactUserId) },
+      });
+      
+      if (user) {
+        // Sync tags
+        if (tags && tags.length > 0) {
+          const userTags = user.tags || [];
+          const uniqueTags = new Set([...userTags, ...tags]);
+          
+          await prisma.user.update({
+            where: { id: parseInt(contactUserId) },
+            data: { tags: Array.from(uniqueTags) },
+          });
+        }
+        
+        // Sync attributes
+        if (Object.keys(parsedAttributes).length > 0) {
+          const userAttributes = user.attributes || [];
+          const uniqueAttributes = new Set([
+            ...userAttributes, 
+            ...Object.keys(parsedAttributes)
+          ]);
+          
+          await prisma.user.update({
+            where: { id: parseInt(contactUserId) },
+            data: { attributes: Array.from(uniqueAttributes) },
+          });
+        }
+      }
+    }
 
     res.status(201).json(newContact);
   } catch (error) {
@@ -165,7 +213,6 @@ export const createContact = async (req: Request, res: Response) => {
 };
 
 /** 📌 Update an Existing Contact */
-
 export const updateContact = async (req: Request, res: Response) => {
   const { id } = req.params;
   const { 
@@ -176,6 +223,7 @@ export const updateContact = async (req: Request, res: Response) => {
     attributes, 
     subscribed, // From allowBroadcast in frontend
     sendSMS, // From allowSMS in frontend
+    userId, // Allow changing the userId if needed
   } = req.body;
 
   try {
@@ -187,18 +235,29 @@ export const updateContact = async (req: Request, res: Response) => {
         attributes: true,
         subscribed: true,
         sendSMS: true,
+        userId: true,
       },
     });
 
     if (!existingContact) {
       return res.status(404).json({ error: "Contact not found" });
     }
+    
+    // Determine which userId to use (new one from request or existing one)
+    let contactUserId = userId !== undefined ? userId : existingContact.userId;
+    
+    // If userId is not provided in request but we need one, try to get from the logged-in user
+    if (contactUserId === undefined || contactUserId === null) {
+      const reqUser: any = req.user;
+      if (reqUser && reqUser.userId) {
+        contactUserId = reqUser.userId;
+      }
+    }
 
     // Parse attributes if they're provided as a string
     let parsedAttributes = existingContact.attributes;
     if (attributes !== undefined) {
       try {
-        // If it's already a string, parse it; otherwise, use as is
         parsedAttributes = typeof attributes === 'string' 
           ? JSON.parse(attributes) 
           : attributes;
@@ -208,12 +267,51 @@ export const updateContact = async (req: Request, res: Response) => {
       }
     }
 
+    // If userId has changed, need to update both old and new users
+    if (existingContact.userId !== contactUserId && existingContact.userId) {
+      // If there was a previous user, remove this contact's tags/attributes from them
+      // This is optional - you may want to keep the old user's tags/attributes
+    }
+
+    // Update the new user's tags and attributes
+    if (contactUserId) {
+      const user = await prisma.user.findUnique({
+        where: { id: contactUserId },
+      });
+
+      if (user) {
+        // Update user tags if tags are provided
+        if (tags !== undefined) {
+          const userTags = user.tags || [];
+          const uniqueTags = new Set([...userTags, ...tags]);
+          
+          await prisma.user.update({
+            where: { id: contactUserId },
+            data: { tags: Array.from(uniqueTags) },
+          });
+        }
+
+        // Update user attributes if attributes are provided
+        if (parsedAttributes && typeof parsedAttributes === 'object') {
+          const attributeKeys = Object.keys(parsedAttributes);
+          const userAttributes = user.attributes || [];
+          const uniqueAttributes = new Set([...userAttributes, ...attributeKeys]);
+          
+          await prisma.user.update({
+            where: { id: contactUserId },
+            data: { attributes: Array.from(uniqueAttributes) },
+          });
+        }
+      }
+    }
+
     const updatedContact = await prisma.contact.update({
       where: { id: parseInt(id) },
       data: {
         name: name !== undefined ? name : undefined,
         phoneNumber: phoneNumber !== undefined ? phoneNumber : undefined,
         source: source !== undefined ? source : undefined,
+        userId: contactUserId !== undefined ? contactUserId : undefined,
         subscribed: subscribed !== undefined ? subscribed : existingContact.subscribed,
         sendSMS: sendSMS !== undefined ? sendSMS : existingContact.sendSMS,
         tags: tags !== undefined ? tags : existingContact.tags,
@@ -232,10 +330,21 @@ export const deleteContact = async (req: Request, res: Response) => {
   const { id } = req.params;
 
   try {
+    // Find the contact first to get its userId, tags, and attributes
+    const contact = await prisma.contact.findUnique({
+      where: { id: parseInt(id) },
+      select: { userId: true, tags: true, attributes: true },
+    });
+
+    // Delete the contact
     await prisma.contact.delete({
       where: { id: parseInt(id) },
     });
 
+    // Optionally: Update the user's tags and attributes
+    // Note: This would require checking if other contacts of this user have these tags/attributes
+    // before removing them. This could be complex and might not be desired behavior.
+    
     res.status(204).send();
   } catch (error) {
     console.error("Error deleting contact:", error);
@@ -418,8 +527,6 @@ export const getAttributes = async (req: Request, res: Response) => {
 
 export const updateAttribute = async (req: Request, res: Response) => {
   try {
-    // Now, req.body is an object with the attribute updates,
-    // for example: { role: "developer" }
     const updateData = req.body;
     const contactId = parseInt(req.params.id, 10);
 
@@ -427,25 +534,45 @@ export const updateAttribute = async (req: Request, res: Response) => {
     const contact = await prisma.contact.findUnique({
       where: { id: contactId },
     });
+    
     if (!contact) {
       return res.status(404).json({ message: "Contact not found" });
     }
 
-    // Update attributes for the user if contact.userId exists
-    if (contact.userId) {
-      const user = await prisma.user.findUnique({
-        where: { id: contact.userId },
-      });
-      if (user) {
-        const existingUserAttributeKeys: string[] = user.attributes || [];
-        const newKeys = Object.keys(updateData); // keys from the update data
-        const updatedUserAttributeKeys = Array.from(
-          new Set([...existingUserAttributeKeys, ...newKeys])
-        );
+    // Use the contact's userId or get from the current user
+    let userId = contact.userId;
+    if (!userId) {
+      const reqUser: any = req.user;
+      if (reqUser && reqUser.userId) {
+        userId = reqUser.userId;
+        
+        // Update the contact with the userId if it doesn't have one
+        await prisma.contact.update({
+          where: { id: contactId },
+          data: { userId },
+        });
+      }
+    }
 
+    // Update attributes for the user if userId exists
+    if (userId) {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+      });
+      
+      if (user) {
+        // Get existing user attribute keys
+        const existingUserAttributes = user.attributes || [];
+        
+        // Get new attribute keys from updateData
+        const newAttributeKeys = Object.keys(updateData);
+        
+        // Combine existing and new attribute keys, ensuring uniqueness
+        const uniqueAttributes = new Set([...existingUserAttributes, ...newAttributeKeys]);
+        
         await prisma.user.update({
-          where: { id: contact.userId },
-          data: { attributes: { set: updatedUserAttributeKeys } },
+          where: { id: userId },
+          data: { attributes: Array.from(uniqueAttributes) },
         });
       }
     }
@@ -456,7 +583,7 @@ export const updateAttribute = async (req: Request, res: Response) => {
 
     const updatedContact = await prisma.contact.update({
       where: { id: contactId },
-      data: { attributes: { set: updatedContactAttributes } },
+      data: { attributes: updatedContactAttributes },
     });
 
     res.json({
@@ -535,17 +662,36 @@ export const addTag = async (req: Request, res: Response) => {
     });
 
     if (!contact) return res.status(404).json({ message: "Contact not found" });
-    if (contact.userId) {
-      const user = await prisma.user.findUnique({
-        where: { id: contact.userId },
-      });
-      let updatedUserTags = user?.tags || [];
-      if (!updatedUserTags.includes(tag)) {
-        updatedUserTags = [...updatedUserTags, tag];
-        await prisma.user.update({
-          where: { id: contact.userId },
-          data: { tags: updatedUserTags },
+
+    // Use the contact's userId or get from the current user
+    let userId = contact.userId;
+    if (!userId) {
+      const reqUser: any = req.user;
+      if (reqUser && reqUser.userId) {
+        userId = reqUser.userId;
+        
+        // Update the contact with the userId if it doesn't have one
+        await prisma.contact.update({
+          where: { id: contactId },
+          data: { userId },
         });
+      }
+    }
+    
+    if (userId) {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+      });
+      
+      if (user) {
+        let updatedUserTags = user.tags || [];
+        if (!updatedUserTags.includes(tag)) {
+          updatedUserTags = [...updatedUserTags, tag];
+          await prisma.user.update({
+            where: { id: userId },
+            data: { tags: updatedUserTags },
+          });
+        }
       }
     }
 
@@ -917,6 +1063,10 @@ export const importContacts = async (req: Request, res: Response) => {
   }
 
   try {
+    // Get the current user's ID for contacts that don't specify a userId
+    const reqUser: any = req.user;
+    const defaultUserId = reqUser?.userId;
+
     // Read the stored records from temp file
     const rawData = fs.readFileSync(tempFilePath, 'utf8');
     const records = JSON.parse(rawData);
@@ -952,34 +1102,28 @@ export const importContacts = async (req: Request, res: Response) => {
             if (sourceField && record[sourceField] !== undefined) {
               // Handle special fields
               if (targetField === 'tags' && typeof record[sourceField] === 'string') {
-                // Parse tags from comma-separated string
                 contactData[targetField] = record[sourceField]
-                  .replace(/^"(.*)"$/, '$1') // Remove surrounding quotes if present
+                  .replace(/^"(.*)"$/, '$1')
                   .split(',')
                   .map((tag: string) => tag.trim())
                   .filter((tag: string) => tag);
               } 
               else if (targetField === 'attributes' && typeof record[sourceField] === 'string') {
-                // Parse JSON attributes
                 try {
                   contactData[targetField] = JSON.parse(record[sourceField]);
                 } catch (e) {
-                  // If JSON parsing fails, store as string
                   contactData[targetField] = record[sourceField];
                 }
               }
               else if (targetField === 'allowbroadcast') {
-                // Convert to boolean for database
                 const value = record[sourceField];
                 contactData['subscribed'] = value === 'TRUE' || value === 'true' || value === true;
               }
               else if (targetField === 'allowsms') {
-                // Convert to boolean for database
                 const value = record[sourceField];
                 contactData['sendSMS'] = value === 'TRUE' || value === 'true' || value === true;
               }
               else {
-                // Default handling for other fields
                 contactData[targetField] = record[sourceField];
               }
             }
@@ -990,13 +1134,89 @@ export const importContacts = async (req: Request, res: Response) => {
             throw new Error("Name and phone number are required");
           }
 
+          // Assign default userId if none is provided
+          if (!contactData.userId && defaultUserId) {
+            contactData.userId = defaultUserId;
+          }
+
           // Check if contact already exists
           const existingContact = await prisma.contact.findFirst({
             where: { phoneNumber: contactData.phoneNumber }
           });
 
+          // Sync attributes and tags with user if userId is provided
+          if (contactData.userId) {
+            const userId = parseInt(contactData.userId);
+            const user = await prisma.user.findUnique({
+              where: { id: userId },
+            });
+
+            if (user) {
+              // Update tags in user record
+              if (contactData.tags && Array.isArray(contactData.tags) && contactData.tags.length > 0) {
+                const userTags = user.tags || [];
+                const uniqueTags = new Set([...userTags, ...contactData.tags]);
+                await prisma.user.update({
+                  where: { id: userId },
+                  data: { tags: Array.from(uniqueTags) },
+                });
+              }
+
+              // Update attributes in user record
+              if (contactData.attributes && typeof contactData.attributes === 'object') {
+                const attributeKeys = Object.keys(contactData.attributes);
+                if (attributeKeys.length > 0) {
+                  const userAttributes = user.attributes || [];
+                  const uniqueAttributes = new Set([...userAttributes, ...attributeKeys]);
+                  await prisma.user.update({
+                    where: { id: userId },
+                    data: { attributes: Array.from(uniqueAttributes) },
+                  });
+                }
+              }
+            }
+          }
+
           if (existingContact) {
             if (updateExisting) {
+              // Determine which userId to use
+              let userId = contactData.userId || existingContact.userId;
+              if (!userId && defaultUserId) {
+                userId = defaultUserId;
+              }
+              
+              // If there's a userId, sync tags and attributes with user
+              if (userId) {
+                const user = await prisma.user.findUnique({
+                  where: { id: userId },
+                });
+                
+                if (user) {
+                  // Update user's tags
+                  if (contactData.tags && Array.isArray(contactData.tags) && contactData.tags.length > 0) {
+                    const userTags = user.tags || [];
+                    const uniqueTags = new Set([...userTags, ...contactData.tags]);
+                    await prisma.user.update({
+                      where: { id: userId },
+                      data: { tags: Array.from(uniqueTags) },
+                    });
+                  }
+                  
+                  // Update user's attributes
+                  if (contactData.attributes && typeof contactData.attributes === 'object') {
+                    const attributeKeys = Object.keys(contactData.attributes);
+                    if (attributeKeys.length > 0) {
+                      const userAttributes = user.attributes || [];
+                      const uniqueAttributes = new Set([...userAttributes, ...attributeKeys]);
+                      await prisma.user.update({
+                        where: { id: userId },
+                        data: { attributes: Array.from(uniqueAttributes) },
+                      });
+                    }
+                  }
+                }
+              }
+
               // Update existing contact
               await prisma.contact.update({
                 where: { id: existingContact.id },
@@ -1004,7 +1224,7 @@ export const importContacts = async (req: Request, res: Response) => {
                   ...contactData,
                   // Ensure these fields are not undefined
                   name: contactData.name || existingContact.name,
-                  userId: contactData.userId || existingContact.userId,
+                  userId: userId || undefined,
                   tags: contactData.tags || existingContact.tags,
                   attributes: contactData.attributes || existingContact.attributes,
                   subscribed: contactData.subscribed !== undefined ? contactData.subscribed : existingContact.subscribed,
@@ -1015,7 +1235,6 @@ export const importContacts = async (req: Request, res: Response) => {
               results.successful++;
               results.updated++;
             } else {
-              // Skip existing contacts if updateExisting is false
               results.failed++;
               results.failures.push({
                 rowIndex,
