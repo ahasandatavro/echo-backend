@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
@@ -30,8 +30,8 @@ export const getRule = async (req: Request, res: Response) => {
     
     const rule = await prisma.rule.findFirst({
       where: { 
-        id,
-        userId // Ensure the rule belongs to the current user
+        id: parseInt(id),
+        userId
       }
     });
     
@@ -51,20 +51,27 @@ export const createRule = async (req: Request, res: Response) => {
   try {
     const reqUser: any = req.user;
     const userId = reqUser.userId;
-    const { name, triggerType, action, conditions, actionData } = req.body;
+    const { name, triggerType, action, status, conditions, actionData } = req.body;
     
     if (!name || !triggerType || !action) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
+    
+    // Always ensure conditions and actionData are at least empty objects
+    const safeConditions = conditions || {};
+    const safeActionData = actionData || {};
+    
+    console.log('Creating rule with conditions:', safeConditions);
+    console.log('Creating rule with actionData:', safeActionData);
     
     const rule = await prisma.rule.create({
       data: {
         name,
         triggerType,
         action,
-        status: 'Active',
-        conditions: conditions || {},
-        actionData: actionData || {},
+        status: status || 'Active',
+        conditions: safeConditions,
+        actionData: safeActionData,
         userId,
       },
     });
@@ -84,10 +91,12 @@ export const updateRule = async (req: Request, res: Response) => {
     const { id } = req.params;
     const { name, triggerType, action, status, conditions, actionData } = req.body;
     
+    const ruleId = parseInt(id);
+    
     // Verify the rule exists and belongs to the user
     const existingRule = await prisma.rule.findFirst({
       where: { 
-        id,
+        id: ruleId,
         userId
       }
     });
@@ -96,15 +105,22 @@ export const updateRule = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Rule not found' });
     }
     
+    // Ensure conditions and actionData are never null
+    const safeConditions = conditions !== undefined ? (conditions || {}) : existingRule.conditions;
+    const safeActionData = actionData !== undefined ? (actionData || {}) : existingRule.actionData;
+    
+    console.log('Updating rule with conditions:', safeConditions);
+    console.log('Updating rule with actionData:', safeActionData);
+    
     const updatedRule = await prisma.rule.update({
-      where: { id },
+      where: { id: ruleId },
       data: {
         name: name !== undefined ? name : existingRule.name,
         triggerType: triggerType !== undefined ? triggerType : existingRule.triggerType,
         action: action !== undefined ? action : existingRule.action,
         status: status !== undefined ? status : existingRule.status,
-        conditions: conditions !== undefined ? conditions : existingRule.conditions,
-        actionData: actionData !== undefined ? actionData : existingRule.actionData,
+        conditions: safeConditions,
+        actionData: safeActionData,
       },
     });
     
@@ -122,10 +138,12 @@ export const deleteRule = async (req: Request, res: Response) => {
     const userId = reqUser.userId;
     const { id } = req.params;
     
+    const ruleId = parseInt(id);
+    
     // Verify the rule exists and belongs to the user
     const existingRule = await prisma.rule.findFirst({
       where: { 
-        id,
+        id: ruleId,
         userId
       }
     });
@@ -135,7 +153,7 @@ export const deleteRule = async (req: Request, res: Response) => {
     }
     
     await prisma.rule.delete({
-      where: { id },
+      where: { id: ruleId },
     });
     
     return res.status(204).send();
@@ -143,4 +161,32 @@ export const deleteRule = async (req: Request, res: Response) => {
     console.error('Error deleting rule:', error);
     return res.status(500).json({ error: 'Failed to delete rule' });
   }
-}; 
+};
+
+// Helper function to validate and parse JSON
+function validateAndParseJSON(data: any): any {
+  if (data === null) {
+    // Use Prisma.JsonNull for null values
+    return { Prisma: { kind: 'null' } };
+  }
+  
+  if (data === undefined) {
+    // Return empty object for undefined values
+    return {};
+  }
+  
+  if (typeof data === 'string') {
+    try {
+      return JSON.parse(data);
+    } catch (e) {
+      console.error('Error parsing JSON string:', e);
+      return {};
+    }
+  }
+  
+  if (typeof data === 'object') {
+    return data;
+  }
+  
+  return {};
+} 

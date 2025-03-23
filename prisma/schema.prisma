@@ -77,7 +77,7 @@ model BusinessAccount {
 }
 
 model Rule {
-  id            String    @id @default(cuid())
+  id            Int       @id @default(autoincrement())
   name          String
   triggerType   String    // e.g. "whatsappMessage", "attributeAdded", etc.
   action        String    // e.g. "sendTemplate", "sendMessage", etc.
