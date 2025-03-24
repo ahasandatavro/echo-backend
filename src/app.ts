@@ -83,7 +83,7 @@ app.use("/teams", authenticateJWT,teamRoutes);
 app.use("/templates", authenticateJWT,templateRoutes);
 app.use("/whatsApp", authenticateJWT,whatsAppRoute);
 app.use("/rules", authenticateJWT, ruleRoutes);
-app.use("/hubspot", authenticateJWT, hubspotRoutes);
+app.use("/hubspot",hubspotRoutes);
 app.post("/upload",upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
