@@ -111,7 +111,11 @@ const getContactByEmailHelper = async (email: string, accessToken: string) => {
 export const initiateOAuth = async (req: Request, res: Response) => {
   try {
     console.log('Initiating HubSpot OAuth flow...');
-    
+    let userId;
+    if (req.user) {
+      const reqUser = req.user as any;
+      userId = reqUser.userId;
+    }
     const clientId = process.env.HUBSPOT_CLIENT_ID;
     if (!clientId) {
       console.error('HUBSPOT_CLIENT_ID is not defined in environment variables');
@@ -123,10 +127,10 @@ export const initiateOAuth = async (req: Request, res: Response) => {
     
     const redirectUri = `${process.env.APP_URL || 'http://localhost:5000'}/hubspot/oauth/callback`;
     const scopes = "content crm.objects.contacts.read crm.objects.contacts.write";
+    const state = encodeURIComponent(JSON.stringify({ userId: userId }));
+    const authUrl = `https://app.hubspot.com/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&state=${state}`;
     
-    const authUrl = `https://app.hubspot.com/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}`;
-    
-    console.log('Redirect URL:', authUrl);
+    //console.log('Redirect URL:', authUrl);
     
     // Redirect directly to HubSpot OAuth page
     res.json({ redirectUrl: authUrl });
@@ -143,14 +147,15 @@ export const initiateOAuth = async (req: Request, res: Response) => {
 
 export const handleOAuthCallback = async (req: Request, res: Response) => {
   try {
-    console.log('Handling OAuth callback, query params:', req.query);
+    //console.log('Handling OAuth callback, query params:', req.query);
     
-    const { code } = req.query;
+    const { code, state } = req.query;
     
     if (!code) {
       return res.status(400).json({ success: false, message: 'Authorization code is missing' });
     }
-    
+    const parsedState = JSON.parse(decodeURIComponent(state as string));
+    const userIdFromState = parsedState.userId;
     // Exchange the authorization code for an access token
     const clientId = process.env.HUBSPOT_CLIENT_ID;
     const clientSecret = process.env.HUBSPOT_CLIENT_SECRET;
@@ -186,27 +191,11 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
     
     // Store the tokens in the database
     try {
-      // Find an admin user to store the tokens, or use the authenticated user
-      let userId;
-      if (req.user) {
-        const reqUser = req.user as any;
-        userId = reqUser.userId;
-      } else {
-        const adminUser = await prisma.user.findFirst({
-          where: { role: 'SUPERADMIN' }
-        });
-        
-        if (adminUser) {
-          userId = adminUser.id;
-        } else {
-          console.error('No admin user found to store HubSpot tokens');
-        }
-      }
-      
-      if (userId) {
+    
+      if (userIdFromState) {
         // Check if integration record exists
         const existingIntegration = await prisma.hubspotIntegration.findUnique({
-          where: { userId }
+          where: { userId: userIdFromState }
         });
         
         if (existingIntegration) {
@@ -224,7 +213,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
           // Create new record
           await prisma.hubspotIntegration.create({
             data: {
-              userId,
+              userId: userIdFromState,
               accessToken: access_token,
               refreshToken: refresh_token,
               tokenExpiresAt: Math.floor(Date.now() / 1000) + expires_in,
@@ -233,7 +222,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
           });
         }
         
-        console.log('OAuth tokens stored for user ID:', userId);
+        //console.log('OAuth tokens stored for user ID:', userId);
       }
     } catch (dbError) {
       console.error('Error storing HubSpot tokens in database:', dbError);
@@ -692,3 +681,84 @@ export const getIntegrationStatus = async (req: Request, res: Response) => {
     });
   }
 }; 
+
+// Add this to your existing controller file
+
+export const getConnectedAccounts = async (req: Request, res: Response) => {
+  try {
+    // Get the authenticated user's ID
+    if (!req.user) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'User not authenticated' 
+      });
+    }
+    const reqUser = req.user as any;
+    const userId = reqUser.userId;
+
+    // Get the specific user's HubSpot integration
+    const integration = await prisma.hubspotIntegration.findFirst({
+      where: {
+        userId: userId,
+        isActive: true,
+        accessToken: { not: null }
+      }
+    });
+
+    if (!integration || !integration.accessToken) {
+      return res.status(200).json([]);
+    }
+
+    // Check if token needs refresh
+    if (integration.tokenExpiresAt && integration.tokenExpiresAt < Math.floor(Date.now() / 1000)) {
+      try {
+        await refreshHubspotToken(integration.userId, integration.refreshToken);
+        // Get the updated integration
+        const updatedIntegration = await prisma.hubspotIntegration.findUnique({
+          where: { id: integration.id }
+        });
+        if (updatedIntegration) {
+          integration.accessToken = updatedIntegration.accessToken;
+        }
+      } catch (refreshError) {
+        console.error('Failed to refresh token:', refreshError);
+        return res.status(200).json([]);
+      }
+    }
+
+    try {
+      // Get account information from HubSpot
+      const response = await axios.get(`https://api.hubapi.com/oauth/v1/access-tokens/${integration.accessToken}`, {
+        headers: {
+          Authorization: `Bearer ${integration.accessToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const accountInfo = response.data;
+      
+      // Return the connected account information
+      return res.status(200).json([
+        {
+          accountDomain: accountInfo.hub_domain,
+          userName: accountInfo.user,
+          status: 'Connected',
+          userId: userId,
+        }
+      ]);
+
+    } catch (hubspotError) {
+      console.error('Failed to fetch HubSpot account details:', hubspotError);
+      // If we can't get account details, return empty array
+      return res.status(200).json([]);
+    }
+
+  } catch (error: unknown) {
+    console.error('Error fetching connected accounts:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch connected accounts', 
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+};
