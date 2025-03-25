@@ -491,7 +491,8 @@ export const createContact = async (req: Request, res: Response) => {
       message: 'Contact created/updated in HubSpot', 
       contactId: response.data.id 
     });
-  } catch (error: unknown) {
+  } catch (error: any) {
+    console.log(error.response.data.message);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to create/update contact in HubSpot', 
@@ -744,6 +745,7 @@ export const getConnectedAccounts = async (req: Request, res: Response) => {
           userName: accountInfo.user,
           status: 'Connected',
           userId: userId,
+          ownerId: accountInfo.user_id
         }
       ]);
 
