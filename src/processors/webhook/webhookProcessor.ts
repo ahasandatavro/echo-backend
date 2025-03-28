@@ -235,7 +235,7 @@ export const processNode = async (
               const existingVariable = await prisma.variable.findFirst({
                 where: {
                   name: variableName,
-                  chatbotId: currentNode.chatbotId,
+                  chatbotId: currentNode.chatId,
                   conversationId: conversation.id,
                 },
               });
@@ -251,7 +251,7 @@ export const processNode = async (
                 await prisma.variable.create({
                   data: {
                     name: variableName,
-                    chatbotId: currentNode.chatbotId,
+                    chatbotId: currentNode.chatId,
                     conversationId: conversation.id,
                   },
                 });
@@ -850,6 +850,16 @@ export const processNode = async (
     
     if (currentNode.type === "updateChatStatus") {
       try {
+        const contactRecord = await prisma.contact.findUnique({
+          where: { phoneNumber: recipient },
+        });
+        if (!contactRecord) {
+          throw new Error(`Contact with phoneNumber ${recipient} not found.`);
+        }
+        await prisma.contact.update({
+          where: { phoneNumber: recipient },
+          data: {ticketStatus: currentNode.data?.chat_status_data.selectedStatus },
+        });
         // Extract the selected status from the node's data
         const chatStatusData = currentNode.data?.chat_status_data;
         if (!chatStatusData || !chatStatusData.selectedStatus) {
