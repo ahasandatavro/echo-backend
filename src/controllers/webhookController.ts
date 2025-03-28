@@ -10,6 +10,7 @@ import { prisma } from "../models/prismaClient";
 import { validateUserResponse } from "../helpers/validation";
 import { processWebhookMessage } from "../processors/inboxProcessor";
 import { processBroadcastStatus } from "../subProcessors/webhook";
+import { processKeyword } from "../processors/webhook/keywordProcessor";
 // Webhook Verification for WhatsApp
 export const handleIncomingMessage = async (req: Request, res: Response) => {
   const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN;
@@ -91,21 +92,9 @@ export const webhookVerification = async (req: Request, res: Response) => {
             let chatbotId: number | null = null;
 
             if (text) {
-              const keyword = await prisma.keyword.findFirst({
-                where: {
-                  value: {
-                    contains: text,
-                    mode: "insensitive",
-                  },
-                },
-                include: { chatbot: true },
-              });
-
-              if (keyword?.chatbot) {
-                chatbotId = keyword.chatbot.id;
-                console.log(`Keyword matched. Using chatbot ID: ${chatbotId}`);
-              }
+              chatbotId = await findChatbotIdByKeyword(text);
             }
+            
             if (!chatbotId) {
               console.warn(
                 "No keyword match found. Unable to associate a chatbot."
@@ -420,26 +409,9 @@ export const webhookVerification = async (req: Request, res: Response) => {
             }
           }
 
-          // Handle keyword-based text messages
+          // Handle keyword-based text messages using the comprehensive processKeyword function
           if (text) {
-            const keyword = await prisma.keyword.findFirst({
-              where: {
-                value: {
-                  contains: text,
-                  mode: "insensitive",
-                },
-              },
-              include: { chatbot: true },
-            });
-
-            if (keyword?.chatbot) {
-              const chatbotId = keyword.chatbot.id;
-              await prisma.conversation.update({
-                where: { id: conversation.id },
-                data: { answeringQuestion: false },
-              });
-              await processChatFlow(chatbotId, recipient);
-            }
+            await processKeyword(text, recipient);
           }
         }
       }
@@ -508,4 +480,23 @@ const getNextNodeIdFromQuestion = (
   }
 
   return nextNode.nodeId;
+};
+
+/**
+ * Find a chatbot ID by matching a text with keywords
+ * @param text The text to match against keywords
+ * @returns Chatbot ID if a match is found, null otherwise
+ */
+const findChatbotIdByKeyword = async (text: string): Promise<number | null> => {
+  const keyword = await prisma.keyword.findFirst({
+    where: {
+      value: {
+        contains: text,
+        mode: "insensitive",
+      },
+    },
+    include: { chatbot: true },
+  });
+
+  return keyword?.chatbot?.id || null;
 };

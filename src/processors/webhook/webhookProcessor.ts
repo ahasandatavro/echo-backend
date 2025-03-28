@@ -8,6 +8,9 @@ import { performGoogleSheetAction } from "../../subProcessors/webhook";
 import { MessageStatus } from "../../interphases"; // ✅ Import the correct enum
 import { Prisma } from "@prisma/client"; // ✅ Import Prisma types
 import { io } from "../../app";
+import { validateUserResponse } from "../../helpers/validation";
+import { processWebhookMessage } from "../inboxProcessor";
+import { processBroadcastStatus } from "../../subProcessors/webhook";
 export const processChatFlow = async (chatbotId: number, recipient: string) => {
   try {
     const chatbotData = await prisma.chatbot.findUnique({
@@ -103,7 +106,7 @@ export const processNode = async (
 
       if (messageData && messageData.length > 0) {
         for (const message of messageData) {
-          await sendMessage(recipient, message,currentNode?.chatId,1 );
+          await sendMessage(recipient, message,currentNode?.chatbotId,1 );
         }
       }
 
@@ -118,7 +121,7 @@ export const processNode = async (
           const conversation = await prisma.conversation.findFirst({
             where: {
               recipient: recipient, // Matches the recipient
-              chatbotId: currentNode.chatId,    // Matches the chatbotId
+              chatbotId: currentNode.chatbotId,    // Matches the chatbotId
             },
           });
           
@@ -205,7 +208,7 @@ export const processNode = async (
           buttons: buttons,
           header: buttonData?.headerText,
           footer: buttonData?.footerText,
-          chatId: currentNode?.chatId,
+          chatId: currentNode?.chatbotId,
           saveAnswerVariable: buttonData?.saveAnswerVariable,
         };
     
@@ -223,7 +226,7 @@ export const processNode = async (
             const conversation = await prisma.conversation.findFirst({
               where: {
                 recipient: recipient,
-                chatbotId: currentNode?.chatId,
+                chatbotId: currentNode?.chatbotId,
               },
             });
     
@@ -255,11 +258,11 @@ export const processNode = async (
               }
     
               console.log(
-                `Variable "${variableName}" saved for conversation ID ${conversation.id} and chatbot ID ${currentNode.chatId}.`
+                `Variable "${variableName}" saved for conversation ID ${conversation.id} and chatbot ID ${currentNode.chatbotId}.`
               );
             } else {
               console.warn(
-                `No conversation found for recipient ${recipient} and chatbot ID ${currentNode.chatId}.`
+                `No conversation found for recipient ${recipient} and chatbot ID ${currentNode.chatbotId}.`
               );
             }
           }
@@ -298,7 +301,7 @@ export const processNode = async (
             const conversation = await prisma.conversation.findFirst({
               where: {
                 recipient: recipient,
-                chatbotId: currentNode?.chatId,
+                chatbotId: currentNode?.chatbotId,
               },
             });
     
@@ -307,7 +310,7 @@ export const processNode = async (
               const existingVariable = await prisma.variable.findFirst({
                 where: {
                   name: variableName,
-                  chatbotId: currentNode.chatId,
+                  chatbotId: currentNode.chatbotId,
                   conversationId: conversation.id,
                 },
               });
@@ -323,18 +326,18 @@ export const processNode = async (
                 await prisma.variable.create({
                   data: {
                     name: variableName,
-                    chatbotId: currentNode.chatId,
+                    chatbotId: currentNode.chatbotId,
                     conversationId: conversation.id,
                   },
                 });
               }
     
               console.log(
-                `Variable "${variableName}" saved for conversation ID ${conversation.id} and chatbot ID ${currentNode.chatId}.`
+                `Variable "${variableName}" saved for conversation ID ${conversation.id} and chatbot ID ${currentNode.chatbotId}.`
               );
             } else {
               console.warn(
-                `No conversation found for recipient ${recipient} and chatbot ID ${currentNode.chatId}.`
+                `No conversation found for recipient ${recipient} and chatbot ID ${currentNode.chatbotId}.`
               );
             }
           }
@@ -697,7 +700,7 @@ export const processNode = async (
       if (questionData) {
         const questionMessage = {
           text: convertHtmlToWhatsAppText(questionData.questionText),
-          chatId: currentNode.chatId,
+          chatId: currentNode.chatbotId,
           buttons: questionData.answerVariants?.map((variant: any, index: number) => ({
             id: `${index}_node_${currentNode.id}`,
             title: variant,
@@ -719,7 +722,7 @@ export const processNode = async (
             const conversation = await prisma.conversation.findFirst({
               where: {
                 recipient: recipient,
-                chatbotId: currentNode?.chatId,
+                chatbotId: currentNode?.chatbotId,
               },
             });
     
@@ -728,7 +731,7 @@ export const processNode = async (
               const existingVariable = await prisma.variable.findFirst({
                 where: {
                   name: variableName,
-                  chatbotId: currentNode.chatId,
+                  chatbotId: currentNode.chatbotId,
                   conversationId: conversation.id,
                 },
               });
@@ -744,18 +747,18 @@ export const processNode = async (
                 await prisma.variable.create({
                   data: {
                     name: variableName,
-                    chatbotId: currentNode.chatId,
+                    chatbotId: currentNode.chatbotId,
                     conversationId: conversation.id,
                   },
                 });
               }
     
               console.log(
-                `Variable "${variableName}" saved for conversation ID ${conversation.id} and chatbot ID ${currentNode.chatId}.`
+                `Variable "${variableName}" saved for conversation ID ${conversation.id} and chatbot ID ${currentNode.chatbotId}.`
               );
             } else {
               console.warn(
-                `No conversation found for recipient ${recipient} and chatbot ID ${currentNode.chatId}.`
+                `No conversation found for recipient ${recipient} and chatbot ID ${currentNode.chatbotId}.`
               );
             }
           }
@@ -847,6 +850,16 @@ export const processNode = async (
     
     if (currentNode.type === "updateChatStatus") {
       try {
+        const contactRecord = await prisma.contact.findUnique({
+          where: { phoneNumber: recipient },
+        });
+        if (!contactRecord) {
+          throw new Error(`Contact with phoneNumber ${recipient} not found.`);
+        }
+        await prisma.contact.update({
+          where: { phoneNumber: recipient },
+          data: {ticketStatus: currentNode.data?.chat_status_data.selectedStatus },
+        });
         // Extract the selected status from the node's data
         const chatStatusData = currentNode.data?.chat_status_data;
         if (!chatStatusData || !chatStatusData.selectedStatus) {
@@ -859,7 +872,7 @@ export const processNode = async (
         const conversation = await prisma.conversation.findFirst({
           where: {
             recipient: recipient,
-            chatbotId: currentNode.chatId,
+            chatbotId: currentNode.chatbotId,
           },
         });
     
@@ -1103,7 +1116,13 @@ export const processNode = async (
   }
 };
 
-export const sendMessage = async (recipient: string, message: any, chatbotId:number,userId:number,plainText?:boolean) => {
+export const sendMessage = async (
+  recipient: string, 
+  message: any, 
+  chatbotId: number = 1, // Default to 1 if not provided
+  userId: number = 1,     // Default to 1 if not provided
+  plainText?: boolean
+) => {
   try {
     const userRecord = await prisma.user.findUnique({
       where: { id: userId },
@@ -1402,72 +1421,6 @@ export const sendQuestion = async (recipient: string, questionMessage: any, curr
   }
 };
 
-// export const storeMessage = async ({
-//   recipient,
-//   chatbotId,
-//   messageType,
-//   text,
-//   status = MessageStatus.SENT,
-//   buttonOptions,
-//   listItems,
-  
-// }: {
-//   recipient: string;
-//   chatbotId?: number;
-//   messageType: string;
-//   text?: string;
-//   status?: MessageStatus;
-//   buttonOptions?: { id: string; title: string }[]; // ✅ Store button options as JSON
-//   listItems?: { id: string; title: string; description?: string }[]; // ✅ Store list items as JSON
-// }) => {
-//   try {
-//     let contact = await prisma.contact.findUnique({ where: { phoneNumber: recipient } });
-
-//     if (!contact) {
-//       contact = await prisma.contact.create({
-//         data: { phoneNumber: recipient, name: "Unknown", source: "WhatsApp" },
-//       });
-//       console.log("✅ New contact created:", contact);
-//     }
-
-//     let conversation = await prisma.conversation.findFirst({
-//       where: { recipient },
-//       orderBy: { updatedAt: "desc" },
-//     });
-
-//     if (!conversation) {
-//       conversation = await prisma.conversation.create({
-//         data: { recipient, contactId: contact.id, chatbotId },
-//       });
-//       console.log("✅ New conversation created:", conversation);
-//     }
-
-//     // ✅ Correctly handle JSON fields using Prisma.JsonNull when needed
-//     const savedMessage = await prisma.message.create({
-//       data: {
-//         conversationId: conversation.id,
-//         contactId: contact.id,
-//         chatbotId,
-//         sender: "user",
-//         text,
-//         messageType,
-//         buttonOptions: buttonOptions && buttonOptions.length > 0 ? buttonOptions : Prisma.JsonNull, // ✅ Fix here
-//         listItems: listItems && listItems.length > 0 ? listItems : Prisma.JsonNull, // ✅ Fix here
-//         status,
-//         time: new Date(),
-//       },
-//     });
-
-//     io.emit("newMessage", {
-//       recipient: contact.phoneNumber,
-//       message: savedMessage,
-//     });
-//     return savedMessage;
-//   } catch (error) {
-//     console.error("❌ Error storing message:", error);
-//   }
-// };
-
 export const storeMessage = async ({
   recipient,
   chatbotId,
@@ -1551,4 +1504,484 @@ export const storeMessage = async ({
   } catch (error) {
     console.error("❌ Error storing message:", error);
   }
+};
+
+// Functions for handling webhook verification
+export const processWebhookChange = async (change: any, io: any) => {
+  const statuses = change.value?.statuses;
+  if(statuses) await processBroadcastStatus(statuses);
+
+  if (change.field === "message_template_status_update") {
+    await updateTemplateInDb(change.value);
+  } else {
+    await processMessageChange(change, io);
+  }
+};
+
+export const processMessageChange = async (change: any, io: any) => {
+  const agentPhoneNumber = change.value?.metadata?.display_phone_number;
+  const agentPhoneNumberId = change.value?.metadata?.phone_number_id;
+  const message = change.value?.messages?.[0];
+  const recipient = message?.from;
+
+  if (!recipient) return;
+  
+  if (!isAllowedSender(recipient)) {
+    return; // Ignore and exit
+  }
+  
+  // Emit socket event for new message
+  const processedMessage = await processWebhookMessage(
+    recipient,
+    message,
+    agentPhoneNumber
+  );
+  io.emit("newMessage", { recipient, message: processedMessage });
+
+  // Get or create conversation
+  const conversation = await getOrCreateConversation(recipient, message);
+  if (!conversation) return;
+
+  // Get chatbot data
+  const chatbotData = await getChatbotData(conversation);
+  if (!chatbotData) return;
+
+  // Process the message based on its type
+  await processMessageByType(message, recipient, conversation, chatbotData);
+};
+
+export const isAllowedSender = (recipient: string): boolean => {
+  const allowedTestNumbers = process.env.ALLOWED_TEST_NUMBERS
+    ? process.env.ALLOWED_TEST_NUMBERS.split(",").map((num) => num.trim())
+    : [];
+  
+  return allowedTestNumbers.includes(recipient);
+};
+
+export const getOrCreateConversation = async (recipient: string, message: any): Promise<any | null> => {
+  let conversation = await prisma.conversation.findFirst({
+    where: { recipient },
+    orderBy: {
+      updatedAt: "desc",
+    },
+  });
+
+  if (!conversation) {
+    console.log("No conversation found for recipient. Attempting to create a new one...");
+    
+    const chatbotId = await findChatbotIdByKeyword(message?.text?.body?.toLowerCase());
+    
+    if (!chatbotId) {
+      console.warn("No keyword match found. Unable to associate a chatbot.");
+      await sendMessage(
+        recipient, 
+        {
+          type: "text",
+          message: "Sorry, no chatbot is available for your query."
+        },
+        1, // default chatbotId
+        1  // default userId
+      );
+      return null;
+    }
+
+    conversation = await prisma.conversation.create({
+      data: {
+        recipient,
+        chatbotId,
+        answeringQuestion: true,
+      },
+    });
+
+    console.log("New conversation created:", conversation);
+  }
+  
+  return conversation;
+};
+
+export const findChatbotIdByKeyword = async (text: string | undefined): Promise<number | null> => {
+  if (!text) return null;
+  
+  const keyword = await prisma.keyword.findFirst({
+    where: {
+      value: {
+        contains: text,
+        mode: "insensitive",
+      },
+    },
+    include: { chatbot: true },
+  });
+
+  if (keyword?.chatbot) {
+    console.log(`Keyword matched. Using chatbot ID: ${keyword.chatbot.id}`);
+    return keyword.chatbot.id;
+  }
+  
+  return null;
+};
+
+export const getChatbotData = async (conversation: any) => {
+  if (!conversation || !conversation.chatbotId) return null;
+  
+  const chatbotData = await prisma.chatbot.findUnique({
+    where: { id: conversation.chatbotId },
+    include: { nodes: true, edges: true },
+  });
+
+  if (!chatbotData) {
+    console.warn(`Chatbot with ID ${conversation.chatbotId} not found.`);
+    return null;
+  }
+  
+  return chatbotData;
+};
+
+export const processMessageByType = async (message: any, recipient: string, conversation: any, chatbotData: any) => {
+  if (message?.interactive?.button_reply) {
+    await processButtonReply(message, recipient, chatbotData);
+  } else if (message?.interactive?.list_reply) {
+    await processListReply(message, recipient, chatbotData);
+  } else if (conversation.answeringQuestion) {
+    await processTextQuestion(message, recipient, conversation, chatbotData);
+  } else if (message?.text?.body) {
+    await processKeywordMessage(message.text.body.toLowerCase(), recipient);
+  }
+};
+
+export const processButtonReply = async (message: any, recipient: string, chatbotData: any) => {
+  const parts = message.interactive.button_reply.id.split("_node_");
+  const buttonId = "source_" + parts[0];
+  const nodeId = parseInt(parts[1]);
+
+  const selectedEdge = chatbotData.edges.find(
+    (edge: any) => edge.sourceHandle === buttonId && edge.sourceId === nodeId
+  );
+
+  const nextNodeId = selectedEdge
+    ? chatbotData.nodes.find((node: any) => node.id === selectedEdge.targetId)?.nodeId
+    : null;
+
+  // Find the current node data
+  const currentNode = chatbotData.nodes.find((node: any) => node.id === nodeId);
+
+  await saveButtonVariableIfNeeded(currentNode, message, recipient);
+
+  if (nextNodeId) {
+    await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient);
+  }
+};
+
+export const saveButtonVariableIfNeeded = async (currentNode: any, message: any, recipient: string) => {
+  if (!currentNode?.data?.buttons_data?.saveAnswerVariable) return;
+  
+  const variableName = currentNode.data.buttons_data.saveAnswerVariable.startsWith("@")
+    ? currentNode.data.buttons_data.saveAnswerVariable.slice(1)
+    : currentNode.data.buttons_data.saveAnswerVariable;
+
+  // Find the conversation
+  const conversation = await prisma.conversation.findFirst({
+    where: { recipient, chatbotId: currentNode.chatbotId || currentNode.chatId },
+  });
+
+  if (!conversation) return;
+
+  // Check if the variable already exists
+  const existingVariable = await prisma.variable.findFirst({
+    where: {
+      name: variableName,
+      chatbotId: currentNode.chatbotId || currentNode.chatId,
+      conversationId: conversation.id,
+    },
+  });
+
+  if (existingVariable) {
+    // Update the existing variable with the button reply title
+    await prisma.variable.update({
+      where: { id: existingVariable.id },
+      data: {
+        value: message.interactive.button_reply.title,
+        nodeId: currentNode.id,
+      },
+    });
+  } else {
+    // Create a new variable with the button reply title
+    await prisma.variable.create({
+      data: {
+        name: variableName,
+        value: message.interactive.button_reply.title,
+        chatbotId: currentNode.chatbotId || currentNode.chatId,
+        conversationId: conversation.id,
+      },
+    });
+  }
+};
+
+export const processListReply = async (message: any, recipient: string, chatbotData: any) => {
+  const listReplyId = message.interactive.list_reply.id;
+  const nodeId = parseInt(listReplyId.split("_node_")[1]);
+  const buttonId = listReplyId.split("_node_")[0];
+  const currentNode = chatbotData.nodes.find((node: any) => node.id === nodeId);
+  
+  await saveListVariableIfNeeded(currentNode, message, recipient);
+
+  const selectedEdge = chatbotData.edges.find(
+    (edge: any) => edge.sourceId === currentNode?.id && edge.sourceHandle === buttonId
+  );
+
+  const nextNodeId = selectedEdge
+    ? chatbotData.nodes.find((node: any) => node.id === selectedEdge.targetId)?.nodeId
+    : null;
+
+  if (nextNodeId) {
+    await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient);
+  }
+};
+
+export const saveListVariableIfNeeded = async (currentNode: any, message: any, recipient: string) => {
+  if (!currentNode?.data?.list_data?.saveAnswerVariable) return;
+  
+  const variableName = currentNode.data.list_data.saveAnswerVariable.startsWith("@")
+    ? currentNode.data.list_data.saveAnswerVariable.slice(1)
+    : currentNode.data.list_data.saveAnswerVariable;
+
+  // Find the conversation
+  const conversation = await prisma.conversation.findFirst({
+    where: { recipient, chatbotId: currentNode.chatbotId || currentNode.chatId },
+  });
+
+  if (!conversation) return;
+
+  // Check if the variable already exists
+  const existingVariable = await prisma.variable.findFirst({
+    where: {
+      name: variableName,
+      chatbotId: currentNode.chatbotId || currentNode.chatId,
+      conversationId: conversation.id,
+    },
+  });
+
+  if (existingVariable) {
+    // Update the existing variable with the list reply title
+    await prisma.variable.update({
+      where: { id: existingVariable.id },
+      data: {
+        value: message.interactive.list_reply.title,
+        nodeId: currentNode.id,
+      },
+    });
+  } else {
+    // Create a new variable with the list reply title
+    await prisma.variable.create({
+      data: {
+        name: variableName,
+        value: message.interactive.list_reply.title,
+        chatbotId: currentNode.chatbotId || currentNode.chatId,
+        conversationId: conversation.id,
+      },
+    });
+  }
+};
+
+export const processTextQuestion = async (message: any, recipient: string, conversation: any, chatbotData: any) => {
+  const currentNode = await prisma.node.findFirst({
+    where: { id: conversation.currentNodeId },
+  });
+
+  if (currentNode?.type !== "question") return;
+
+  // Use type assertion to handle the data property
+  const questionData = currentNode.data as any;
+  const {
+    validation,
+    validationFailureExitCount = 3,
+    saveAnswerVariable,
+  } = questionData?.question_data || {};
+
+  let failureCount = conversation.validationFailureCount;
+  const text = message?.text?.body;
+
+  if (message?.type !== "text" || !text) return;
+
+  const isValid = validateUserResponse(text, validation);
+
+  if (isValid) {
+    await handleValidResponse(conversation, currentNode, text, recipient, chatbotData);
+  } else {
+    await handleInvalidResponse(conversation, failureCount, validationFailureExitCount, validation, recipient);
+  }
+};
+
+export const handleValidResponse = async (conversation: any, currentNode: any, text: string, recipient: string, chatbotData: any) => {
+  await prisma.conversation.update({
+    where: { id: conversation.id },
+    data: {
+      answeringQuestion: false,
+      validationFailureCount: 0,
+    },
+  });
+
+  await saveTextVariable(currentNode, text, conversation);
+
+  console.log("Text response is valid. Proceeding to the next node...");
+  const nextNodeId = getNextNodeIdFromQuestion(chatbotData, null, currentNode.id);
+  if (nextNodeId) {
+    await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient);
+  }
+};
+
+export const saveTextVariable = async (currentNode: any, text: string, conversation: any) => {
+  const saveAnswerVariable = currentNode.data?.question_data?.saveAnswerVariable;
+  if (!saveAnswerVariable) return;
+  
+  const variableName = saveAnswerVariable.startsWith("@")
+    ? saveAnswerVariable.slice(1)
+    : saveAnswerVariable;
+
+  const existingVariable = await prisma.variable.findFirst({
+    where: {
+      name: variableName,
+      chatbotId: currentNode.chatId,
+      conversationId: conversation.id,
+    },
+  });
+
+  if (existingVariable) {
+    await prisma.variable.update({
+      where: { id: existingVariable.id },
+      data: { value: text },
+    });
+  } else {
+    await prisma.variable.create({
+      data: {
+        name: variableName,
+        value: text,
+        chatbotId: currentNode.chatId,
+        conversationId: conversation.id,
+      },
+    });
+  }
+};
+
+export const handleInvalidResponse = async (conversation: any, failureCount: number, validationFailureExitCount: number, validation: any, recipient: string) => {
+  // Increment failure count
+  failureCount += 1;
+
+  if (failureCount >= validationFailureExitCount) {
+    // End the chat flow after exceeding failure limit
+    await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        answeringQuestion: false,
+        validationFailureCount: 0,
+      },
+    });
+
+    await sendMessage(
+      recipient,
+      {
+        type: "text",
+        message: `You have given incorrect answers ${validationFailureExitCount} times. Closing chatflow.`,
+      },
+      conversation.chatbotId || 1,
+      1,
+      true
+    );
+
+    console.warn("Chatflow ended due to repeated invalid responses.");
+  } else {
+    // Update failure count and send error message
+    await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: { validationFailureCount: failureCount },
+    });
+
+    console.warn(`Response is invalid. Failure count: ${failureCount}`);
+    await sendMessage(
+      recipient,
+      {
+        type: "text",
+        message: validation?.errorMessage || "Invalid response. Please try again.",
+      },
+      conversation.chatbotId || 1,
+      1,
+      true
+    );
+  }
+};
+
+export const processKeywordMessage = async (text: string, recipient: string) => {
+  const keyword = await prisma.keyword.findFirst({
+    where: {
+      value: {
+        contains: text,
+        mode: "insensitive",
+      },
+    },
+    include: { chatbot: true },
+  });
+
+  if (keyword?.chatbot) {
+    const chatbotId = keyword.chatbot.id;
+    await prisma.conversation.update({
+      where: { id: (await prisma.conversation.findFirst({ where: { recipient } }))?.id },
+      data: { answeringQuestion: false },
+    });
+    await processChatFlow(chatbotId, recipient);
+  }
+};
+
+export const updateTemplateInDb = async (data: any) => {
+  // Extract the fields from the webhook payload
+  const {
+    event, // e.g. "APPROVED", "REJECTED"
+    message_template_id,
+    message_template_name,
+    message_template_language,
+    reason,
+  } = data;
+
+  // Update the template record in your database by unique name.
+  await prisma.template.update({
+    where: { name: message_template_name },
+    data: {
+      status: event,
+      language: message_template_language,
+      updatedAt: new Date(),
+    },
+  });
+};
+
+export const getNextNodeIdFromQuestion = (
+  chatbotData: any,
+  buttonId: string | null,
+  currentNodeId: number
+): string | null => {
+  // Find the outgoing edge from the current node
+  const outgoingEdge = chatbotData.edges.find((edge: any) => {
+    // Match the sourceId with the current node's ID
+    // Optionally check for buttonId in the sourceHandle for branching
+    return (
+      edge.sourceId === currentNodeId &&
+      (!buttonId || edge.sourceHandle === buttonId)
+    );
+  });
+
+  if (!outgoingEdge) {
+    console.warn(`No outgoing edge found for node ID: ${currentNodeId}`);
+    return null;
+  }
+
+  // Find the target node ID from the edge
+  const nextNode = chatbotData.nodes.find(
+    (node: any) => node.id === outgoingEdge.targetId
+  );
+
+  if (!nextNode) {
+    console.warn(
+      `No target node found for edge from node ID: ${currentNodeId}`
+    );
+    return null;
+  }
+
+  return nextNode.nodeId;
 };
