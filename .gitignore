@@ -4,3 +4,5 @@ node_modules
 build
 .idea
 uploads
+package-lock.json
+package-lock.json

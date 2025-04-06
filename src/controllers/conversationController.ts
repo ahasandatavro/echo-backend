@@ -1,7 +1,6 @@
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../models/prismaClient";
 import { Request, Response } from 'express';
-const prisma = new PrismaClient();
-
+import { sendTemplate } from "../processors/metaWebhook/webhookProcessor";
 /**
  * Fetch the latest chat status for a contact
  */
@@ -94,5 +93,34 @@ export const updateExpiredConversations = async () => {
   }
 };
 
+ export const createNewConversation = async (req: Request, res: Response) => {
+  const { contactId, templateId } = req.body;
+
+  if (!contactId || !templateId) {
+    return res.status(400).json({ message: "Contact ID and Template ID are required" });
+  }
+
+  try {
+    // Check if the contact already exists
+    const existingContact = await prisma.contact.findUnique({
+      where: { id: contactId },
+    });
+
+    if (!existingContact) {
+      // Create the contact if it doesn't exist
+      await prisma.contact.create({
+        data: { id: contactId, phoneNumber: "", source: "WEB" },
+      });
+    }
+
+    // Send the template to the contact (assuming a sendTemplate function exists)
+    await sendTemplate(contactId, templateId, 0, {});
+
+    return res.status(200).json({ message: "Template sent successfully" });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Failed to create contact or send template" });
+  }
+};
 // Run expiration check every 15 minutes
 setInterval(updateExpiredConversations, 15 * 60 * 1000);
