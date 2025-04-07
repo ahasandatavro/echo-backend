@@ -368,30 +368,32 @@ export const processWebhookChange = async (change: any, io: any) => {
 export const processMessageUpdate = async (value: any, io: any) => {
   const agentPhoneNumber = value?.metadata?.display_phone_number;
   const message = value?.messages?.[0];
-  const recipient = message?.from;
+  const sender = message?.from;
 
-  if (!recipient) return;
+  if (!sender) return;
 
-  if (!isAllowedSender(recipient)) {
+  if (!isAllowedSender(sender)) {
     return;
   }
 
+//create media url for media messages,otherwise directly save in db with creating conversation
   const processedMessage = await processWebhookMessage(
-    recipient,
+    sender,
     message,
     agentPhoneNumber
   );
-  io.emit("newMessage", { recipient, message: processedMessage });
+  io.emit("newMessage", { recipient:sender, message: processedMessage });
 
-  await handleConversationFlow(recipient, message, agentPhoneNumber);
+//cheks whether the message is a text/button reply/list reply/question response/matches to existing keyword and transfer to logics accordingly
+  await handleConversationFlow(sender, message, agentPhoneNumber);
 };
 
-export const isAllowedSender = (recipient: string): boolean => {
+export const isAllowedSender = (sender: string): boolean => {
   const allowedTestNumbers = process.env.ALLOWED_TEST_NUMBERS
     ? process.env.ALLOWED_TEST_NUMBERS.split(",").map((num) => num.trim())
     : [];
 
-  return allowedTestNumbers.includes(recipient);
+  return allowedTestNumbers.includes(sender);
 };
 
 export const handleConversationFlow = async (
@@ -456,7 +458,7 @@ export const findOrCreateConversation = async (
 
 export const getChatbotData = async (chatbotId: number): Promise<any> => {
   const chatbotData = await prisma.chatbot.findUnique({
-    where: { id: chatbotId },
+    where: { id: chatbotId||1 },
     include: { nodes: true, edges: true },
   });
 

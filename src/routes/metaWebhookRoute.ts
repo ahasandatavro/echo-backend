@@ -3,7 +3,7 @@ import { handleIncomingMessage, webhookVerification} from '../controllers/metaWe
 
 const router = express.Router();
 
-router.get('/', handleIncomingMessage);
-router.post('/', webhookVerification);
+router.get('/', webhookVerification);
+router.post('/', handleIncomingMessage);
 
 export default router;

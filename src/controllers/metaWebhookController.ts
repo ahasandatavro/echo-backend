@@ -5,7 +5,7 @@ import {
   processWebhookChange,
 } from "../subProcessors/metaWebhook";
 
-export const handleIncomingMessage = async (req: Request, res: Response) => {
+export const webhookVerification = async (req: Request, res: Response) => {
   const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN;
 
   const mode = req.query["hub.mode"];
@@ -20,7 +20,7 @@ export const handleIncomingMessage = async (req: Request, res: Response) => {
   }
 };
 
-export const webhookVerification = async (req: Request, res: Response) => {
+export const handleIncomingMessage = async (req: Request, res: Response) => {
   try {
     const { entry } = req.body;
     const io = req.app.get("socketio");

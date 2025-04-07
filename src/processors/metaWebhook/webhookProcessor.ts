@@ -1189,7 +1189,14 @@ export const sendMessage = async (
           };
           messageBody = `Document: ${message.message.name} (${message.message.url})`;
           break;
-        default:
+          case "sticker":
+            payload.type = "sticker";
+            payload.sticker = {
+              link: message.message.url,
+            };
+            messageBody = `Sticker: ${message.message.url}`;
+            break;          
+          default:
           console.error("Unsupported media type:", message.type);
           return;
       }
