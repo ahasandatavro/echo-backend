@@ -3,6 +3,7 @@ import { prisma } from "../../models/prismaClient";
 import { processChatFlow, sendMessage, sendTemplate } from "./webhookProcessor";
 import { Chatbot, Contact, Keyword, KeywordReplyMaterial, KeywordRoutingMaterial, KeywordTemplate, MaterialType, ReplyMaterial, RoutingMaterial, RoutingType, Team, Template, User } from "@prisma/client";
 import dayjs from 'dayjs';
+import { DefaultActionSettings } from '@prisma/client'; 
 // Define types for the keyword query result
 type KeywordWithRelations = Keyword & {
   chatbot: Chatbot | null;
@@ -18,6 +19,20 @@ type KeywordWithRelations = Keyword & {
       team: Team | null;
     };
   })[];
+};
+
+type TimeSlot = {
+  from: string;
+  to: string;
+};
+
+type DaySchedule = {
+  open: boolean;
+  times: TimeSlot[];
+};
+
+type WorkingHours = {
+  [day: string]: DaySchedule;
 };
 
 export const processKeyword = async (text: string, recipient: String): Promise<boolean> => {
@@ -77,8 +92,10 @@ export const processKeyword = async (text: string, recipient: String): Promise<b
       }
     }) as KeywordWithRelations | null;
 
-    if (!keyword) return false;
-
+    if (!keyword) {
+      return await handleFallbackMaterial(defaultActionSettings, recipient);
+    }
+    
     let actionsPerformed = false;
 
     // 1. Process chatbot if associated
@@ -247,55 +264,6 @@ export const processKeyword = async (text: string, recipient: String): Promise<b
 }; 
 
 
-// export const sendDefaultMaterial = async (
-//   type: string,
-//   id: number,
-//   recipient: string,
-//   fallbackChatbotId: number = 1
-// ): Promise<boolean> => {
-//   try {
-//     switch (type) {
-//       case 'chatbots':
-//         await processChatFlow(id, recipient);
-//         return true;
-
-//       case 'template':
-//         const template = await prisma.template.findUnique({ where: { id } });
-//         if (template) {
-//           await sendTemplate(recipient, template.name, fallbackChatbotId, template);
-//           return true;
-//         }
-//         break;
-
-//       case 'replyMaterial':
-//         const replyMaterial = await prisma.replyMaterial.findUnique({ where: { id } });
-//         if (replyMaterial) {
-//           const messageContent = replyMaterial.type === 'TEXT'
-//             ? { type: 'text', message: replyMaterial.content || replyMaterial.name }
-//             : {
-//                 type: replyMaterial.type.toLowerCase(),
-//                 message: {
-//                   name: replyMaterial.name,
-//                   url: replyMaterial.fileUrl,
-//                 },
-//               };
-
-//           await sendMessage(recipient, messageContent, fallbackChatbotId);
-//           return true;
-//         }
-//         break;
-
-//       default:
-//         console.warn(`Unsupported default material type: ${type}`);
-//         break;
-//     }
-//   } catch (error) {
-//     console.error(`Failed to send default material (type: ${type}, id: ${id})`, error);
-//   }
-
-//   return false;
-// };
-
 export const sendDefaultMaterial = async (
   type: keyof typeof MaterialType | string,
   id: number,
@@ -359,20 +327,6 @@ export const sendDefaultMaterial = async (
   return false;
 };
 
-type TimeSlot = {
-  from: string;
-  to: string;
-};
-
-type DaySchedule = {
-  open: boolean;
-  times: TimeSlot[];
-};
-
-type WorkingHours = {
-  [day: string]: DaySchedule;
-};
-
 export const isWithinWorkingHours = (workingHours: WorkingHours): boolean => {
   const now = dayjs();
   const currentDay = now.format('dddd'); // e.g., "Thursday"
@@ -395,4 +349,33 @@ export const isWithinWorkingHours = (workingHours: WorkingHours): boolean => {
   }
 
   return false;
+};
+
+export const handleFallbackMaterial = async (
+  defaultActionSettings: DefaultActionSettings | null,
+  recipient: string
+): Promise<boolean> => {
+  try {
+    if (
+      defaultActionSettings?.fallbackMessageEnabled &&
+      defaultActionSettings.fallbackMessageMaterialType &&
+      defaultActionSettings.fallbackMessageMaterialId
+    ) {
+      console.log(`No keyword matched. Sending fallback material of type "${defaultActionSettings.fallbackMessageMaterialType}"`);
+
+      const sent = await sendDefaultMaterial(
+        defaultActionSettings.fallbackMessageMaterialType,
+        defaultActionSettings.fallbackMessageMaterialId,
+        recipient
+      );
+
+      return sent;
+    }
+
+    console.log(`No keyword matched and fallback is disabled or incomplete.`);
+    return false;
+  } catch (error) {
+    console.error('Error handling fallback material:', error);
+    return false;
+  }
 };
