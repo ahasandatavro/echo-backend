@@ -49,6 +49,8 @@ export const getUsers = async (req: Request, res: Response): Promise<void> => {
         phoneNumber: user.phoneNumber|| "",
         role: user.role|| "USER",
         team: user.teams.map((team) => team.name).join(", "), // Convert teams to comma-separated string
+        isOnline: user.isOnline,                 // ✅ include this
+        lastActive: user.lastActive || null,
       }));
   
       const totalRows = await prisma.user.count();

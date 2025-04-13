@@ -28,6 +28,7 @@ import "./config/passportConfig";
 import multer from "multer";
 import { s3 } from "./config/s3Config";
 import http from "http";
+import { prisma } from "./models/prismaClient";
 import hubspotRoutes from "./routes/hubspotRoute";
 import webhookRoutes from "./routes/webhookRoute";
 import notificationSettingsRoutes from "./routes/notificationSettingsRoute";
@@ -48,6 +49,60 @@ declare global {
 // ✅ Assign the properly typed `io` instance to `global`
 global.io = io;
 app.set("socketio", io);
+
+io.on("connection", (socket) => {
+  let activeEmail: string | null = null;
+
+  socket.on("userOnline", async ({ email }) => {
+    if (!email) return;
+
+    activeEmail = email;
+
+    try {
+      await prisma.user.update({
+        where: { email },
+        data: { isOnline: true },
+      });
+
+      io.emit("userStatusChanged", { email, isOnline: true });
+    } catch (err) {
+      console.error("Error setting user online:", err);
+    }
+  });
+
+  socket.on("userOffline", async ({ email }) => {
+    if (!email) return;
+
+    try {
+      await prisma.user.update({
+        where: { email },
+        data: { isOnline: false, lastActive: new Date() },
+      });
+
+      io.emit("userStatusChanged", { email, isOnline: false });
+    } catch (err) {
+      console.error("Error setting user offline:", err);
+    }
+  });
+
+  socket.on("disconnect", async () => {
+    if (!activeEmail) return;
+
+    try {
+      await prisma.user.update({
+        where: { email: activeEmail },
+        data: { isOnline: false, lastActive: new Date() },
+      });
+
+      io.emit("userStatusChanged", { email: activeEmail, isOnline: false });
+    } catch (err) {
+      console.error("Error on disconnect:", err);
+    }
+  });
+});
+
+
+
 
 const upload = multer({
   storage: multer.memoryStorage(),
