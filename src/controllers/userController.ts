@@ -20,7 +20,16 @@ export const getUsers = async (req: Request, res: Response): Promise<void> => {
   try {
     const { page = "1", limit = "5" } = req.query;
     const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
+    const user:any=req.user;
+    const dbUser=await prisma.user.findFirst({
+      where: { id: user.userId },
+      select: { selectedPhoneNumberId: true },
+    })
+    const selectedPhoneNumberId = dbUser?.selectedPhoneNumberId;
     const users = await prisma.user.findMany({
+      where: {
+        selectedPhoneNumberId: selectedPhoneNumberId || undefined,
+      },
       skip,
       take: parseInt(limit as string),
       include: {
@@ -31,6 +40,7 @@ export const getUsers = async (req: Request, res: Response): Promise<void> => {
         },
       },
     });
+    
     const formattedUsers: UserResponse[] = users.map((user) => ({
         id: user.id,
         firstName: user.firstName || "",

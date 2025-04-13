@@ -176,7 +176,9 @@ model DefaultActionSettings {
   // ✅ Default action settings (Boolean fields)
   outsideWorkingHoursEnabled   Boolean @default(false) // When it is not working hours
   noAgentOnlineEnabled         Boolean @default(false) // When no customer service is online
-  fallbackMessageEnabled       Boolean @default(false) // When no keyword match
+  waitingMessageEnabled        Boolean @default(false) //keep user angaged while delay reply from business side
+  fallbackMessageEnabled       Boolean @default(false) // When no keyword or default action match
+  welcomeMessageEnabled        Boolean @default(false) // When no keyword match
   noResponseAfter24hEnabled    Boolean @default(false) // If customer does not respond
 
   // ✅ Selected material/chatbot/template for default actions
@@ -188,6 +190,12 @@ model DefaultActionSettings {
 
   fallbackMessageMaterialId      Int?
   fallbackMessageMaterialType    String?
+
+   welcomeMessageMaterialId      Int?
+   welcomeMessageMaterialType    String?
+
+   waitingMessageMaterialId      Int?
+   waitingMessageMaterialType    String?
 
   noResponseAfter24hMaterialId   Int?
   noResponseAfter24hMaterialType String?
