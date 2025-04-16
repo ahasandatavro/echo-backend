@@ -43,6 +43,8 @@ export const getDefaultActionSettings = async (req: Request, res: Response) => {
       cb5: settings.expiredChatReassignmentDisabled || false,
       cb6: settings.noKeywordMatchReplyEnabled || false,
       cb7: settings.roundRobinAssignmentEnabled || false,
+      cb8: settings.welcomeMessageEnabled || false,
+      cb9: settings.waitingMessageEnabled || false,
 
       // ✅ Selected materials correctly formatted
       selectedMaterials: {
@@ -92,7 +94,7 @@ export const createOrUpdateDefaultActionSettings = async (req: Request, res: Res
     businessPhoneNumberId,
     workingHours,
     selectedMaterials, // ✅ Contains cb1, cb2, etc. with materialId & materialType
-    cb1, cb2, cb3, cb4, cb5, cb6, cb7, // ✅ Extract checkboxes
+    cb1, cb2, cb3, cb4, cb5, cb6, cb7, cb8,cb9 // ✅ Extract checkboxes
   } = req.body;
 
   try {
@@ -109,6 +111,8 @@ export const createOrUpdateDefaultActionSettings = async (req: Request, res: Res
       expiredChatReassignmentDisabled: cb5 || false,
       noKeywordMatchReplyEnabled: cb6 || false,
       roundRobinAssignmentEnabled: cb7 || false,
+      welcomeMessageEnabled: cb8 || false,
+      waitingMessageEnabled: cb9 || false,
 
       // ✅ Map selectedMaterials dynamically
       outsideWorkingHoursMaterialId: Number(selectedMaterials.cb1?.materialId) || null,

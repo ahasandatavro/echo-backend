@@ -4,13 +4,14 @@ import { metaWhatsAppAPI } from "../../config/metaConfig";
 import { convertHtmlToWhatsAppText } from "../../helpers/index";
 import { resolveVariables } from "../../helpers/validation";
 import { ListMessage } from "../../interphases";
-import { performGoogleSheetAction } from "../../subProcessors/webhook";
+import { performGoogleSheetAction } from "../../subProcessors/metaWebhook";
 import { MessageStatus } from "../../interphases"; // ✅ Import the correct enum
 import { Prisma } from "@prisma/client"; // ✅ Import Prisma types
 import { io } from "../../app";
 import { validateUserResponse } from "../../helpers/validation";
 import { processWebhookMessage } from "../inboxProcessor";
-import { processBroadcastStatus } from "../../subProcessors/webhook";
+import { processBroadcastStatus } from "../../subProcessors/metaWebhook";
+
 export const processChatFlow = async (chatbotId: number, recipient: string) => {
   try {
     const chatbotData = await prisma.chatbot.findUnique({
@@ -1188,7 +1189,14 @@ export const sendMessage = async (
           };
           messageBody = `Document: ${message.message.name} (${message.message.url})`;
           break;
-        default:
+          case "sticker":
+            payload.type = "sticker";
+            payload.sticker = {
+              link: message.message.url,
+            };
+            messageBody = `Sticker: ${message.message.url}`;
+            break;          
+          default:
           console.error("Unsupported media type:", message.type);
           return;
       }
@@ -1289,6 +1297,7 @@ export const sendMessageWithButtons = async (
     console.error("Error sending button message:", error);
   }
 };
+
 export const sendMessageWithList = async (recipient: string, listMessage: ListMessage,nodeId:number) => {
   try {
     const url = `${metaWhatsAppAPI.baseURL}/${metaWhatsAppAPI.phoneNumberId}/messages`;

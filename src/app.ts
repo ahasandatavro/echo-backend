@@ -3,7 +3,7 @@ import bodyParser from "body-parser";
 import cors from "cors";
 import nodeRoutes from "./routes/nodeRoute";
 import authRoutes from "./routes/authRoute";
-import webhookRoutes from "./routes/webhookRoute";
+import metaWebhookRoutes from "./routes/metaWebhookRoute";
 import replyMaterialRoutes from "./routes/replyMaterialRoute";
 import routingMaterialRoutes from "./routes/routingMaterialRoute";
 import keywordRoutes from "./routes/keywordRoute";
@@ -28,8 +28,10 @@ import "./config/passportConfig";
 import multer from "multer";
 import { s3 } from "./config/s3Config";
 import http from "http";
+import { prisma } from "./models/prismaClient";
 import hubspotRoutes from "./routes/hubspotRoute";
-
+import webhookRoutes from "./routes/webhookRoute";
+import notificationSettingsRoutes from "./routes/notificationSettingsRoute";
 dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -47,6 +49,60 @@ declare global {
 // ✅ Assign the properly typed `io` instance to `global`
 global.io = io;
 app.set("socketio", io);
+
+io.on("connection", (socket) => {
+  let activeEmail: string | null = null;
+
+  socket.on("userOnline", async ({ email }) => {
+    if (!email) return;
+
+    activeEmail = email;
+
+    try {
+      await prisma.user.update({
+        where: { email },
+        data: { isOnline: true },
+      });
+
+      io.emit("userStatusChanged", { email, isOnline: true });
+    } catch (err) {
+      console.error("Error setting user online:", err);
+    }
+  });
+
+  socket.on("userOffline", async ({ email }) => {
+    if (!email) return;
+
+    try {
+      await prisma.user.update({
+        where: { email },
+        data: { isOnline: false, lastActive: new Date() },
+      });
+
+      io.emit("userStatusChanged", { email, isOnline: false });
+    } catch (err) {
+      console.error("Error setting user offline:", err);
+    }
+  });
+
+  socket.on("disconnect", async () => {
+    if (!activeEmail) return;
+
+    try {
+      await prisma.user.update({
+        where: { email: activeEmail },
+        data: { isOnline: false, lastActive: new Date() },
+      });
+
+      io.emit("userStatusChanged", { email: activeEmail, isOnline: false });
+    } catch (err) {
+      console.error("Error on disconnect:", err);
+    }
+  });
+});
+
+
+
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -69,7 +125,9 @@ app.use("/nodes", authenticateJWT,nodeRoutes);
 app.use("/users", authenticateJWT,userRoutes);
 app.use("/agents", authenticateJWT,agentRoutes);
 app.use("/businessAccount",authenticateJWT, businessAccountRoutes)
-app.use("/webhook",webhookRoutes);
+app.use("/metaWebhook",metaWebhookRoutes);
+app.use("/webhooks",authenticateJWT,webhookRoutes);
+app.use("/notificationSettings",authenticateJWT,notificationSettingsRoutes);
 app.use("/variables", authenticateJWT,variableRoute);
 app.use("/replyMaterials",authenticateJWT,replyMaterialRoutes);
 app.use("/routingMaterials",authenticateJWT,routingMaterialRoutes);

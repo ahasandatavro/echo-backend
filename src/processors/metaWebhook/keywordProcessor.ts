@@ -1,7 +1,9 @@
+import { String } from "aws-sdk/clients/cloudsearch";
 import { prisma } from "../../models/prismaClient";
 import { processChatFlow, sendMessage, sendTemplate } from "./webhookProcessor";
 import { Chatbot, Contact, Keyword, KeywordReplyMaterial, KeywordRoutingMaterial, KeywordTemplate, MaterialType, ReplyMaterial, RoutingMaterial, RoutingType, Team, Template, User } from "@prisma/client";
-
+import dayjs from 'dayjs';
+import { DefaultActionSettings } from '@prisma/client'; 
 // Define types for the keyword query result
 type KeywordWithRelations = Keyword & {
   chatbot: Chatbot | null;
@@ -19,17 +21,43 @@ type KeywordWithRelations = Keyword & {
   })[];
 };
 
-/**
- * Process a keyword and trigger associated actions
- * (chatbots, templates, reply materials, routing materials)
- * 
- * @param text The text to match against keywords
- * @param recipient The recipient's phone number
- * @returns A boolean indicating whether any action was taken
- */
-export const processKeyword = async (text: string, recipient: string): Promise<boolean> => {
-  if (!text) return false;
+type TimeSlot = {
+  from: string;
+  to: string;
+};
 
+type DaySchedule = {
+  open: boolean;
+  times: TimeSlot[];
+};
+
+type WorkingHours = {
+  [day: string]: DaySchedule;
+};
+
+export const processKeyword = async (text: string, recipient: String): Promise<boolean> => {
+  if (!text) return false;
+  
+  const businessPhoneNumberId=5;
+  const defaultActionSettings = await prisma.defaultActionSettings.findUnique({
+    where: {
+      businessPhoneNumberId: businessPhoneNumberId,
+    },
+  });
+  const workingHours = defaultActionSettings?.workingHours as WorkingHours;
+  if (
+    defaultActionSettings?.outsideWorkingHoursEnabled &&
+    defaultActionSettings.workingHours &&
+    !isWithinWorkingHours(workingHours)
+  ) {
+    const type = defaultActionSettings.outsideWorkingHoursMaterialType;
+    const id = defaultActionSettings.outsideWorkingHoursMaterialId;
+  
+    if (type && id) {
+      const sent = await sendDefaultMaterial(type, id, recipient);
+      if (sent) return true;
+    }
+  }
   try {
     // Find keyword with all possible related entities
     const keyword = await prisma.keyword.findFirst({
@@ -64,8 +92,10 @@ export const processKeyword = async (text: string, recipient: string): Promise<b
       }
     }) as KeywordWithRelations | null;
 
-    if (!keyword) return false;
-
+    if (!keyword) {
+      return await handleFallbackMaterial(defaultActionSettings, recipient);
+    }
+    
     let actionsPerformed = false;
 
     // 1. Process chatbot if associated
@@ -232,3 +262,120 @@ export const processKeyword = async (text: string, recipient: string): Promise<b
     return false;
   }
 }; 
+
+
+export const sendDefaultMaterial = async (
+  type: keyof typeof MaterialType | string,
+  id: number,
+  recipient: string,
+  fallbackChatbotId: number = 1
+): Promise<boolean> => {
+  try {
+    switch (type) {
+      case 'TEXT':
+      case 'IMAGE':
+      case 'VIDEO':
+      case 'DOCUMENT':
+      case 'STICKER':
+      case 'CONTACT_ATTRIBUTES': {
+        const replyMaterial = await prisma.replyMaterial.findUnique({ where: { id } });
+        if (replyMaterial) {
+          const messageContent = replyMaterial.type === 'TEXT'
+            ? { type: 'text', message: replyMaterial.content || replyMaterial.name }
+            : {
+                type: replyMaterial.type.toLowerCase(),
+                message: {
+                  name: replyMaterial.name,
+                  url: replyMaterial.fileUrl,
+                },
+              };
+
+          await sendMessage(recipient, messageContent, fallbackChatbotId);
+          return true;
+        }
+        break;
+      }
+
+      case 'template': {
+        const template = await prisma.template.findUnique({ where: { id } });
+        if (template) {
+          await sendTemplate(recipient, template.name, fallbackChatbotId, template);
+          return true;
+        }
+        break;
+      }
+      case 'templates': {
+        const template = await prisma.template.findUnique({ where: { id } });
+        if (template) {
+          await sendTemplate(recipient, template.name, fallbackChatbotId, template);
+          return true;
+        }
+        break;
+      }
+      case 'chatbot': {
+        await processChatFlow(id, recipient);
+        return true;
+      }
+
+      default:
+        console.warn(`Unsupported default material type: ${type}`);
+    }
+  } catch (error) {
+    console.error(`Failed to send default material (type: ${type}, id: ${id})`, error);
+  }
+
+  return false;
+};
+
+export const isWithinWorkingHours = (workingHours: WorkingHours): boolean => {
+  const now = dayjs();
+  const currentDay = now.format('dddd'); // e.g., "Thursday"
+  const todaySchedule = workingHours[currentDay];
+
+  if (!todaySchedule?.open || !Array.isArray(todaySchedule.times)) return false;
+
+  for (const timeSlot of todaySchedule.times) {
+    const from = dayjs(`${now.format('YYYY-MM-DD')} ${timeSlot.from}`);
+    let to = dayjs(`${now.format('YYYY-MM-DD')} ${timeSlot.to}`);
+
+    // Handle overnight shift: e.g., from 23:00 to 06:00
+    if (to.isBefore(from)) {
+      to = to.add(1, 'day');
+    }
+
+    if (now.isAfter(from) && now.isBefore(to)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+export const handleFallbackMaterial = async (
+  defaultActionSettings: DefaultActionSettings | null,
+  recipient: string
+): Promise<boolean> => {
+  try {
+    if (
+      defaultActionSettings?.fallbackMessageEnabled &&
+      defaultActionSettings.fallbackMessageMaterialType &&
+      defaultActionSettings.fallbackMessageMaterialId
+    ) {
+      console.log(`No keyword matched. Sending fallback material of type "${defaultActionSettings.fallbackMessageMaterialType}"`);
+
+      const sent = await sendDefaultMaterial(
+        defaultActionSettings.fallbackMessageMaterialType,
+        defaultActionSettings.fallbackMessageMaterialId,
+        recipient
+      );
+
+      return sent;
+    }
+
+    console.log(`No keyword matched and fallback is disabled or incomplete.`);
+    return false;
+  } catch (error) {
+    console.error('Error handling fallback material:', error);
+    return false;
+  }
+};

@@ -7,8 +7,8 @@ import { processWebhookMessage } from "../processors/inboxProcessor";
 import {
   sendMessage,
   sendTemplate,
-} from "../processors/webhook/webhookProcessor";
-import { handleChatbotTrigger } from "../subProcessors/webhook";
+} from "../processors/metaWebhook/webhookProcessor";
+import { handleChatbotTrigger } from "../subProcessors/metaWebhook";
 const prisma = new PrismaClient();
 import FormData from "form-data";
 import axios from "axios";
@@ -66,6 +66,8 @@ export const getAllContacts = async (req: Request, res: Response) => {
         subscribed: true,
         sendSMS: true,
         ticketStatus: true,
+        createdAt: true,
+        updatedAt: true,
       },
     });
 
@@ -99,6 +101,8 @@ export const getAllImportedContacts = async (req: Request, res: Response) => {
         subscribed: true,
         sendSMS: true,
         ticketStatus: true,
+        createdAt: true,
+        updatedAt: true,
       },
     });
 
