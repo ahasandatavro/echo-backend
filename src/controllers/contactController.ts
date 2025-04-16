@@ -66,6 +66,8 @@ export const getAllContacts = async (req: Request, res: Response) => {
         subscribed: true,
         sendSMS: true,
         ticketStatus: true,
+        createdAt: true,
+        updatedAt: true,
       },
     });
 
@@ -99,6 +101,8 @@ export const getAllImportedContacts = async (req: Request, res: Response) => {
         subscribed: true,
         sendSMS: true,
         ticketStatus: true,
+        createdAt: true,
+        updatedAt: true,
       },
     });
 
