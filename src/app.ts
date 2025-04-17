@@ -99,6 +99,66 @@ io.on("connection", (socket) => {
       console.error("Error on disconnect:", err);
     }
   });
+
+  socket.on("newChat", async ({ email }) => {
+    if (!email) return;
+  
+    try {
+      const sender = await prisma.user.findUnique({
+        where: { email },
+        include: { createdUsers: true, createdBy: true }
+      });
+  
+      if (!sender) return;
+  
+      let recipients: string[] = [];
+  
+      if (!sender.agent) {
+        // 🔔 If not an agent, notify all users created by this user (agents)
+        const createdAgents = await prisma.user.findMany({
+          where: {
+            createdById: sender.id,
+            agent: true
+          },
+          select: { email: true }
+        });
+  
+        recipients = createdAgents.map((user) => user.email);
+      } else if (sender.createdById) {
+        // 🔔 If agent, notify:
+        // 1. Other agents created by the same creator
+        // 2. The creator themself
+        const otherAgents = await prisma.user.findMany({
+          where: {
+            createdById: sender.createdById,
+            agent: true,
+            NOT: { email: sender.email }
+          },
+          select: { email: true }
+        });
+  
+        const creator = await prisma.user.findUnique({
+          where: { id: sender.createdById },
+          select: { email: true }
+        });
+  
+        recipients = [
+          ...otherAgents.map((a) => a.email),
+          ...(creator?.email ? [creator.email] : [])
+        ];
+      }
+  
+      // ✅ Emit event to each recipient email
+      recipients.forEach((recipientEmail) => {
+        io.emit("newChat", { email: recipientEmail });
+      });
+  
+    } catch (err) {
+      console.error("Error broadcasting newChat:", err);
+    }
+  });
+  
+  
 });
 
 

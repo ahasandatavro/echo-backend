@@ -1243,6 +1243,7 @@ export const sendTemplate = async (
    
   } catch (error) {
     console.error("Error sending template message:", error);
+    throw new Error("Failed to send WhatsApp template");
   }
 };
 
