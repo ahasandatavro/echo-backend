@@ -21,7 +21,8 @@ import {
   sendMessageController,
   getAllImportedContacts,
   uploadCSV,
-  importContacts
+  importContacts,
+  triggerChatbotByPhoneNumber
 } from "../controllers/contactController";
 import { authenticateJWT } from '../middlewares/authMiddleware';
 const router = Router();
@@ -53,4 +54,10 @@ router.put("/:id/chat-status", authenticateJWT, updateChatStatus);
 router.post("/expire-timers", authenticateJWT, expireInactiveChats);
 
 router.post("/:contactId/send-message", authenticateJWT, upload.single("file"), sendMessageController);
+router.post(
+  "/phone/:phoneNumber/trigger-chatbot",
+  authenticateJWT,
+  triggerChatbotByPhoneNumber
+);
+
 export default router;

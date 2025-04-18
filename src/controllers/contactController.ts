@@ -995,6 +995,31 @@ export const sendMessageController = async (req: Request, res: Response) => {
   }
 };
 
+
+export const triggerChatbotByPhoneNumber = async (req: Request, res: Response) => {
+  try {
+    const phoneNumber = req.params.phoneNumber;
+    const { text } = req.body;
+
+    if (!text || !text.startsWith("TriggerChatbot:")) {
+      return res.status(400).json({ error: "Invalid or missing TriggerChatbot text" });
+    }
+
+    const contact = await prisma.contact.findFirst({ where: { phoneNumber } });
+
+    if (!contact) {
+      return res.status(404).json({ error: "Contact not found" });
+    }
+
+    await handleChatbotTrigger(text, phoneNumber);
+
+    return res.status(200).json({ success: true, message: "Chatbot triggered successfully" });
+  } catch (error) {
+    console.error("Error triggering chatbot:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
 // Process CSV upload and provide preview
 export const uploadCSV = async (req: Request, res: Response) => {
   try {
