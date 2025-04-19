@@ -756,7 +756,11 @@ export const getChatHistory = async (req: Request, res: Response) => {
   try {
     const chatHistory = await prisma.chatStatusHistory.findMany({
       where: { contactId: parseInt(contactId) },
-      include: { changedBy: true }, // Include agent/bot details
+      include: {
+        changedBy: { select: { email: true } },
+        assignedToUser: { select: { email: true } },
+        assignedToTeam: { select: { name: true } },
+      },
       orderBy: { changedAt: "desc" }, // Sort by latest status change
     });
 
@@ -767,54 +771,207 @@ export const getChatHistory = async (req: Request, res: Response) => {
   }
 };
 
-export const updateChatStatus = async (req: Request, res: Response) => {
+// export const updateChatStatusAndAssignment  = async (req: Request, res: Response) => {
+//   const { id } = req.params;
+//   const { newStatus, assignedUser, assignedTeams = [] } = req.body;
+//   let assignedUserId: number | null = null;
+
+// if (assignedUser) {
+//   const userRecord = await prisma.user.findUnique({
+//     where: { email: assignedUser },
+//     select: { id: true }
+//   });
+
+//   if (!userRecord) {
+//     return res.status(400).json({ error: `User with email ${assignedUser} not found.` });
+//   }
+
+//   assignedUserId = userRecord.id;
+// }
+
+//   const user:any=req.user;
+//   const dbUser:any=await prisma.user.findFirst({
+//     where: { id: user.userId },
+//     select: { selectedPhoneNumberId: true },
+//   })
+//   try {
+//     const contact = await prisma.contact.findUnique({
+//       where: { id: parseInt(id) },
+//       include: { assignedTeams: true },
+//     });
+//     if (!contact) return res.status(404).json({ error: "Contact not found" });
+//     let teamNames: string[] = [];
+//     if (assignedTeams.length > 0) {
+//       const teams = await prisma.team.findMany({
+//         where: { id: { in: assignedTeams } },
+//         select: { name: true },
+//       });
+//       teamNames = teams.map((team) => team.name);
+//     }
+//     // ✅ Update Contact's current status
+//     await prisma.contact.update({
+//       where: { id: parseInt(id) },
+//       data: {
+//         ticketStatus: newStatus,
+//         userId: assignedUserId ?? contact.userId,
+//         assignedTeams: {
+//           set: assignedTeams.map((teamId: number) => ({ id: teamId })),
+//         },
+//       },
+//     });
+
+//     const historyEntries: any[] = [];
+
+
+//     // ✅ Status change history
+//     historyEntries.push({
+//       contactId: parseInt(id),
+//       previousStatus: contact.ticketStatus,
+//       newStatus,
+//       type: "statusChanged",
+//       changedById: dbUser.id,
+//       changedAt: new Date(),
+//       timerStartTime: newStatus === "Open" ? new Date() : contact.timerStartTime,
+//     });
+
+//     // ✅ Assignment history
+//     if (assignedUser || assignedTeams.length > 0) {
+//       const assignmentNote = `Assigned to ${assignedUser ? `agent ${user?.email}` : ""}${
+//         assignedUser && teamNames.length ? " and " : ""
+//       }${teamNames.length ? `Teams: ${teamNames.join(", ")}` : ""}`;
+
+//       historyEntries.push({
+//         contactId: parseInt(id),
+//         newStatus: "Assigned",
+//         type: "assignmentChanged",
+//         changedById: dbUser.id,
+//         note: assignmentNote,
+//         assignedToUserId: assignedUserId ?? undefined,
+//         changedAt: new Date(),
+//       });
+//     }
+
+//     // ✅ Save all
+//     const [statusChange, assignmentChange] = await Promise.all(
+//       historyEntries.map((entry) => prisma.chatStatusHistory.create({ data: entry }))
+//     );
+//     const io = req.app.get("socketio");
+//     io.emit("chatStatusUpdated", {
+//       contactId: parseInt(id),
+//       chatStatus: newStatus,
+//       changedBy: user?.email || "System",
+//       changedAt: new Date(),
+//     });
+
+//     res.json({ success: true, statusChange, assignmentChange });
+//   } catch (error) {
+//     console.error("Error updating chat status:", error);
+//     res.status(500).json({ error: "Failed to update chat status" });
+//   }
+// };
+export const updateChatStatusAndAssignment = async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { newStatus } = req.body; // `changedById` is the user ID (agent/bot)
+  const { newStatus, assignedUser, assignedTeams = [] } = req.body;
+  const user: any = req.user;
+
+  const dbUser: any = await prisma.user.findFirst({
+    where: { id: user.userId },
+    select: { selectedPhoneNumberId: true, id: true, email: true },
+  });
 
   try {
     const contact = await prisma.contact.findUnique({
       where: { id: parseInt(id) },
+      include: { assignedTeams: true },
     });
+
     if (!contact) return res.status(404).json({ error: "Contact not found" });
 
-    // ✅ Update Contact's current status
-    await prisma.contact.update({
-      where: { id: parseInt(id) },
-      data: { ticketStatus: newStatus },
-    });
-    const userId = req.user?.userId; // Assuming `req.user` contains the authenticated user
-    if (!userId) {
-      return res.status(401).json({ message: "Unauthorized" });
+    // 🔍 Look up assigned user ID from email
+    let assignedUserId: number | null = null;
+    if (assignedUser) {
+      const userRecord = await prisma.user.findUnique({
+        where: { email: assignedUser },
+        select: { id: true }
+      });
+      if (!userRecord) return res.status(400).json({ error: `User ${assignedUser} not found.` });
+      assignedUserId = userRecord.id;
     }
 
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user || !user.accessToken) {
-      return res
-        .status(403)
-        .json({ message: "User does not have a valid access token." });
+    // 🔍 Get team names from IDs
+    let teamNames: string[] = [];
+    if (assignedTeams.length > 0) {
+      const teams = await prisma.team.findMany({
+        where: { id: { in: assignedTeams } },
+        select: { name: true }
+      });
+      teamNames = teams.map(team => team.name);
     }
 
-    // ✅ Add new entry in ChatStatusHistory
-    const statusChange = await prisma.chatStatusHistory.create({
-      data: {
+    // 🔁 Only log statusChanged if status has actually changed
+    const historyEntries: any[] = [];
+    const statusChanged = contact.ticketStatus !== newStatus;
+
+    if (statusChanged) {
+      historyEntries.push({
         contactId: parseInt(id),
         previousStatus: contact.ticketStatus,
         newStatus,
-        changedById: user.id || null, // If it's a bot, this can be null
+        type: "statusChanged",
+        changedById: dbUser.id,
         changedAt: new Date(),
-        timerStartTime:
-          newStatus === "Open" ? new Date() : contact.timerStartTime,
+        timerStartTime: newStatus === "Open" ? new Date() : contact.timerStartTime,
+      });
+    }
+
+    // ✍️ Compose proper assignment note
+    let assignmentNote = null;
+    if (assignedUser && teamNames.length === 0) {
+      assignmentNote = `Assigned to agent ${assignedUser}`;
+    } else if (!assignedUser && teamNames.length > 0) {
+      assignmentNote = `Assigned to Teams: ${teamNames.join(", ")}`;
+    } else if (assignedUser && teamNames.length > 0) {
+      // optional: if you want to handle both together
+      assignmentNote = `Assigned to agent ${assignedUser} and Teams: ${teamNames.join(", ")}`;
+    }
+
+    if (assignmentNote) {
+      historyEntries.push({
+        contactId: parseInt(id),
+        newStatus: "Assigned",
+        type: "assignmentChanged",
+        changedById: dbUser.id,
+        note: assignmentNote,
+        assignedToUserId: assignedUserId ?? undefined,
+        changedAt: new Date(),
+      });
+    }
+
+    // ✅ Update contact
+    await prisma.contact.update({
+      where: { id: parseInt(id) },
+      data: {
+        ticketStatus: newStatus,
+        userId: assignedUserId ?? contact.userId,
+        assignedTeams: {
+          set: assignedTeams.map((teamId: number) => ({ id: teamId })),
+        },
       },
-      include: { changedBy: { select: { email: true } } },
     });
+
+    const saved = await Promise.all(
+      historyEntries.map((entry) => prisma.chatStatusHistory.create({ data: entry }))
+    );
+
     const io = req.app.get("socketio");
     io.emit("chatStatusUpdated", {
       contactId: parseInt(id),
       chatStatus: newStatus,
-      changedBy: statusChange.changedBy ? statusChange.changedBy.email : "Bot",
-      changedAt: statusChange.changedAt,
+      changedBy: user?.email || "System",
+      changedAt: new Date(),
     });
-    res.json({ success: true, statusChange });
+
+    res.json({ success: true, saved });
   } catch (error) {
     console.error("Error updating chat status:", error);
     res.status(500).json({ error: "Failed to update chat status" });

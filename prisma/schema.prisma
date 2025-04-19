@@ -60,6 +60,7 @@ model User {
   templates            Template[]
   teams                Team[]         @relation("UserTeams")
   chatStatusChanges    ChatStatusHistory[] 
+  assignedTickets   ChatStatusHistory[] @relation("AssignedToUser")
   businessAccount      BusinessAccount[]
   selectedPhoneNumberId String?
   selectedWabaId        String?
@@ -215,6 +216,7 @@ model Team {
   updatedAt   DateTime  @updatedAt
   contacts    Contact[] @relation("ContactTeams")
   users       User[]    @relation("UserTeams")
+  assignedTickets ChatStatusHistory[]
   routingMaterials RoutingMaterial[] @relation("RoutingMaterialTeam")
 }
 
@@ -511,6 +513,15 @@ model ChatStatusHistory {
 
   timerStartTime DateTime?  // ✅ Only updates when a new message is received
   timerEndTime   DateTime?
+
+  type           String     @default("statusChanged") // "statusChanged" | "assignmentChanged"
+  note           String?
+
+  assignedToUserId Int?      // Optional, use if you want to store who it's assigned to
+  assignedToUser   User?     @relation("AssignedToUser", fields: [assignedToUserId], references: [id])
+
+  assignedToTeamId Int?
+  assignedToTeam   Team?     @relation(fields: [assignedToTeamId], references: [id])
 
   conversationId                                        Int?
   Conversation                                          Conversation? @relation(fields: [conversationId], references: [id])

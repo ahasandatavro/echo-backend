@@ -16,7 +16,7 @@ import {
   addTag,
   removeTag,
   getChatHistory,
-  updateChatStatus,
+  updateChatStatusAndAssignment,
   expireInactiveChats,
   sendMessageController,
   getAllImportedContacts,
@@ -50,7 +50,7 @@ router.post("/upload-csv", authenticateJWT, upload.single("file"), uploadCSV);
 router.post("/import", authenticateJWT, importContacts);
 
 router.get("/:contactId/chat-history", authenticateJWT, getChatHistory);
-router.put("/:id/chat-status", authenticateJWT, updateChatStatus);
+router.put("/:id/chat-status", authenticateJWT, updateChatStatusAndAssignment);
 router.post("/expire-timers", authenticateJWT, expireInactiveChats);
 
 router.post("/:contactId/send-message", authenticateJWT, upload.single("file"), sendMessageController);
