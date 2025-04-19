@@ -22,7 +22,8 @@ import {
   getAllImportedContacts,
   uploadCSV,
   importContacts,
-  triggerChatbotByPhoneNumber
+  triggerChatbotByPhoneNumber,
+  getCurrentAssignments
 } from "../controllers/contactController";
 import { authenticateJWT } from '../middlewares/authMiddleware';
 const router = Router();
@@ -40,6 +41,8 @@ router.get("/:id/attributes", authenticateJWT, getAttributes);
 router.put("/:id/attributes", authenticateJWT, updateAttribute);
 router.get("/:id/notes", authenticateJWT, getNotes);
 router.post("/:id/notes", authenticateJWT, addNote);
+router.get("/:id/assignments", authenticateJWT, getCurrentAssignments);
+
 
 router.get("/:id/tags", authenticateJWT, getTags);
 router.post("/:id/tags", authenticateJWT, addTag);

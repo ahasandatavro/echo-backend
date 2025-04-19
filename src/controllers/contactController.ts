@@ -1017,6 +1017,33 @@ export const expireInactiveChats = async (req: Request, res: Response) => {
   }
 };
 
+export const getCurrentAssignments = async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  try {
+    const contact = await prisma.contact.findUnique({
+      where: { id: parseInt(id) },
+      include: {
+        user: { select: { email: true } },
+        assignedTeams: {  select: {
+          id: true, // ✅ fixed here
+        },},
+      },
+    });
+
+    if (!contact) return res.status(404).json({ error: "Contact not found" });
+
+    return res.json({
+      assignedUser: contact.user?.email ?? null,
+      assignedTeams: contact.assignedTeams.map(team => team.id),
+    });
+  } catch (error) {
+    console.error("Error fetching assignments:", error);
+    return res.status(500).json({ error: "Failed to get assignments" });
+  }
+};
+
+
 export const sendMessageController = async (req: Request, res: Response) => {
   try {
     const user:any=req.user;
