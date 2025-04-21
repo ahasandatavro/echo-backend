@@ -214,7 +214,7 @@ io.on("connection", (socket) => {
   //     console.error("Error broadcasting assignedAgent notification:", err);
   //   }
   // });
-  socket.on("chatAssignedToAgent", async ({ assignedToEmail, assignedByEmail }) => {
+  socket.on("chatAssignedToAgent", async ({ assignedToEmail, assignedByEmail, contactName }) => {
     if (!assignedToEmail || !assignedByEmail) return;
   
     try {
@@ -265,7 +265,8 @@ io.on("connection", (socket) => {
         io.emit("chatAssignedToAgent", {
           email,
           assignedToEmail,
-          assignedByEmail
+          assignedByEmail,
+          contactName
         });
       }
   
@@ -274,7 +275,37 @@ io.on("connection", (socket) => {
     }
   });
   
+  socket.on("chatAssignedToTeam", async ({ email, assignedByEmail, selectedContact, teamIds }) => {
+    try {
+      if (!teamIds?.length) return;
   
+      // ✅ Find agents belonging to any of the assigned teams
+      const agents = await prisma.user.findMany({
+        where: {
+          teams: {
+            some: {
+              id: { in: teamIds }
+            }
+          },
+          email: { not: email } // Exclude the sender
+        },
+        select: { email: true }
+      });
+  
+      for (const agent of agents) {
+          io.emit("chatAssignedToTeam", {
+          email: agent.email,
+          assignedByEmail,
+          selectedContact
+        });
+      }
+    } catch (err) {
+      console.error("Error broadcasting chatAssignedToTeam:", err);
+    }
+  });
+  
+  
+    
 });
 
 

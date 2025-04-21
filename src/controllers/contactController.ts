@@ -978,6 +978,31 @@ export const updateChatStatusAndAssignment = async (req: Request, res: Response)
   }
 };
 
+// GET /contacts/:id/status
+export const getContactStatus = async (req: Request, res: Response) => {
+  try {
+    const contactId = parseInt(req.params.id);
+
+    if (isNaN(contactId)) {
+      return res.status(400).json({ message: "Invalid contact ID" });
+    }
+
+    const contact = await prisma.contact.findUnique({
+      where: { id: contactId },
+      select: { ticketStatus: true },
+    });
+
+    if (!contact) {
+      return res.status(404).json({ message: "Contact not found" });
+    }
+
+    res.json({ status: contact.ticketStatus || "Open" });
+  } catch (error) {
+    console.error("Error fetching contact status:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
 /**
  * ✅ Auto-expire chat after inactivity
  */
