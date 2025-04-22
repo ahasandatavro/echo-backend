@@ -946,18 +946,22 @@ export const updateChatStatusAndAssignment = async (req: Request, res: Response)
         changedAt: new Date(),
       });
     }
-
-    // ✅ Update contact
+    const updateData: any = {
+      ticketStatus: newStatus,
+      userId: assignedUserId ?? contact.userId,
+    };
+    
+    if (req.body.hasOwnProperty('assignedTeams')) {
+      updateData.assignedTeams = {
+        set: assignedTeams.map((teamId: number) => ({ id: teamId })),
+      };
+    }
+    
     await prisma.contact.update({
       where: { id: parseInt(id) },
-      data: {
-        ticketStatus: newStatus,
-        userId: assignedUserId ?? contact.userId,
-        assignedTeams: {
-          set: assignedTeams.map((teamId: number) => ({ id: teamId })),
-        },
-      },
+      data: updateData,
     });
+    
 
     const saved = await Promise.all(
       historyEntries.map((entry) => prisma.chatStatusHistory.create({ data: entry }))
