@@ -891,7 +891,18 @@ export const processNode = async (
         console.log(
           `Updated conversation (ID: ${conversation.id}) with chatStatus: ${selectedStatus}`
         );
-    
+        await prisma.chatStatusHistory.create({
+          data: {
+            contactId: contactRecord.id,
+            previousStatus: contactRecord.ticketStatus,
+            newStatus: selectedStatus,
+            type: "statusChanged",
+            changedById: null,
+            changedAt: new Date(),
+            timerStartTime: selectedStatus === "Open" ? new Date() : contactRecord.timerStartTime,
+          }
+        });
+        
         // On success, route to the next node via the outgoing edge with handle "source_1"
         const nextEdge = edges.find(
           (edge) =>
@@ -937,7 +948,25 @@ export const processNode = async (
               userId: user.id,
             },
           });
-    
+          const contactRecord = await prisma.contact.findUnique({
+            where: { phoneNumber: recipient },
+            select: { id: true }
+          });
+          if (!contactRecord) {
+            throw new Error(`Contact with phoneNumber ${recipient} not found.`);
+          }
+          await prisma.chatStatusHistory.create({
+            data: {
+              contactId: contactRecord.id,
+              newStatus: "Assigned",
+              type: "assignmentChanged",
+              note: `Assigned to agent ${assignedUserEmail}`,
+              assignedToUserId: user.id,
+              changedById:  null,
+              changedAt: new Date(),
+            }
+          });
+          
           console.log(`Assigned user ${user.id} to contact ${recipient}`);
         } catch (error) {
           console.error(`Failed to assign user to contact ${recipient}:`, error);
@@ -984,7 +1013,24 @@ export const processNode = async (
                 assignedTeams: { set: teamIds }, // Assign multiple teams
               },
             });
-    
+            const contactRecord = await prisma.contact.findUnique({
+              where: { phoneNumber: recipient },
+              select: { id: true }
+            });
+            if (!contactRecord) { 
+              throw new Error(`Contact with phoneNumber ${recipient} not found.`);
+            }
+            await prisma.chatStatusHistory.create({
+              data: {
+                contactId: contactRecord.id,
+                newStatus: "Assigned",
+                type: "assignmentChanged",
+                note: `Assigned to Teams: ${assignTeamData.join(", ")}`,
+                changedById: null,
+                changedAt: new Date(),
+              }
+            });
+            
             console.log(`Assigned teams ${teamIds.map((t) => t.id)} to contact ${recipient}`);
           } else {
             console.warn(`No matching teams found for contact ${recipient}`);
@@ -1243,6 +1289,7 @@ export const sendTemplate = async (
    
   } catch (error) {
     console.error("Error sending template message:", error);
+    throw new Error("Failed to send WhatsApp template");
   }
 };
 

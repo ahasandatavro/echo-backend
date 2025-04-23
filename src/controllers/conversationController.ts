@@ -93,34 +93,124 @@ export const updateExpiredConversations = async () => {
   }
 };
 
- export const createNewConversation = async (req: Request, res: Response) => {
-  const { contactId, templateId } = req.body;
 
-  if (!contactId || !templateId) {
-    return res.status(400).json({ message: "Contact ID and Template ID are required" });
+// export const createNewConversation = async (req: Request, res: Response) => {
+//   const { contactId, templateName } = req.body;
+
+//   if (!contactId || !templateName) {
+//     return res.status(400).json({ message: "Contact ID and Template ID are required" });
+//   }
+
+//   try {
+//     // Check if the contact already exists
+//     const existingContact = await prisma.contact.findUnique({
+//       where: { id: contactId },
+//     });
+
+//     let newContact: any;
+
+//     if (!existingContact) {
+//       // Create the contact if it doesn't exist
+//       newContact = await prisma.contact.create({
+//         data: {
+//           id: contactId,
+//           phoneNumber: "",
+//           source: "WEB",
+//         },
+//       });
+//     }
+
+//     const contact = existingContact || newContact;
+
+//     // Send the template (wait for success)
+//     await sendTemplate(contact.phoneNumber, templateName, 0, {});
+
+//     // ✅ Create a new conversation
+//     const conversation = await prisma.conversation.create({
+//       data: {
+//         recipient: contact.phoneNumber,
+//         contactId: contact.id,
+//         chatbotId: 1, // or use a dynamic value if needed
+//         businessPhoneNumberId: 5, // or derive dynamically
+//       },
+//     });
+
+//     return res.status(200).json({
+//       message: "Template sent and conversation created",
+//       conversation,
+//     });
+//   } catch (err) {
+//     console.error(err);
+//     return res.status(500).json({ error: "Failed to create contact, send template, or create conversation" });
+//   }
+// };
+
+// Run expiration check every 15 minutes
+//setInterval(updateExpiredConversations, 15 * 60 * 1000);
+
+export const createNewConversation = async (req: Request, res: Response) => {
+  const { contactId, phoneNumber, templateName } = req.body;
+
+  if (!templateName || (!contactId && !phoneNumber)) {
+    return res.status(400).json({ message: "Either contactId or phoneNumber and templateName are required" });
   }
 
   try {
-    // Check if the contact already exists
-    const existingContact = await prisma.contact.findUnique({
-      where: { id: contactId },
-    });
+    let contact;
 
-    if (!existingContact) {
-      // Create the contact if it doesn't exist
-      await prisma.contact.create({
-        data: { id: contactId, phoneNumber: "", source: "WEB" },
+    // Search contact by ID or phone number
+    if (contactId) {
+      contact = await prisma.contact.findUnique({
+        where: { id: contactId },
+      });
+          // Block duplicate conversation
+    const existingConversation = await prisma.conversation.findFirst({
+      where: {
+        contactId: contact?.id,
+        recipient: contact?.phoneNumber,
+      },
+    });
+    if (existingConversation) {
+      return res.status(409).json({ message: "Conversation already exists for this contact" });
+    }
+    } else if (phoneNumber) {
+      contact = await prisma.contact.findFirst({
+        where: { phoneNumber },
       });
     }
 
-    // Send the template to the contact (assuming a sendTemplate function exists)
-    await sendTemplate(contactId, templateId, 0, {});
 
-    return res.status(200).json({ message: "Template sent successfully" });
+
+
+    // Create new contact if not found
+    if (!contact) {
+      contact = await prisma.contact.create({
+        data: {
+          phoneNumber: phoneNumber || "", // fallback empty string if no number
+          source: "WhatsApp",
+        },
+      });
+    }
+
+    // Send the template
+    await sendTemplate(contact.phoneNumber, templateName, 0, {});
+
+    // Create conversation
+    const conversation = await prisma.conversation.create({
+      data: {
+        recipient: contact.phoneNumber,
+        contactId: contact.id,
+        chatbotId: 1, // optionally dynamic
+        businessPhoneNumberId: 5, // optionally dynamic
+      },
+    });
+
+    return res.status(200).json({
+      message: "Template sent and conversation created",
+      conversation,
+    });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ error: "Failed to create contact or send template" });
+    return res.status(500).json({ error: "Failed to create contact, send template, or create conversation" });
   }
 };
-// Run expiration check every 15 minutes
-setInterval(updateExpiredConversations, 15 * 60 * 1000);

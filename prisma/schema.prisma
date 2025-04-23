@@ -60,6 +60,7 @@ model User {
   templates            Template[]
   teams                Team[]         @relation("UserTeams")
   chatStatusChanges    ChatStatusHistory[] 
+  assignedTickets   ChatStatusHistory[] @relation("AssignedToUser")
   businessAccount      BusinessAccount[]
   selectedPhoneNumberId String?
   selectedWabaId        String?
@@ -76,6 +77,7 @@ model User {
   assignedMaterials    RoutingMaterial[] @relation("RoutingMaterialAssignedUser") // For AssignUser type
   keywords  Keyword[]
   hubspotIntegration   HubspotIntegration?
+  notificationSettings NotificationSetting[]
 }
 
 model BusinessAccount {
@@ -142,8 +144,8 @@ model NotificationSetting {
   id                          Int                  @id @default(autoincrement())
   createdAt                   DateTime             @default(now())
   updatedAt                   DateTime             @updatedAt
-  businessPhoneNumberId       Int                  @unique
-  businessPhoneNumber         BusinessPhoneNumber  @relation(fields: [businessPhoneNumberId], references: [id])
+  businessPhoneNumberId       Int?                  @unique
+  businessPhoneNumber         BusinessPhoneNumber?  @relation(fields: [businessPhoneNumberId], references: [id])
 
   // Desktop notifications
   newChatDesktop              Boolean              @default(true)
@@ -161,6 +163,8 @@ model NotificationSetting {
 
   // Sound option
   selectedSound               String               @default("Alert")
+  userId                      Int?                 @unique
+  user                        User?                @relation(fields: [userId], references: [id])
 }
 
 
@@ -215,6 +219,7 @@ model Team {
   updatedAt   DateTime  @updatedAt
   contacts    Contact[] @relation("ContactTeams")
   users       User[]    @relation("UserTeams")
+  assignedTickets ChatStatusHistory[]
   routingMaterials RoutingMaterial[] @relation("RoutingMaterialTeam")
 }
 
@@ -511,6 +516,15 @@ model ChatStatusHistory {
 
   timerStartTime DateTime?  // ✅ Only updates when a new message is received
   timerEndTime   DateTime?
+
+  type           String     @default("statusChanged") // "statusChanged" | "assignmentChanged"
+  note           String?
+
+  assignedToUserId Int?      // Optional, use if you want to store who it's assigned to
+  assignedToUser   User?     @relation("AssignedToUser", fields: [assignedToUserId], references: [id])
+
+  assignedToTeamId Int?
+  assignedToTeam   Team?     @relation(fields: [assignedToTeamId], references: [id])
 
   conversationId                                        Int?
   Conversation                                          Conversation? @relation(fields: [conversationId], references: [id])

@@ -99,6 +99,213 @@ io.on("connection", (socket) => {
       console.error("Error on disconnect:", err);
     }
   });
+
+  socket.on("newChat", async ({ email }) => {
+    if (!email) return;
+  
+    try {
+      const sender = await prisma.user.findUnique({
+        where: { email },
+        include: { createdUsers: true, createdBy: true }
+      });
+  
+      if (!sender) return;
+  
+      let recipients: string[] = [];
+  
+      if (!sender.agent) {
+        // 🔔 If not an agent, notify all users created by this user (agents)
+        const createdAgents = await prisma.user.findMany({
+          where: {
+            createdById: sender.id,
+            agent: true
+          },
+          select: { email: true }
+        });
+  
+        recipients = createdAgents.map((user) => user.email);
+      } else if (sender.createdById) {
+        // 🔔 If agent, notify:
+        // 1. Other agents created by the same creator
+        // 2. The creator themself
+        const otherAgents = await prisma.user.findMany({
+          where: {
+            createdById: sender.createdById,
+            agent: true,
+            NOT: { email: sender.email }
+          },
+          select: { email: true }
+        });
+  
+        const creator = await prisma.user.findUnique({
+          where: { id: sender.createdById },
+          select: { email: true }
+        });
+  
+        recipients = [
+          ...otherAgents.map((a) => a.email),
+          ...(creator?.email ? [creator.email] : [])
+        ];
+      }
+  
+      // ✅ Emit event to each recipient email
+      recipients.forEach((recipientEmail) => {
+        io.emit("newChat", { email: recipientEmail });
+      });
+  
+    } catch (err) {
+      console.error("Error broadcasting newChat:", err);
+    }
+  });
+  
+  // socket.on("chatAssignedToAgent", async ({ assigneeEmail }) => {
+  //   if (!assigneeEmail) return;
+  
+  //   try {
+  //     const assignee = await prisma.user.findUnique({
+  //       where: { email: assigneeEmail },
+  //       include: { createdUsers: true, createdBy: true }
+  //     });
+  
+  //     if (!assignee) return;
+  
+  //     let recipients: string[] = [];
+  
+  //     if (!assignee.agent) {
+  //       // If creator (not agent), notify their created agents
+  //       const createdAgents = await prisma.user.findMany({
+  //         where: {
+  //           createdById: assignee.id,
+  //           agent: true
+  //         },
+  //         select: { email: true }
+  //       });
+  
+  //       recipients = createdAgents.map((u) => u.email);
+  //     } else if (assignee.createdById) {
+  //       // If agent, notify:
+  //       // 1. Other agents created by the same creator
+  //       // 2. The creator themself
+  //       const otherAgents = await prisma.user.findMany({
+  //         where: {
+  //           createdById: assignee.createdById,
+  //           agent: true,
+  //           NOT: { email: assignee.email }
+  //         },
+  //         select: { email: true }
+  //       });
+  
+  //       const creator = await prisma.user.findUnique({
+  //         where: { id: assignee.createdById },
+  //         select: { email: true }
+  //       });
+  
+  //       recipients = [
+  //         ...otherAgents.map((a) => a.email),
+  //         ...(creator?.email ? [creator.email] : [])
+  //       ];
+  //     }
+  
+  //     recipients.forEach((email) => {
+  //       io.emit("chatAssignedToAgent", { email });
+  //     });
+  
+  //   } catch (err) {
+  //     console.error("Error broadcasting assignedAgent notification:", err);
+  //   }
+  // });
+  socket.on("chatAssignedToAgent", async ({ assignedToEmail, assignedByEmail, contactName }) => {
+    if (!assignedToEmail || !assignedByEmail) return;
+  
+    try {
+      const assignee = await prisma.user.findUnique({
+        where: { email: assignedByEmail },
+        include: { createdBy: true }
+      });
+  
+      if (!assignee) return;
+  
+      let recipients: string[] = [];
+  
+      if (!assignee.agent) {
+        // If creator (not agent), notify all their agents
+        const createdAgents = await prisma.user.findMany({
+          where: {
+            createdById: assignee.id,
+            agent: true
+          },
+          select: { email: true }
+        });
+  
+        recipients = createdAgents.map((u) => u.email);
+      } else if (assignee.createdById) {
+        // Notify other agents created by same creator and the creator
+        const otherAgents = await prisma.user.findMany({
+          where: {
+            createdById: assignee.createdById,
+            agent: true,
+            NOT: { email: assignedToEmail }
+          },
+          select: { email: true }
+        });
+  
+        const creator = await prisma.user.findUnique({
+          where: { id: assignee.createdById },
+          select: { email: true }
+        });
+  
+        recipients = [
+          ...otherAgents.map((a) => a.email),
+          ...(creator?.email ? [creator.email] : [])
+        ];
+      }
+  
+      // Emit notification with both emails
+      for (const email of recipients) {
+        io.emit("chatAssignedToAgent", {
+          email,
+          assignedToEmail,
+          assignedByEmail,
+          contactName
+        });
+      }
+  
+    } catch (err) {
+      console.error("Error in chatAssignedToAgent socket:", err);
+    }
+  });
+  
+  socket.on("chatAssignedToTeam", async ({ email, assignedByEmail, selectedContact, teamIds }) => {
+    try {
+      if (!teamIds?.length) return;
+  
+      // ✅ Find agents belonging to any of the assigned teams
+      const agents = await prisma.user.findMany({
+        where: {
+          teams: {
+            some: {
+              id: { in: teamIds }
+            }
+          },
+          email: { not: email } // Exclude the sender
+        },
+        select: { email: true }
+      });
+  
+      for (const agent of agents) {
+          io.emit("chatAssignedToTeam", {
+          email: agent.email,
+          assignedByEmail,
+          selectedContact
+        });
+      }
+    } catch (err) {
+      console.error("Error broadcasting chatAssignedToTeam:", err);
+    }
+  });
+  
+  
+    
 });
 
 
