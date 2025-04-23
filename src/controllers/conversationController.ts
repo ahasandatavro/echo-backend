@@ -163,23 +163,24 @@ export const createNewConversation = async (req: Request, res: Response) => {
       contact = await prisma.contact.findUnique({
         where: { id: contactId },
       });
-    } else if (phoneNumber) {
-      contact = await prisma.contact.findFirst({
-        where: { phoneNumber },
-      });
-    }
-
-    // Block duplicate conversation
+          // Block duplicate conversation
     const existingConversation = await prisma.conversation.findFirst({
       where: {
         contactId: contact?.id,
         recipient: contact?.phoneNumber,
       },
     });
-
     if (existingConversation) {
       return res.status(409).json({ message: "Conversation already exists for this contact" });
     }
+    } else if (phoneNumber) {
+      contact = await prisma.contact.findFirst({
+        where: { phoneNumber },
+      });
+    }
+
+
+
 
     // Create new contact if not found
     if (!contact) {

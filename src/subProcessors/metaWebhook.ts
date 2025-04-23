@@ -365,172 +365,12 @@ export const processWebhookChange = async (change: any, io: any) => {
   await processMessageUpdate(change.value, io);
 };
 
-// export const processMessageUpdate = async (value: any, io: any) => {
-//   const agentPhoneNumber = value?.metadata?.display_phone_number;
-//   const phoneNumberId = value?.metadata?.phone_number_id;
-//   const message = value?.messages?.[0];
-//   const sender = message?.from;
-//   const contact = await prisma.contact.findUnique({
-//     where: { phoneNumber: sender },
-//     include: {
-//       user: true,
-//       assignedTeams: {
-//         include: {
-//           users: true,
-//         },
-//       },
-//     },
-//   });
-//   let finalContact = contact;
-
-// if (!finalContact) {
-//   finalContact = await prisma.contact.create({
-//     data: {
-//       phoneNumber: sender,
-//       source: "WhatsApp", // or you can dynamically set this
-//       subscribed: true,
-//     },
-//     include: {
-//       user: true,
-//       assignedTeams: {
-//         include: { users: true },
-//       },
-//     },
-//   });
-// }
-// if (!finalContact) return;
-
-// let notifyEmails: Set<string> = new Set();
-
-// if (finalContact.user?.email) {
-//   notifyEmails.add(finalContact.user.email);
-// }
-
-// for (const team of finalContact.assignedTeams) {
-//   for (const agent of team.users) {
-//     notifyEmails.add(agent.email);
-//   }
-// }
-// const finalRecipients = await prisma.user.findMany({
-//   where: {
-//     email: { in: Array.from(notifyEmails) },
-//     notificationSettings: {
-//       some: {
-//         OR: [
-//           { messageAssignedSound: true },
-//           { messageAssignedDesktop: true },
-//         ],
-//       },
-//     },
-//   },
-//   select: { email: true },
-// });
-
-// // 🔔 Step 4: Emit only to those eligible
-// const messageAssignedEmails = finalRecipients.map((u) => u.email);
-
-// if (messageAssignedEmails.length > 0) {
-//   io.emit("messageAssigned", {
-//     recipients: messageAssignedEmails,
-//     contactName: finalContact.name || finalContact.phoneNumber,
-//     contactId: finalContact.id,
-//     from: sender,
-//   });
-// }
-//   if (!sender) return;
-
-//   if (!isAllowedSender(sender)) {
-//     return;
-//   }
-
-// //create media url for media messages,otherwise directly save in db with creating conversation
-//   const processedMessage = await processWebhookMessage(
-//     sender,
-//     message,
-//     agentPhoneNumber
-//   );
-//   const agent = await prisma.user.findFirst({
-//     where: { selectedPhoneNumberId: phoneNumberId },
-//   });
-
-//   if (!agent) {
-//     console.warn("No agent found for phone number ID:", phoneNumberId);
-//     return;
-//   }
-//   const creatorId = agent.createdById ?? agent.id;
-
-//   // 📢 Find all users created by the same creator (including the agent himself)
-//   const notifyUsers = await prisma.user.findMany({
-//     where: {
-//       OR: [
-//         { id: creatorId },
-//         { createdById: creatorId },
-//       ],
-//     },
-//     select: { email: true },
-//   });
-
-//   const recipients = notifyUsers.map((u) => u.email);
-//   io.emit("newMessage", {
-//     recipients, // ✅ Emit to team-level
-//     recipient: sender,//from which contact
-//     message: processedMessage,
-//   });
-
-// //cheks whether the message is a text/button reply/list reply/question response/matches to existing keyword and transfer to logics accordingly
-//   await handleConversationFlow(sender, message, agentPhoneNumber);
-// };
 export const processMessageUpdate = async (value: any, io: any) => {
-  const phoneNumberId = value?.metadata?.phone_number_id;
   const agentPhoneNumber = value?.metadata?.display_phone_number;
+  const phoneNumberId = value?.metadata?.phone_number_id;
   const message = value?.messages?.[0];
   const sender = message?.from;
-
-  if (!sender) return;
-
-  if (!isAllowedSender(sender)) return;
-
-  // Process media or text message
-  const processedMessage = await processWebhookMessage(
-    sender,
-    message,
-    agentPhoneNumber
-  );
-
-  // 🔍 Find the agent by phoneNumberId
-  const agent = await prisma.user.findFirst({
-    where: { selectedPhoneNumberId: phoneNumberId },
-  });
-
-  if (!agent) {
-    console.warn("No agent found for phone number ID:", phoneNumberId);
-    return;
-  }
-
-  const creatorId = agent.createdById ?? agent.id;
-
-  // 📢 Find all users created by the same creator (team + agent)
-  const notifyUsers = await prisma.user.findMany({
-    where: {
-      OR: [
-        { id: creatorId},
-        { createdById: creatorId },
-      ],
-    },
-    select: { email: true },
-  });
-
-  const recipients = notifyUsers.map((u) => u.email);
-
-  // 🔔 Emit to agent + teammates
-  io.emit("newMessage", {
-    recipients,
-    recipient: sender,
-    message: processedMessage,
-  });
-
-  // 🔍 Find contact, or create if not exists
-  let contact = await prisma.contact.findUnique({
+  const contact = await prisma.contact.findUnique({
     where: { phoneNumber: sender },
     include: {
       user: true,
@@ -541,91 +381,252 @@ export const processMessageUpdate = async (value: any, io: any) => {
       },
     },
   });
+  let finalContact = contact;
 
-  if (!contact) {
-    contact = await prisma.contact.create({
-      data: {
-        phoneNumber: sender,
-        source: "WhatsApp",
-        subscribed: true,
+if (!finalContact) {
+  finalContact = await prisma.contact.create({
+    data: {
+      phoneNumber: sender,
+      source: "WhatsApp", // or you can dynamically set this
+      subscribed: true,
+    },
+    include: {
+      user: true,
+      assignedTeams: {
+        include: { users: true },
       },
-      include: {
-        user: true,
-        assignedTeams: {
-          include: { users: true },
-        },
+    },
+  });
+}
+if (!finalContact) return;
+
+let notifyEmails: Set<string> = new Set();
+
+if (finalContact.user?.email) {
+  notifyEmails.add(finalContact.user.email);
+}
+
+for (const team of finalContact.assignedTeams) {
+  for (const agent of team.users) {
+    notifyEmails.add(agent.email);
+  }
+}
+const finalRecipients = await prisma.user.findMany({
+  where: {
+    email: { in: Array.from(notifyEmails) },
+    notificationSettings: {
+      some: {
+        OR: [
+          { messageAssignedSound: true },
+          { messageAssignedDesktop: true },
+        ],
       },
-    });
+    },
+  },
+  select: { email: true },
+});
+
+// 🔔 Step 4: Emit only to those eligible
+const messageAssignedEmails = finalRecipients.map((u) => u.email);
+
+if (messageAssignedEmails.length > 0) {
+  io.emit("messageAssigned", {
+    recipients: messageAssignedEmails,
+    contactName: finalContact.name || finalContact.phoneNumber,
+    contactId: finalContact.id,
+    from: sender,
+  });
+}
+  if (!sender) return;
+
+  if (!isAllowedSender(sender)) {
+    return;
   }
 
-  // 🔔 AssignedUser-specific new message notification (messageAssigned)
-  let assignedNotifyEmails: Set<string> = new Set();
+//create media url for media messages,otherwise directly save in db with creating conversation
+  const processedMessage = await processWebhookMessage(
+    sender,
+    message,
+    agentPhoneNumber
+  );
+  const agent = await prisma.user.findFirst({
+    where: { selectedPhoneNumberId: phoneNumberId },
+  });
 
-  if (contact.user?.email) {
-    assignedNotifyEmails.add(contact.user.email);
+  if (!agent) {
+    console.warn("No agent found for phone number ID:", phoneNumberId);
+    return;
   }
+  const creatorId = agent.createdById ?? agent.id;
 
-  for (const team of contact.assignedTeams) {
-    for (const agent of team.users) {
-      assignedNotifyEmails.add(agent.email);
-    }
-  }
+  // 📢 Find all users created by the same creator (including the agent himself)
+  const notifyUsers = await prisma.user.findMany({
+    where: {
+      OR: [
+        { id: creatorId },
+        { createdById: creatorId },
+      ],
+    },
+    select: { email: true },
+  });
 
-  if (assignedNotifyEmails.size > 0) {
-    // ✅ Fetch users & their selectedPhoneNumberId
-    const assignedNotifyArray = Array.from(assignedNotifyEmails);
+  const recipients = notifyUsers.map((u) => u.email);
+  io.emit("newMessage", {
+    recipients, // ✅ Emit to team-level
+    recipient: sender,//from which contact
+    message: processedMessage,
+  });
 
-    const usersWithSettings = await prisma.user.findMany({
-      where: {
-        email: { in: assignedNotifyArray },
-      },
-      select: {
-        email: true,
-        selectedPhoneNumberId: true,
-      },
-    });
-
-    // ✅ Fetch BusinessPhoneNumbers and their NotificationSettings
-    const businessPhoneNumbers = await prisma.businessPhoneNumber.findMany({
-      where: {
-        metaPhoneNumberId: {
-          in: usersWithSettings.map((u) => u.selectedPhoneNumberId).filter((id) => id !== null),
-        },
-      },
-      include: {
-        notificationSetting: true,
-      },
-    });
-
-    // ✅ Filter users based on their notificationSettings
-    const messageAssignedEmails: string[] = [];
-
-    for (const user of usersWithSettings) {
-      const matchedPhone = businessPhoneNumbers.find(
-        (bp) => bp.metaPhoneNumberId === user.selectedPhoneNumberId
-      );
-      if (matchedPhone?.notificationSetting) {
-        const settings = matchedPhone.notificationSetting;
-        if (settings.messageAssignedSound || settings.messageAssignedDesktop) {
-          messageAssignedEmails.push(user.email);
-        }
-      }
-    }
-
-    // 🔔 Emit messageAssigned only to eligible recipients
-    if (messageAssignedEmails.length > 0) {
-      io.emit("messageAssigned", {
-        recipients: messageAssignedEmails,
-        contactName: contact.name || contact.phoneNumber,
-        contactId: contact.id,
-        from: sender,
-      });
-    }
-  }
-
-  // Handle conversation flow logic
+//cheks whether the message is a text/button reply/list reply/question response/matches to existing keyword and transfer to logics accordingly
   await handleConversationFlow(sender, message, agentPhoneNumber);
 };
+
+// export const processMessageUpdate = async (value: any, io: any) => {
+//   const phoneNumberId = value?.metadata?.phone_number_id;
+//   const agentPhoneNumber = value?.metadata?.display_phone_number;
+//   const message = value?.messages?.[0];
+//   const sender = message?.from;
+
+//   if (!sender) return;
+
+//   if (!isAllowedSender(sender)) return;
+
+//   // Process media or text message
+//   const processedMessage = await processWebhookMessage(
+//     sender,
+//     message,
+//     agentPhoneNumber
+//   );
+
+//   // 🔍 Find the agent by phoneNumberId
+//   const agent = await prisma.user.findFirst({
+//     where: { selectedPhoneNumberId: phoneNumberId },
+//   });
+
+//   if (!agent) {
+//     console.warn("No agent found for phone number ID:", phoneNumberId);
+//     return;
+//   }
+
+//   const creatorId = agent.createdById ?? agent.id;
+
+//   // 📢 Find all users created by the same creator (team + agent)
+//   const notifyUsers = await prisma.user.findMany({
+//     where: {
+//       OR: [
+//         { id: creatorId},
+//         { createdById: creatorId },
+//       ],
+//     },
+//     select: { email: true },
+//   });
+
+//   const recipients = notifyUsers.map((u) => u.email);
+
+//   // 🔔 Emit to agent + teammates
+//   io.emit("newMessage", {
+//     recipients,
+//     recipient: sender,
+//     message: processedMessage,
+//   });
+
+//   // 🔍 Find contact, or create if not exists
+//   let contact = await prisma.contact.findUnique({
+//     where: { phoneNumber: sender },
+//     include: {
+//       user: true,
+//       assignedTeams: {
+//         include: {
+//           users: true,
+//         },
+//       },
+//     },
+//   });
+
+//   if (!contact) {
+//     contact = await prisma.contact.create({
+//       data: {
+//         phoneNumber: sender,
+//         source: "WhatsApp",
+//         subscribed: true,
+//       },
+//       include: {
+//         user: true,
+//         assignedTeams: {
+//           include: { users: true },
+//         },
+//       },
+//     });
+//   }
+
+//   // 🔔 AssignedUser-specific new message notification (messageAssigned)
+//   let assignedNotifyEmails: Set<string> = new Set();
+
+//   if (contact.user?.email) {
+//     assignedNotifyEmails.add(contact.user.email);
+//   }
+
+//   for (const team of contact.assignedTeams) {
+//     for (const agent of team.users) {
+//       assignedNotifyEmails.add(agent.email);
+//     }
+//   }
+
+//   if (assignedNotifyEmails.size > 0) {
+//     // ✅ Fetch users & their selectedPhoneNumberId
+//     const assignedNotifyArray = Array.from(assignedNotifyEmails);
+
+//     const usersWithSettings = await prisma.user.findMany({
+//       where: {
+//         email: { in: assignedNotifyArray },
+//       },
+//       select: {
+//         email: true,
+//         selectedPhoneNumberId: true,
+//       },
+//     });
+
+//     // ✅ Fetch BusinessPhoneNumbers and their NotificationSettings
+//     const businessPhoneNumbers = await prisma.businessPhoneNumber.findMany({
+//       where: {
+//         metaPhoneNumberId: {
+//           in: usersWithSettings.map((u) => u.selectedPhoneNumberId).filter((id) => id !== null),
+//         },
+//       },
+//       include: {
+//         notificationSetting: true,
+//       },
+//     });
+
+//     // ✅ Filter users based on their notificationSettings
+//     // const messageAssignedEmails: string[] = [];
+
+//     // for (const user of usersWithSettings) {
+//     //   const matchedPhone = businessPhoneNumbers.find(
+//     //     (bp) => bp.metaPhoneNumberId === user.selectedPhoneNumberId
+//     //   );
+//     //   if (matchedPhone?.notificationSetting) {
+//     //     const settings = matchedPhone.notificationSetting;
+//     //     if (settings.messageAssignedSound || settings.messageAssignedDesktop) {
+//     //       messageAssignedEmails.push(user.email);
+//     //     }
+//     //   }
+//     // }
+
+//     // 🔔 Emit messageAssigned only to eligible recipients
+//     if (usersWithSettings.length > 0) {
+//       io.emit("messageAssigned", {
+//         recipients: usersWithSettings,
+//         contactName: contact.name || contact.phoneNumber,
+//         contactId: contact.id,
+//         from: sender,
+//       });
+//     }
+//   }
+
+//   // Handle conversation flow logic
+//   await handleConversationFlow(sender, message, agentPhoneNumber);
+// };
 
 
 

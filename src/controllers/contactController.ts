@@ -332,29 +332,46 @@ export const updateContact = async (req: Request, res: Response) => {
 /** 📌 Delete a Contact */
 export const deleteContact = async (req: Request, res: Response) => {
   const { id } = req.params;
+  const contactId = parseInt(id);
 
   try {
-    // Find the contact first to get its userId, tags, and attributes
-    const contact = await prisma.contact.findUnique({
-      where: { id: parseInt(id) },
-      select: { userId: true, tags: true, attributes: true },
+    // Delete related Messages
+    await prisma.message.deleteMany({
+      where: { contactId },
     });
 
-    // Delete the contact
+    // Delete related Notes
+    await prisma.note.deleteMany({
+      where: { contactId },
+    });
+
+    // Delete related BroadcastRecipient entries
+    await prisma.broadcastRecipient.deleteMany({
+      where: { contactId },
+    });
+
+    // Delete related ChatStatusHistory
+    await prisma.chatStatusHistory.deleteMany({
+      where: { contactId },
+    });
+
+    // Delete related Conversations
+    await prisma.conversation.deleteMany({
+      where: { contactId },
+    });
+
+    // Finally, delete the contact
     await prisma.contact.delete({
-      where: { id: parseInt(id) },
+      where: { id: contactId },
     });
 
-    // Optionally: Update the user's tags and attributes
-    // Note: This would require checking if other contacts of this user have these tags/attributes
-    // before removing them. This could be complex and might not be desired behavior.
-    
     res.status(204).send();
   } catch (error) {
     console.error("Error deleting contact:", error);
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
+
 
 export const uploadContacts = async (req: Request, res: Response) => {
   if (!req.file) {
