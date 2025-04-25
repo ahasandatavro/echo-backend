@@ -44,20 +44,9 @@ export const processKeyword = async (text: string, recipient: String): Promise<b
       businessPhoneNumberId: businessPhoneNumberId,
     },
   });
-  const workingHours = defaultActionSettings?.workingHours as WorkingHours;
-  if (
-    defaultActionSettings?.outsideWorkingHoursEnabled &&
-    defaultActionSettings.workingHours &&
-    !isWithinWorkingHours(workingHours)
-  ) {
-    const type = defaultActionSettings.outsideWorkingHoursMaterialType;
-    const id = defaultActionSettings.outsideWorkingHoursMaterialId;
-  
-    if (type && id) {
-      const sent = await sendDefaultMaterial(type, id, recipient);
-      if (sent) return true;
-    }
-  }
+  // Use the new helper function
+  const defaultHandled = await checkAndSendDefaultMaterial(defaultActionSettings, recipient);
+  if (defaultHandled) return true;
   try {
     // Find keyword with all possible related entities
     const keyword = await prisma.keyword.findFirst({
@@ -262,6 +251,29 @@ export const processKeyword = async (text: string, recipient: String): Promise<b
     return false;
   }
 }; 
+
+const checkAndSendDefaultMaterial = async (
+  defaultActionSettings: any,
+  recipient: string
+): Promise<boolean> => {
+  if (
+    defaultActionSettings?.outsideWorkingHoursEnabled &&
+    defaultActionSettings.workingHours
+  ) {
+    const workingHours = defaultActionSettings.workingHours as WorkingHours;
+
+    if (!isWithinWorkingHours(workingHours)) {
+      const type = defaultActionSettings.outsideWorkingHoursMaterialType;
+      const id = defaultActionSettings.outsideWorkingHoursMaterialId;
+
+      if (type && id) {
+        const sent = await sendDefaultMaterial(type, id, recipient);
+        if (sent) return true;
+      }
+    }
+  }
+  return false;
+};
 
 
 export const sendDefaultMaterial = async (

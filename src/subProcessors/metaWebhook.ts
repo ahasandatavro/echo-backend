@@ -2,14 +2,16 @@ import { google } from "googleapis";
 import { prisma } from '../models/prismaClient';
 import { BroadcastStatus } from "@prisma/client";
 import { resolveVariables } from "../helpers/validation";
+import { Rule } from "@prisma/client";
 import {
   processChatFlow,
   processNode,
   sendMessage,
   sendMessageWithButtons,
+  sendTemplate,
 } from "../processors/metaWebhook/webhookProcessor";
 import { processWebhookMessage } from "../processors/inboxProcessor";
-import { processKeyword } from "../processors/metaWebhook/keywordProcessor";
+import { processKeyword, sendDefaultMaterial } from "../processors/metaWebhook/keywordProcessor";
 import { validateUserResponse } from "../helpers/validation";
 
 export const performGoogleSheetAction = async (
@@ -370,6 +372,10 @@ export const processMessageUpdate = async (value: any, io: any) => {
   const phoneNumberId = value?.metadata?.phone_number_id;
   const message = value?.messages?.[0];
   const sender = message?.from;
+  if (!sender) {
+    //console.warn("Sender is undefined. Cannot query contact.");
+    return;
+  }
   const contact = await prisma.contact.findUnique({
     where: { phoneNumber: sender },
     include: {
@@ -457,6 +463,23 @@ if (messageAssignedEmails.length > 0) {
     console.warn("No agent found for phone number ID:", phoneNumberId);
     return;
   }
+//rules checking first
+// Fetch Active Rules for this agent/user
+const activeRules = await prisma.rule.findMany({
+  where: {
+    userId: 1,
+    status: "Active",
+    triggerType: "whatsappMessage",
+  },
+});
+
+if (activeRules.length > 0) {
+  for (const rule of activeRules) {
+    await processRuleForMessage(rule, sender, message);
+  }
+}
+
+  //notification to the creator of the agent
   const creatorId = agent.createdById ?? agent.id;
 
   // 📢 Find all users created by the same creator (including the agent himself)
@@ -481,155 +504,6 @@ if (messageAssignedEmails.length > 0) {
   await handleConversationFlow(sender, message, agentPhoneNumber);
 };
 
-// export const processMessageUpdate = async (value: any, io: any) => {
-//   const phoneNumberId = value?.metadata?.phone_number_id;
-//   const agentPhoneNumber = value?.metadata?.display_phone_number;
-//   const message = value?.messages?.[0];
-//   const sender = message?.from;
-
-//   if (!sender) return;
-
-//   if (!isAllowedSender(sender)) return;
-
-//   // Process media or text message
-//   const processedMessage = await processWebhookMessage(
-//     sender,
-//     message,
-//     agentPhoneNumber
-//   );
-
-//   // 🔍 Find the agent by phoneNumberId
-//   const agent = await prisma.user.findFirst({
-//     where: { selectedPhoneNumberId: phoneNumberId },
-//   });
-
-//   if (!agent) {
-//     console.warn("No agent found for phone number ID:", phoneNumberId);
-//     return;
-//   }
-
-//   const creatorId = agent.createdById ?? agent.id;
-
-//   // 📢 Find all users created by the same creator (team + agent)
-//   const notifyUsers = await prisma.user.findMany({
-//     where: {
-//       OR: [
-//         { id: creatorId},
-//         { createdById: creatorId },
-//       ],
-//     },
-//     select: { email: true },
-//   });
-
-//   const recipients = notifyUsers.map((u) => u.email);
-
-//   // 🔔 Emit to agent + teammates
-//   io.emit("newMessage", {
-//     recipients,
-//     recipient: sender,
-//     message: processedMessage,
-//   });
-
-//   // 🔍 Find contact, or create if not exists
-//   let contact = await prisma.contact.findUnique({
-//     where: { phoneNumber: sender },
-//     include: {
-//       user: true,
-//       assignedTeams: {
-//         include: {
-//           users: true,
-//         },
-//       },
-//     },
-//   });
-
-//   if (!contact) {
-//     contact = await prisma.contact.create({
-//       data: {
-//         phoneNumber: sender,
-//         source: "WhatsApp",
-//         subscribed: true,
-//       },
-//       include: {
-//         user: true,
-//         assignedTeams: {
-//           include: { users: true },
-//         },
-//       },
-//     });
-//   }
-
-//   // 🔔 AssignedUser-specific new message notification (messageAssigned)
-//   let assignedNotifyEmails: Set<string> = new Set();
-
-//   if (contact.user?.email) {
-//     assignedNotifyEmails.add(contact.user.email);
-//   }
-
-//   for (const team of contact.assignedTeams) {
-//     for (const agent of team.users) {
-//       assignedNotifyEmails.add(agent.email);
-//     }
-//   }
-
-//   if (assignedNotifyEmails.size > 0) {
-//     // ✅ Fetch users & their selectedPhoneNumberId
-//     const assignedNotifyArray = Array.from(assignedNotifyEmails);
-
-//     const usersWithSettings = await prisma.user.findMany({
-//       where: {
-//         email: { in: assignedNotifyArray },
-//       },
-//       select: {
-//         email: true,
-//         selectedPhoneNumberId: true,
-//       },
-//     });
-
-//     // ✅ Fetch BusinessPhoneNumbers and their NotificationSettings
-//     const businessPhoneNumbers = await prisma.businessPhoneNumber.findMany({
-//       where: {
-//         metaPhoneNumberId: {
-//           in: usersWithSettings.map((u) => u.selectedPhoneNumberId).filter((id) => id !== null),
-//         },
-//       },
-//       include: {
-//         notificationSetting: true,
-//       },
-//     });
-
-//     // ✅ Filter users based on their notificationSettings
-//     // const messageAssignedEmails: string[] = [];
-
-//     // for (const user of usersWithSettings) {
-//     //   const matchedPhone = businessPhoneNumbers.find(
-//     //     (bp) => bp.metaPhoneNumberId === user.selectedPhoneNumberId
-//     //   );
-//     //   if (matchedPhone?.notificationSetting) {
-//     //     const settings = matchedPhone.notificationSetting;
-//     //     if (settings.messageAssignedSound || settings.messageAssignedDesktop) {
-//     //       messageAssignedEmails.push(user.email);
-//     //     }
-//     //   }
-//     // }
-
-//     // 🔔 Emit messageAssigned only to eligible recipients
-//     if (usersWithSettings.length > 0) {
-//       io.emit("messageAssigned", {
-//         recipients: usersWithSettings,
-//         contactName: contact.name || contact.phoneNumber,
-//         contactId: contact.id,
-//         from: sender,
-//       });
-//     }
-//   }
-
-//   // Handle conversation flow logic
-//   await handleConversationFlow(sender, message, agentPhoneNumber);
-// };
-
-
-
 export const isAllowedSender = (sender: string): boolean => {
   const allowedTestNumbers = process.env.ALLOWED_TEST_NUMBERS
     ? process.env.ALLOWED_TEST_NUMBERS.split(",").map((num) => num.trim())
@@ -637,6 +511,216 @@ export const isAllowedSender = (sender: string): boolean => {
 
   return allowedTestNumbers.includes(sender);
 };
+
+const processRuleForMessage = async (
+  rule: Rule,
+  sender: string,
+  message: any
+) => {
+  const actionType = rule.action;
+  const actionData = rule.actionData as any;
+  const conditions = rule.conditions as any;
+
+  // Step 1: Evaluate Conditions FIRST
+  const conditionsMet = await evaluateRuleConditions(conditions, sender, message);
+
+  if (!conditionsMet) {
+    console.log(`Rule "${rule.name}" skipped: Conditions not met`);
+    return;
+  }
+
+  // Step 2: Perform the action (same as before)
+  switch (actionType) {
+    case "sendTemplate":
+      await sendTemplate(sender, actionData.templateId, 0, {});
+      break;
+    case "sendMessage": {
+      const { messageType, replyId } = actionData;
+    
+      if (messageType && replyId) {
+        const materialType = messageType; // 'VIDEO', 'TEXT', etc.
+        const materialId = parseInt(replyId, 10);
+    
+        const sent = await sendDefaultMaterial(materialType, materialId, sender);
+        if (sent) {
+          console.log(`sendMessage action executed successfully for rule ${rule.name}`);
+        } else {
+          console.warn(`Failed to send message for rule ${rule.name}`);
+        }
+      }
+      break;
+    }
+    case "routeChat":
+      // same logic...
+      break;
+    case "startChatbot":
+      const chatbot = await prisma.chatbot.findFirst({
+        where: {
+          id: parseInt(actionData.chatbotId, 10),
+        },
+      });
+      if (chatbot) {
+        await handleChatbotTrigger("chatbot:"+chatbot.name,sender);
+      }
+      break;
+    case "updateAttribute":
+      // same logic...
+      break;
+    default:
+      console.log(`Rule "${rule.name}" has an unknown action type.`);
+  }
+
+  // Increment rule's executed count
+  await prisma.rule.update({
+    where: { id: rule.id },
+    data: { executed: { increment: 1 } },
+  });
+};
+
+const evaluateRuleConditions = async (
+  conditions: any,
+  sender: string,
+  message: any
+): Promise<boolean> => {
+  if (!conditions || Object.keys(conditions).length === 0) return true;
+
+  const contact = await prisma.contact.findUnique({
+    where: { phoneNumber: sender },
+  });
+
+  if (!contact) return false;
+
+  // 1️⃣ Keyword Filter
+  if (conditions.keywordFilter) {
+    const text = message?.text?.body || "";
+    const keywords = conditions.keywordFilter.keywords?.split(",").map((k: string) => k.trim().toLowerCase());
+
+    const matches = keywords?.some((k: string) => text.toLowerCase().includes(k));
+    if (!matches) return false;
+  }
+  if (conditions.contactFilter) {
+    const { operator, value } = conditions.contactFilter;
+    const contactPhoneNumber = contact.phoneNumber;
+  
+    switch (operator) {
+      case "exists":
+        if (!contactPhoneNumber) return false;
+        break;
+  
+      case "not_exists":
+        if (contactPhoneNumber) return false;
+        break;
+  
+      case "equals":
+        if (contactPhoneNumber !== value) return false;
+        break;
+  
+      case "not_equals":
+        if (contactPhoneNumber === value) return false;
+        break;
+  
+      case "contains":
+        if (!contactPhoneNumber.includes(value)) return false;
+        break;
+  
+      case "not_contains":
+        if (contactPhoneNumber.includes(value)) return false;
+        break;
+  
+      default:
+        return false; // Unknown operator, fail-safe
+    }
+  }
+  
+  // 2️⃣ Contact Attribute Filter (Json attributes field)
+  if (conditions.contactAttributeFilter) {
+    const { attribute, operator, value } = conditions.contactAttributeFilter;
+    
+    const attributesObj = contact.attributes as Record<string, any>; // Fix typing
+    const attrValue = attributesObj?.[attribute];
+  
+    if (attrValue === undefined) return false;
+  
+    const attrStr = attrValue.toString().toLowerCase();
+    const filterVal = value.toString().toLowerCase();
+  
+    switch (operator) {
+      case "equals":
+        if (attrStr !== filterVal) return false;
+        break;
+      case "not_equals":
+        if (attrStr === filterVal) return false;
+        break;
+      case "contains":
+        if (!attrStr.includes(filterVal)) return false;
+        break;
+      case "not_contains":
+        if (attrStr.includes(filterVal)) return false;
+        break;
+      default:
+        return false;
+    }
+  }
+  
+
+  // 3️⃣ Tags Filter (You can add a new type if you like)
+  if (conditions.tagsFilter) {
+    const requiredTags = conditions.tagsFilter.tags?.map((t: string) => t.trim().toLowerCase());
+    const contactTags = contact.tags.map((t: string) => t.toLowerCase());
+
+    const tagMatches = requiredTags.every((tag: string) => contactTags.includes(tag));
+    if (!tagMatches) return false;
+  }
+
+  // 4️⃣ Timestamp Filter
+  if (conditions.timestampFilter) {
+    const operator = conditions.timestampFilter.operator;
+    const value = parseInt(conditions.timestampFilter.value, 10);
+    const unit = conditions.timestampFilter.unit;
+
+    const receivedAt = new Date(message.timestamp * 1000); // assuming UNIX timestamp in seconds
+    const now = new Date();
+    const diffMs = now.getTime() - receivedAt.getTime();
+    const diffMinutes = diffMs / (1000 * 60);
+    const diffHours = diffMinutes / 60;
+
+    const compareValue = unit === "hours" ? diffHours : diffMinutes;
+
+    switch (operator) {
+      case "less_than":
+        if (!(compareValue < value)) return false;
+        break;
+      case "greater_than":
+        if (!(compareValue > value)) return false;
+        break;
+      default:
+        return false;
+    }
+  }
+
+  // 5️⃣ New Chat Filter
+  if (conditions.newChatFilter) {
+    const recentConversation = await prisma.conversation.findFirst({
+      where: { recipient: sender },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const isNewChat = !recentConversation;
+    if (conditions.newChatFilter.newChatValue === "true" && !isNewChat) return false;
+    if (conditions.newChatFilter.newChatValue === "false" && isNewChat) return false;
+  }
+
+  // 6️⃣ Condition Blocks (Advanced: skip or implement later)
+  if (conditions.conditionBlocks && Array.isArray(conditions.conditionBlocks)) {
+    // Let's skip for now unless you want to handle complex logic
+    // return false;
+  }
+
+  // ✅ All conditions passed
+  return true;
+};
+
+
 
 export const handleConversationFlow = async (
   recipient: string,
