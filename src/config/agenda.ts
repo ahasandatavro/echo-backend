@@ -3,10 +3,14 @@ import { brodcastTemplate } from '../processors/template/templateProcessor';
 import { prisma } from '../models/prismaClient';
 import { Job } from 'agenda';
 
+if (!process.env.MONGODB_URI) {
+  throw new Error('MONGODB_URI environment variable is not set. Please add it to your .env file.');
+}
+
 // Create agenda instance with proper MongoDB connection
 const agenda = new Agenda({
   db: { 
-    address: process.env.MONGODB_URI || 'mongodb://localhost:27017/agenda',
+    address: process.env.MONGODB_URI,
     collection: 'agendaJobs'
   },
   processEvery: '30 seconds'
