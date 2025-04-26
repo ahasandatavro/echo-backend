@@ -7,12 +7,26 @@ import "../config/passportConfig";
 import axios from "axios";
 
 export const registerUser = async (req: Request, res: Response) => {
-  const { email, password, role } = req.body;
+  const { email, password, firstName, lastName, phoneNumber, role } = req.body;
   try {
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await prisma.user.create({
-      data: { email, password: hashedPassword, role },
+    const existingUser = await prisma.user.findUnique({
+      where: { email },
     });
+    if (existingUser) {
+      return res.status(400).send("Email already in use.");
+    }
+    const hashedPassword = await bcrypt.hash(password, 10);
+    await prisma.user.create({
+      data: {
+        email,
+        password: hashedPassword,
+        firstName,
+        lastName,
+        phoneNumber,
+        role:role,
+      },
+    });
+    
     res.status(201).send("User Created successfully");
   } catch (error: unknown) {
     if (error instanceof Error) {
