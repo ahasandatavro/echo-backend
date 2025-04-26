@@ -1,3 +1,6 @@
+import dotenv, { config } from "dotenv";
+dotenv.config();
+import "./config/passportConfig";
 import express, { Request, Response } from "express";
 import bodyParser from "body-parser";
 import cors from "cors";
@@ -23,8 +26,6 @@ import ruleRoutes from "./routes/ruleRoute";
 import { Server } from "socket.io";
 import { authenticateJWT } from "./middlewares/authMiddleware"
 import passport from "passport";
-import dotenv, { config } from "dotenv";
-import "./config/passportConfig";
 import multer from "multer";
 import { s3 } from "./config/s3Config";
 import http from "http";
@@ -32,7 +33,7 @@ import { prisma } from "./models/prismaClient";
 import hubspotRoutes from "./routes/hubspotRoute";
 import webhookRoutes from "./routes/webhookRoute";
 import notificationSettingsRoutes from "./routes/notificationSettingsRoute";
-dotenv.config();
+import agenda from "./config/agenda";
 const app = express();
 const PORT = process.env.PORT || 5000;
 const server = http.createServer(app);
@@ -375,6 +376,17 @@ app.post("/upload",upload.single("file"), async (req, res) => {
     res.status(500).json({ message: "Failed to upload file", error });
   }
 });
+
+// Initialize Agenda
+(async function() {
+  try {
+    await agenda.start();
+    console.log('Agenda started successfully');
+  } catch (error) {
+    console.error('Failed to start Agenda:', error);
+  }
+})();
+
 server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
