@@ -9,7 +9,7 @@ if (!process.env.MONGODB_URI) {
 
 // Create agenda instance with proper MongoDB connection
 const agenda = new Agenda({
-  db: { 
+  db: {
     address: process.env.MONGODB_URI,
     collection: 'agendaJobs'
   },
@@ -25,7 +25,7 @@ agenda.on('error', (err) => {
 agenda.define('sendScheduledBroadcast', async (job: Job) => {
   try {
     const { broadcastId } = job.attrs.data;
-    
+
     // Get broadcast details
     const broadcast = await prisma.broadcast.findUnique({
       where: { id: broadcastId },
@@ -73,14 +73,15 @@ agenda.define('sendScheduledBroadcast', async (job: Job) => {
   }
 });
 
-// Start agenda with error handling
-(async function() {
+// Export initialization function
+export const initializeAgenda = async () => {
   try {
     await agenda.start();
     console.log('Agenda started successfully');
   } catch (error) {
     console.error('Failed to start Agenda:', error);
+    throw error;
   }
-})();
+};
 
 export default agenda;
