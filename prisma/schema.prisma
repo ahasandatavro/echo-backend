@@ -253,6 +253,10 @@ model Broadcast {
   userId        Int
   phoneNumberId String? // e.g. your BusinessPhoneNumber metaPhoneNumberId
   createdAt     DateTime             @default(now())
+  scheduledDate String? // Format: "YYYY-MM-DD"
+  scheduledTime String? // Format: "HH:mm"
+  sentAt        DateTime? // When the broadcast was actually sent
+  status        String               @default("PENDING") // Values: PENDING, SCHEDULED, SENT, FAILED
   recipients    BroadcastRecipient[]
 }
 
@@ -267,6 +271,8 @@ model BroadcastRecipient {
 }
 
 enum BroadcastStatus {
+  PENDING
+  SCHEDULED
   SENT
   DELIVERED
   READ
@@ -415,6 +421,7 @@ model Keyword {
   routingMaterials KeywordRoutingMaterial[]
   keywordTemplates KeywordTemplate[]
 }
+
 model KeywordReplyMaterial {
   id              Int @id @default(autoincrement())
   keywordId       Int
@@ -438,6 +445,7 @@ model KeywordRoutingMaterial {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
 model Template {
   id               Int               @id @default(autoincrement())
   name             String            @unique
@@ -463,6 +471,7 @@ model KeywordTemplate {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
+
 model ReplyMaterial {
   id        Int                    @id @default(autoincrement())
   type      MaterialType

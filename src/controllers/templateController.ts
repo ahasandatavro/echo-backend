@@ -5,7 +5,9 @@ import { preprocessHtmlForWhatsApp } from "../helpers";
 import fs from "fs";
 import FormData from "form-data";
 import { prisma } from "../models/prismaClient";
-import { brodcastTemplate } from "../processors/template/templateProcessor";interface ButtonData {
+import { brodcastTemplate } from "../processors/template/templateProcessor";
+
+interface ButtonData {
   id?: number;
   type: string;      // e.g. "Visit Website", "Call Phone", "Copy offer code", "Quick replies"
   label?: string;    // The text you want displayed on the button
@@ -14,6 +16,7 @@ import { brodcastTemplate } from "../processors/template/templateProcessor";inte
   code?: string;
   [key: string]: any;
 }
+
 dotenv.config();
 
 const WHATSAPP_GRAPH_API = `${process.env.META_BASE_URL}/${process.env.META_WHATSAPP_BUSINESS_ID}/message_templates`;
@@ -173,7 +176,7 @@ export const   createTemplate = async (req: Request, res: Response) => {
       const metaButtons = buttonsData.map((button) => {
         // Remove unwanted keys like "id", "labelLimit", etc.
         const { id, labelLimit, urlLimit, phoneLimit, codeLimit, ...rest } = button;
-    
+
         // We'll convert your custom "type" to Meta's "type" ("PHONE_NUMBER", "URL", or "QUICK_REPLY")
         switch (rest.type) {
           case "Call Phone":
@@ -182,27 +185,27 @@ export const   createTemplate = async (req: Request, res: Response) => {
               text: rest.label || "Call",
               phone_number: rest.phone || "",
             };
-    
+
           case "Visit Website":
             return {
               type: "URL",
               text: rest.label || "Visit us",
               url: rest.url || "",
             };
-    
+
           case "Copy offer code":
             // Typically a quick reply with some text
             return {
               type: "QUICK_REPLY",
               text: rest.label || "Offer Code",
             };
-    
+
           case "Quick replies":
             return {
               type: "QUICK_REPLY",
               text: rest.label || "Reply",
             };
-    
+
           default:
             // Fallback to QUICK_REPLY if unrecognized
             return {
@@ -211,7 +214,7 @@ export const   createTemplate = async (req: Request, res: Response) => {
             };
         }
       });
-    
+
       resolvedComponents.push({
         type: "BUTTONS",
         buttons: metaButtons,
@@ -275,7 +278,7 @@ export const deleteTemplate = async (req: Request, res: Response) => {
 
 export const createBroadcast = async (req: Request, res: Response) => {
   try {
-    const { broadcastName, templateName, userId, contacts, chatbotId } =
+    const { broadcastName, templateName, userId, contacts, chatbotId, scheduledDate, scheduledTime } =
       req.body;
     const user: any = req.user;
     const dbUser = await prisma.user.findFirst({
@@ -303,21 +306,56 @@ export const createBroadcast = async (req: Request, res: Response) => {
       },
     });
 
-    for (const phoneNumber of contacts) {
-      // Call sendTemplate and pass broadcast.id in the opaque callback (for tracking in webhook)
-      await brodcastTemplate(
-        phoneNumber,
-        templateName,
-        chatbotId,
-        broadcast.id
-      );
-    }
+    // If scheduling is requested
+    if (scheduledDate && scheduledTime) {
+      const scheduledDateTime = new Date(`${scheduledDate}T${scheduledTime}`);
 
-    res.status(200).json({
-      success: true,
-      broadcastId: broadcast.id,
-      message: "Broadcast created successfully!",
-    });
+      // Schedule the broadcast using Agenda
+      const agenda = (await import('../config/agenda')).default;
+      await agenda.schedule(scheduledDateTime, 'sendScheduledBroadcast', {
+        broadcastId: broadcast.id
+      });
+
+      // Update the broadcast with scheduling info
+      await prisma.broadcast.update({
+        where: { id: broadcast.id },
+        data: {
+          scheduledDate,
+          scheduledTime
+        }
+      });
+
+      res.status(200).json({
+        success: true,
+        broadcastId: broadcast.id,
+        message: "Broadcast scheduled successfully!",
+        scheduledFor: scheduledDateTime
+      });
+    } else {
+      // Send immediately if no scheduling requested
+      for (const phoneNumber of contacts) {
+        await brodcastTemplate(
+          phoneNumber,
+          templateName,
+          chatbotId,
+          broadcast.id
+        );
+      }
+
+      // Update sent time
+      await prisma.broadcast.update({
+        where: { id: broadcast.id },
+        data: {
+          sentAt: new Date()
+        }
+      });
+
+      res.status(200).json({
+        success: true,
+        broadcastId: broadcast.id,
+        message: "Broadcast sent successfully!",
+      });
+    }
   } catch (error: any) {
     console.error("Error creating broadcast:", error);
     res.status(500).json({
