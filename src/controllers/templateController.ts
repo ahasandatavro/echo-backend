@@ -278,8 +278,7 @@ export const deleteTemplate = async (req: Request, res: Response) => {
 
 export const createBroadcast = async (req: Request, res: Response) => {
   try {
-    const { broadcastName, templateName, userId, contacts, chatbotId, scheduledDate, scheduledTime } =
-      req.body;
+    const { broadcastName, templateName, userId, contacts, chatbotId, scheduledDateTime } = req.body;
     const user: any = req.user;
     const dbUser = await prisma.user.findFirst({
       where: { id: user.userId },
@@ -307,12 +306,12 @@ export const createBroadcast = async (req: Request, res: Response) => {
     });
 
     // If scheduling is requested
-    if (scheduledDate && scheduledTime) {
-      const scheduledDateTime = new Date(`${scheduledDate}T${scheduledTime}`);
+    if (scheduledDateTime) {
+      const scheduledDate = new Date(scheduledDateTime);
 
       // Schedule the broadcast using Agenda
       const agenda = (await import('../config/agenda')).default;
-      await agenda.schedule(scheduledDateTime, 'sendScheduledBroadcast', {
+      await agenda.schedule(scheduledDate, 'sendScheduledBroadcast', {
         broadcastId: broadcast.id
       });
 
@@ -320,8 +319,8 @@ export const createBroadcast = async (req: Request, res: Response) => {
       await prisma.broadcast.update({
         where: { id: broadcast.id },
         data: {
-          scheduledDate,
-          scheduledTime
+          scheduledDateTime: scheduledDate,
+          status: 'SCHEDULED'
         }
       });
 
@@ -329,7 +328,7 @@ export const createBroadcast = async (req: Request, res: Response) => {
         success: true,
         broadcastId: broadcast.id,
         message: "Broadcast scheduled successfully!",
-        scheduledFor: scheduledDateTime
+        scheduledFor: scheduledDate
       });
     } else {
       // Send immediately if no scheduling requested
@@ -346,7 +345,8 @@ export const createBroadcast = async (req: Request, res: Response) => {
       await prisma.broadcast.update({
         where: { id: broadcast.id },
         data: {
-          sentAt: new Date()
+          sentAt: new Date(),
+          status: 'SENT'
         }
       });
 
