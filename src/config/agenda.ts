@@ -1,39 +1,43 @@
-import Agenda from 'agenda';
+import { Agenda, Job } from '@hokify/agenda';
 import { brodcastTemplate } from '../processors/template/templateProcessor';
 import { prisma } from '../models/prismaClient';
-import { Job } from 'agenda';
 
 if (!process.env.MONGODB_URI) {
   throw new Error('MONGODB_URI environment variable is not set. Please add it to your .env file.');
 }
 
-// Create agenda instance with proper MongoDB connection
 const agenda = new Agenda({
   db: {
     address: process.env.MONGODB_URI,
     collection: 'agendaJobs'
   },
-  processEvery: '30 seconds'
+  processEvery: '30 seconds',
+  maxConcurrency: 20,
+  defaultConcurrency: 5,
+  lockLimit: 0,
+  defaultLockLimit: 0,
+  defaultLockLifetime: 10 * 60 * 1000 // 10 minutes
 });
 
-// Handle MongoDB connection errors
 agenda.on('error', (err) => {
   console.error('Agenda connection error:', err);
 });
 
-// Define job processor for scheduled broadcasts
-agenda.define('sendScheduledBroadcast', async (job: Job) => {
+// Define the data structure
+interface SendScheduledBroadcastData {
+  broadcastId: number;
+}
+
+// Define job processor
+agenda.define<SendScheduledBroadcastData>('sendScheduledBroadcast', async (job: Job<SendScheduledBroadcastData>) => {
   try {
     const { broadcastId } = job.attrs.data;
 
-    // Get broadcast details
     const broadcast = await prisma.broadcast.findUnique({
       where: { id: broadcastId },
       include: {
         recipients: {
-          include: {
-            contact: true
-          }
+          include: { contact: true }
         }
       }
     });
@@ -42,17 +46,15 @@ agenda.define('sendScheduledBroadcast', async (job: Job) => {
       throw new Error(`Broadcast ${broadcastId} not found`);
     }
 
-    // Send broadcast to all recipients
     for (const recipient of broadcast.recipients) {
       await brodcastTemplate(
         recipient.contact.phoneNumber,
         broadcast.templateName,
-        0, // chatbotId is optional, using 0 as default
+        0,
         broadcast.id
       );
     }
 
-    // Update broadcast sent time and status
     await prisma.broadcast.update({
       where: { id: broadcastId },
       data: {
@@ -63,7 +65,6 @@ agenda.define('sendScheduledBroadcast', async (job: Job) => {
 
   } catch (error) {
     console.error('Error processing scheduled broadcast:', error);
-    // Update status to FAILED
     await prisma.broadcast.update({
       where: { id: job.attrs.data.broadcastId },
       data: {
@@ -73,7 +74,6 @@ agenda.define('sendScheduledBroadcast', async (job: Job) => {
   }
 });
 
-// Export initialization function
 export const initializeAgenda = async () => {
   try {
     await agenda.start();
