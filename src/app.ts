@@ -1,3 +1,6 @@
+import dotenv, { config } from "dotenv";
+dotenv.config();
+import "./config/passportConfig";
 import express, { Request, Response } from "express";
 import bodyParser from "body-parser";
 import cors from "cors";
@@ -23,8 +26,6 @@ import ruleRoutes from "./routes/ruleRoute";
 import { Server } from "socket.io";
 import { authenticateJWT } from "./middlewares/authMiddleware"
 import passport from "passport";
-import dotenv, { config } from "dotenv";
-import "./config/passportConfig";
 import multer from "multer";
 import { s3 } from "./config/s3Config";
 import http from "http";
@@ -32,7 +33,8 @@ import { prisma } from "./models/prismaClient";
 import hubspotRoutes from "./routes/hubspotRoute";
 import webhookRoutes from "./routes/webhookRoute";
 import notificationSettingsRoutes from "./routes/notificationSettingsRoute";
-dotenv.config();
+import agenda, { initializeAgenda } from "./config/agenda";
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 const server = http.createServer(app);
@@ -102,17 +104,17 @@ io.on("connection", (socket) => {
 
   socket.on("newChat", async ({ email }) => {
     if (!email) return;
-  
+
     try {
       const sender = await prisma.user.findUnique({
         where: { email },
         include: { createdUsers: true, createdBy: true }
       });
-  
+
       if (!sender) return;
-  
+
       let recipients: string[] = [];
-  
+
       if (!sender.agent) {
         // 🔔 If not an agent, notify all users created by this user (agents)
         const createdAgents = await prisma.user.findMany({
@@ -122,7 +124,7 @@ io.on("connection", (socket) => {
           },
           select: { email: true }
         });
-  
+
         recipients = createdAgents.map((user) => user.email);
       } else if (sender.createdById) {
         // 🔔 If agent, notify:
@@ -136,41 +138,41 @@ io.on("connection", (socket) => {
           },
           select: { email: true }
         });
-  
+
         const creator = await prisma.user.findUnique({
           where: { id: sender.createdById },
           select: { email: true }
         });
-  
+
         recipients = [
           ...otherAgents.map((a) => a.email),
           ...(creator?.email ? [creator.email] : [])
         ];
       }
-  
+
       // ✅ Emit event to each recipient email
       recipients.forEach((recipientEmail) => {
         io.emit("newChat", { email: recipientEmail });
       });
-  
+
     } catch (err) {
       console.error("Error broadcasting newChat:", err);
     }
   });
-  
+
   // socket.on("chatAssignedToAgent", async ({ assigneeEmail }) => {
   //   if (!assigneeEmail) return;
-  
+
   //   try {
   //     const assignee = await prisma.user.findUnique({
   //       where: { email: assigneeEmail },
   //       include: { createdUsers: true, createdBy: true }
   //     });
-  
+
   //     if (!assignee) return;
-  
+
   //     let recipients: string[] = [];
-  
+
   //     if (!assignee.agent) {
   //       // If creator (not agent), notify their created agents
   //       const createdAgents = await prisma.user.findMany({
@@ -180,7 +182,7 @@ io.on("connection", (socket) => {
   //         },
   //         select: { email: true }
   //       });
-  
+
   //       recipients = createdAgents.map((u) => u.email);
   //     } else if (assignee.createdById) {
   //       // If agent, notify:
@@ -194,39 +196,39 @@ io.on("connection", (socket) => {
   //         },
   //         select: { email: true }
   //       });
-  
+
   //       const creator = await prisma.user.findUnique({
   //         where: { id: assignee.createdById },
   //         select: { email: true }
   //       });
-  
+
   //       recipients = [
   //         ...otherAgents.map((a) => a.email),
   //         ...(creator?.email ? [creator.email] : [])
   //       ];
   //     }
-  
+
   //     recipients.forEach((email) => {
   //       io.emit("chatAssignedToAgent", { email });
   //     });
-  
+
   //   } catch (err) {
   //     console.error("Error broadcasting assignedAgent notification:", err);
   //   }
   // });
   socket.on("chatAssignedToAgent", async ({ assignedToEmail, assignedByEmail, contactName }) => {
     if (!assignedToEmail || !assignedByEmail) return;
-  
+
     try {
       const assignee = await prisma.user.findUnique({
         where: { email: assignedByEmail },
         include: { createdBy: true }
       });
-  
+
       if (!assignee) return;
-  
+
       let recipients: string[] = [];
-  
+
       if (!assignee.agent) {
         // If creator (not agent), notify all their agents
         const createdAgents = await prisma.user.findMany({
@@ -236,7 +238,7 @@ io.on("connection", (socket) => {
           },
           select: { email: true }
         });
-  
+
         recipients = createdAgents.map((u) => u.email);
       } else if (assignee.createdById) {
         // Notify other agents created by same creator and the creator
@@ -248,18 +250,18 @@ io.on("connection", (socket) => {
           },
           select: { email: true }
         });
-  
+
         const creator = await prisma.user.findUnique({
           where: { id: assignee.createdById },
           select: { email: true }
         });
-  
+
         recipients = [
           ...otherAgents.map((a) => a.email),
           ...(creator?.email ? [creator.email] : [])
         ];
       }
-  
+
       // Emit notification with both emails
       for (const email of recipients) {
         io.emit("chatAssignedToAgent", {
@@ -269,16 +271,16 @@ io.on("connection", (socket) => {
           contactName
         });
       }
-  
+
     } catch (err) {
       console.error("Error in chatAssignedToAgent socket:", err);
     }
   });
-  
+
   socket.on("chatAssignedToTeam", async ({ email, assignedByEmail, selectedContact, teamIds }) => {
     try {
       if (!teamIds?.length) return;
-  
+
       // ✅ Find agents belonging to any of the assigned teams
       const agents = await prisma.user.findMany({
         where: {
@@ -291,7 +293,7 @@ io.on("connection", (socket) => {
         },
         select: { email: true }
       });
-  
+
       for (const agent of agents) {
           io.emit("chatAssignedToTeam", {
           email: agent.email,
@@ -303,9 +305,9 @@ io.on("connection", (socket) => {
       console.error("Error broadcasting chatAssignedToTeam:", err);
     }
   });
-  
-  
-    
+
+
+
 });
 
 
@@ -375,6 +377,13 @@ app.post("/upload",upload.single("file"), async (req, res) => {
     res.status(500).json({ message: "Failed to upload file", error });
   }
 });
+
+// Initialize Agenda
+initializeAgenda().catch((error) => {
+  console.error('Failed to initialize Agenda:', error);
+  process.exit(1);
+});
+
 server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
