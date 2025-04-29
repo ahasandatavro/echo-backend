@@ -247,17 +247,16 @@ model Message {
 }
 
 model Broadcast {
-  id            Int                  @id @default(autoincrement())
-  name          String
-  templateName  String
-  userId        Int
-  phoneNumberId String? // e.g. your BusinessPhoneNumber metaPhoneNumberId
-  createdAt     DateTime             @default(now())
-  scheduledDate String? // Format: "YYYY-MM-DD"
-  scheduledTime String? // Format: "HH:mm"
-  sentAt        DateTime? // When the broadcast was actually sent
-  status        String               @default("PENDING") // Values: PENDING, SCHEDULED, SENT, FAILED
-  recipients    BroadcastRecipient[]
+  id                Int                  @id @default(autoincrement())
+  name              String
+  templateName      String
+  userId            Int
+  phoneNumberId     String? // e.g. your BusinessPhoneNumber metaPhoneNumberId
+  createdAt         DateTime             @default(now())
+  scheduledDateTime DateTime? // When the broadcast is scheduled to be sent
+  sentAt            DateTime? // When the broadcast was actually sent
+  status            String               @default("PENDING") // Values: PENDING, SCHEDULED, SENT, FAILED
+  recipients        BroadcastRecipient[]
 }
 
 model BroadcastRecipient {
