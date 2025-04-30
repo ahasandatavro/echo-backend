@@ -760,7 +760,7 @@ export const findOrCreateConversation = async (
   });
 
   // 2️⃣ If this is an interactive message, just return that convo
-  if (message?.interactive) {
+    if (message?.interactive) {
     if (!conversation) {
       console.warn(
         `No existing conversation found for interactive message from ${recipient}`
@@ -772,9 +772,13 @@ export const findOrCreateConversation = async (
 
   // 3️⃣ Otherwise (text) — extract keyword and lookup chatbotId
   const text = message?.text?.body?.toLowerCase();
-  const chatbotId = text ? await findChatbotIdByKeyword(text) : null;
+  let chatbotId = null;
+  if(conversation && conversation.answeringQuestion){
+    chatbotId = conversation.chatbotId;
+  }
+else chatbotId = text ? await findChatbotIdByKeyword(text) : null;
 
-  if (!chatbotId) {
+  if (!chatbotId &&  conversation && !conversation.answeringQuestion) {
     console.warn("No keyword match found. Unable to associate a chatbot.");
     await sendMessage(
       recipient,
@@ -788,9 +792,9 @@ export const findOrCreateConversation = async (
     if (conversation.chatbotId !== chatbotId) {
       conversation = await prisma.conversation.update({
         where: { id: conversation.id },
-        data: { chatbotId, answeringQuestion: true },
+        data: { chatbotId, answeringQuestion: false },
       });
-      console.log("Existing conversation updated:", conversation);
+   //   console.log("Existing conversation updated:", conversation);
     }
   } else {
     // 5️⃣ Otherwise create a brand-new conversation

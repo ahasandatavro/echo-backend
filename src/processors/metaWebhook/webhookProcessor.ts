@@ -1406,63 +1406,177 @@ export const sendMessageWithList = async (recipient: string, listMessage: ListMe
   }
 };
 
-export const sendQuestion = async (recipient: string, questionMessage: any, currentNodeId:number) => {
+// export const sendQuestion = async (recipient: string, questionMessage: any, currentNodeId:number) => {
+//   try {
+//     const url = `${metaWhatsAppAPI.baseURL}/${metaWhatsAppAPI.phoneNumberId}/messages`;
+
+//     // Validate options for the question
+//     const validOptions = questionMessage.buttons.filter(
+//       (option: any) => option.id && option.title
+//     );
+
+    
+//     if (validOptions.length === 0) {
+//       throw new Error("No valid options provided for the question.");
+//     }
+
+//     const conversation = await prisma.conversation.findFirst({
+//       where: {
+//         recipient: recipient, // Matches the recipient
+//         chatbotId: questionMessage.chatId,    // Matches the chatbotId
+//       },
+//     });
+    
+//     if (!conversation) {
+//       throw new Error("Conversation not found");
+//     }
+    
+//     await prisma.conversation.update({
+//       where: { id: conversation.id }, // Use the conversation's ID
+//       data: {
+//         answeringQuestion:true,
+//         currentNodeId: currentNodeId,
+//       },
+//     });
+    
+
+//     const payload = {
+//       messaging_product: "whatsapp",
+//       to: recipient,
+//       type: "interactive",
+//       interactive: {
+//         type: "button",
+//         body: { text: convertHtmlToWhatsAppText(questionMessage.text) },
+//         action: {
+//           buttons: validOptions.map((option: any) => ({
+//             type: "reply",
+//             reply: { id: option.id, title: option.title },
+//           })),
+//         },
+//       },
+//       biz_opaque_callback_data: `chatId=${questionMessage.chatId}`
+//     };
+
+//     await axios.post(url, payload, {
+//       headers: {
+//         Authorization: `Bearer ${metaWhatsAppAPI.accessToken}`,
+//         "Content-Type": "application/json",
+//       },
+//     });
+//     await storeMessage({
+//       recipient,
+//       chatbotId: questionMessage.chatId,
+//       messageType: "question",
+//       text: questionMessage.text,
+//     });
+//   } catch (error: any) {
+//     console.error(
+//       "Error sending question message:",
+//       error.response?.data || error.message
+//     );
+//   }
+// };
+export const sendQuestion = async (
+  recipient: string,
+  questionMessage: any,
+  currentNodeId: number
+) => {
   try {
     const url = `${metaWhatsAppAPI.baseURL}/${metaWhatsAppAPI.phoneNumberId}/messages`;
+    const textBody = convertHtmlToWhatsAppText(questionMessage.text);
 
-    // Validate options for the question
+    // Filter out only well-formed buttons
     const validOptions = questionMessage.buttons.filter(
-      (option: any) => option.id && option.title
+      (opt: any) => opt.id && opt.title
     );
 
-    
+    // 1️⃣ If no buttons, send a plain text message instead
     if (validOptions.length === 0) {
-      throw new Error("No valid options provided for the question.");
+      // ✅ fetch & mark the convo as “answeringQuestion”
+      const conversation = await prisma.conversation.findFirst({
+        where: {
+          recipient,
+          chatbotId: questionMessage.chatId,
+        },
+      });
+      if (conversation) {
+        await prisma.conversation.update({
+          where: { id: conversation.id },
+          data: {
+            answeringQuestion: true,
+            currentNodeId: currentNodeId,
+          },
+        });
+      }
+    
+      // now send plain‐text fallback
+      const textPayload = {
+        messaging_product: "whatsapp",
+        to: recipient,
+        type: "text",
+        text: { body: textBody },
+        biz_opaque_callback_data: `chatId=${questionMessage.chatId}`,
+      };
+    
+      await axios.post(url, textPayload, {
+        headers: {
+          Authorization: `Bearer ${metaWhatsAppAPI.accessToken}`,
+          "Content-Type": "application/json",
+        },
+      });
+    
+      await storeMessage({
+        recipient,
+        chatbotId: questionMessage.chatId,
+        messageType: "question",
+        text: questionMessage.text,
+      });
+      return;
     }
+    
 
+    // 2️⃣ Otherwise, proceed with interactive button payload
     const conversation = await prisma.conversation.findFirst({
       where: {
-        recipient: recipient, // Matches the recipient
-        chatbotId: questionMessage.chatId,    // Matches the chatbotId
+        recipient,
+        chatbotId: questionMessage.chatId,
       },
     });
-    
     if (!conversation) {
       throw new Error("Conversation not found");
     }
-    
     await prisma.conversation.update({
-      where: { id: conversation.id }, // Use the conversation's ID
+      where: { id: conversation.id },
       data: {
-        answeringQuestion:true,
-        currentNodeId: currentNodeId,
+        answeringQuestion: true,
+        currentNodeId,
       },
     });
-    
 
-    const payload = {
+    const interactivePayload = {
       messaging_product: "whatsapp",
       to: recipient,
       type: "interactive",
       interactive: {
         type: "button",
-        body: { text: convertHtmlToWhatsAppText(questionMessage.text) },
+        body: { text: textBody },
         action: {
-          buttons: validOptions.map((option: any) => ({
+          buttons: validOptions.map((opt: any) => ({
             type: "reply",
-            reply: { id: option.id, title: option.title },
+            reply: { id: opt.id, title: opt.title },
           })),
         },
       },
-      biz_opaque_callback_data: `chatId=${questionMessage.chatId}`
+      biz_opaque_callback_data: `chatId=${questionMessage.chatId}`,
     };
 
-    await axios.post(url, payload, {
+    await axios.post(url, interactivePayload, {
       headers: {
         Authorization: `Bearer ${metaWhatsAppAPI.accessToken}`,
         "Content-Type": "application/json",
       },
     });
+
     await storeMessage({
       recipient,
       chatbotId: questionMessage.chatId,
