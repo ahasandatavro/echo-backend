@@ -753,21 +753,47 @@ export const findOrCreateConversation = async (
   recipient: string,
   message: any
 ): Promise<any> => {
+  // 1️⃣ Always start by fetching the latest convo (if any)
   let conversation = await prisma.conversation.findFirst({
     where: { recipient },
     orderBy: { updatedAt: "desc" },
   });
 
-  if (!conversation) {
-    const text = message?.text?.body?.toLowerCase();
-    const chatbotId = text ? await findChatbotIdByKeyword(text) : null;
-
-    if (!chatbotId) {
-      console.warn("No keyword match found. Unable to associate a chatbot.");
-      await sendMessage(recipient, "Sorry, no chatbot is available for your query.");
+  // 2️⃣ If this is an interactive message, just return that convo
+  if (message?.interactive) {
+    if (!conversation) {
+      console.warn(
+        `No existing conversation found for interactive message from ${recipient}`
+      );
       return null;
     }
+    return conversation;
+  }
 
+  // 3️⃣ Otherwise (text) — extract keyword and lookup chatbotId
+  const text = message?.text?.body?.toLowerCase();
+  const chatbotId = text ? await findChatbotIdByKeyword(text) : null;
+
+  if (!chatbotId) {
+    console.warn("No keyword match found. Unable to associate a chatbot.");
+    await sendMessage(
+      recipient,
+      "Sorry, no chatbot is available for your query."
+    );
+    return null;
+  }
+
+  // 4️⃣ If a convo exists, update its chatbotId if it changed
+  if (conversation) {
+    if (conversation.chatbotId !== chatbotId) {
+      conversation = await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { chatbotId, answeringQuestion: true },
+      });
+      console.log("Existing conversation updated:", conversation);
+    }
+  } else {
+    // 5️⃣ Otherwise create a brand-new conversation
     conversation = await prisma.conversation.create({
       data: {
         recipient,
@@ -775,12 +801,12 @@ export const findOrCreateConversation = async (
         answeringQuestion: true,
       },
     });
-
     console.log("New conversation created:", conversation);
   }
 
   return conversation;
 };
+
 
 export const getChatbotData = async (chatbotId: number): Promise<any> => {
   const chatbotData = await prisma.chatbot.findUnique({

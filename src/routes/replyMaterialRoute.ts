@@ -30,7 +30,7 @@ const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
 // Helper: Call the existing /upload endpoint to store the file in DigitalOcean Spaces
-const uploadFileToDigitalOcean = async (file: Express.Multer.File): Promise<string> => {
+export const uploadFileToDigitalOcean = async (file: Express.Multer.File): Promise<string> => {
   const formData = new FormData();
   // Append file buffer with its original name
   formData.append('file', file.buffer, file.originalname);

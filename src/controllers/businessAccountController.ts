@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { prisma } from "../models/prismaClient";
-
+import { uploadFileToDigitalOcean } from "../routes/replyMaterialRoute";
 export const updateBusinessSettings = async (req: Request, res: Response) => {
   try {
     // `req.user` is set by your auth middleware
@@ -59,7 +59,14 @@ export const updateBusinessSettings = async (req: Request, res: Response) => {
         supportButtonWebsite,
       },
     });
+    if (req.file) {
+    const fileUrl = await uploadFileToDigitalOcean(req.file);
+    await prisma.user.update({
+      where: { id: user.userId },
+      data: { image: fileUrl },
+    })
 
+  }
     return res.json({
       message: "Business settings updated",
       businessAccount: updatedBusinessAccount,
