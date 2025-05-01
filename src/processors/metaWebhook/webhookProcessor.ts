@@ -423,11 +423,9 @@ export const processNode = async (
     
             // Resolve variables if they start with "@", otherwise keep them as is
             if (variable.startsWith("@")) {
-              variable = await resolveVariables(variable, currentNode?.chatbotId);
+              variable = await resolveVariables(variable, currentNode?.chatId);
             }
-            if (value.startsWith("@")) {
-              value = await resolveVariables(value, currentNode?.chatbotId);
-            }
+          
     
             // Fetch the actual value of the variable (if it's an object lookup, resolve it)
             let actualValue = variable;
@@ -592,58 +590,59 @@ export const processNode = async (
 
     if (currentNode.type === "triggerChatbot") {
       try {
-        // Extract the chatbot data from the node
+        // 1️⃣ Extract and validate chatbot_data
         const chatbotData = currentNode.data?.chatbot_data;
-        if (!chatbotData || !chatbotData.selectedChatbot) {
+        if (!chatbotData?.selectedChatbot) {
           throw new Error("No chatbot data provided.");
         }
-        const selectedChatbotName: string = chatbotData.selectedChatbot;
+        const selectedChatbotName = chatbotData.selectedChatbot;
     
-        // Find the chatbot record by name
+        // 2️⃣ Load the chatbot & keyword
         const chatbot = await prisma.chatbot.findFirst({
           where: { name: selectedChatbotName },
         });
-    
         if (!chatbot) {
-          throw new Error(`Chatbot with name "${selectedChatbotName}" not found.`);
+          throw new Error(`Chatbot "${selectedChatbotName}" not found.`);
         }
-    
-        // Now query the Keyword table to get a keyword for the chatbot.
-        // Adjust the query if you need a specific keyword, here we simply take the first one.
         const keywordRecord = await prisma.keyword.findFirst({
           where: { chatbotId: chatbot.id },
         });
-    
         if (!keywordRecord) {
-          throw new Error(`No keyword found for chatbot with ID ${chatbot.id}.`);
+          throw new Error(`No keyword for chatbot ID ${chatbot.id}.`);
         }
     
-        const keywordValue = keywordRecord.value;
-        console.log(`Sending keyword message: ${keywordValue}`);
+        // 3️⃣ Kick off the flow
+        console.log(`Triggering chatbot with keyword: ${keywordRecord.value}`);
+        await processChatFlow(chatbot.id, recipient);
     
-        // Send the keyword's value as a message with plainText=true.
-        await processChatFlow(chatbot?.id,recipient);
+        // 4️⃣ Follow the “success” edge
+        const nextEdge = edges.find(e => e.sourceId === currentNode.id);
+        if (nextEdge) {
+          const nextNode = nodes.find(n => n.id === nextEdge.targetId);
+          if (nextNode) {
+            console.log(`→ moving to node ${nextNode.id}`);
+            await processNode(nextNode.nodeId, nodes, edges, recipient);
+          }
+        }
       } catch (error) {
         console.error("Error in triggerChatbot node:", error);
     
-        // On error, route to the error branch using the "source_2" handle.
+        // 5️⃣ On failure, follow the “source_2” error edge
         const errorEdge = edges.find(
-          (edge) =>
-            edge.sourceId === currentNode.id && edge.sourceHandle === "source_2"
+          e => e.sourceId === currentNode.id && e.sourceHandle === "source_2"
         );
-    
         if (errorEdge) {
-          const errorNode = nodes.find((node) => node.id === errorEdge.targetId);
+          const errorNode = nodes.find(n => n.id === errorEdge.targetId);
           if (errorNode) {
-            console.log(`Transitioning to error node: ${errorNode.id}`);
+            console.log(`→ moving to error node ${errorNode.id}`);
             await processNode(errorNode.nodeId, nodes, edges, recipient);
           }
         }
       }
     
-      return; // Prevent further processing of this node.
+      return; // stop further processing of this node
     }
-
+    
     if (currentNode.type === "setTags") {
       try {
         // Extract the selected tags from the node's data.
@@ -772,16 +771,15 @@ export const processNode = async (
       }
       return; // Questions wait for user interaction
     }
-    
     if (currentNode.type === "updateAttribute") {
       try {
-        // Ensure attribute data exists
+        // 1) Ensure attribute data exists
         const attributeData = currentNode.data?.attribute_data;
         if (!attributeData || !Array.isArray(attributeData.attributes)) {
           throw new Error("No attribute data provided.");
         }
     
-        // Retrieve the contact record using the recipient (e.g., phone number)
+        // 2) Retrieve the contact record
         const contactRecord = await prisma.contact.findUnique({
           where: { phoneNumber: recipient },
         });
@@ -789,43 +787,37 @@ export const processNode = async (
           throw new Error(`Contact with phoneNumber ${recipient} not found.`);
         }
     
-        // Use existing attributes or default to an empty object
-        let existingAttributes: Record<string, any> = {};
-        if (contactRecord.attributes && typeof contactRecord.attributes === "object") {
-          existingAttributes = contactRecord.attributes;
-        }
+        // 3) Filter out any bad entries (no undefined keys/values)
+        const cleanPairs = attributeData.attributes.filter(
+          (a:any): a is { key: string; value: string } =>
+            typeof a.key === "string" && typeof a.value === "string"
+        );
     
-        // Iterate over each attribute, resolve variables if necessary, and update the object
-        for (const attr of attributeData.attributes) {
-          let { key, value } = attr;
-          
-          // If the key starts with '@', resolve it
-          if (key.startsWith("@")) {
-            key = await resolveVariables(key, currentNode?.chatbotId);
-          }
-          
-          // If the value starts with '@', resolve it
-          if (value.startsWith("@")) {
-            value = await resolveVariables(value, currentNode?.chatbotId);
-          }
-          
-          // Update (or add) the attribute key/value pair
-          existingAttributes[key] = value;
-        }
-    
-        // Update the contact's attributes field in the database
+        // 4) Reduce into a flat object for JSON storage
+        //    stripping any leading “@” from the key:
+        const attributesJson: Record<string, string> = cleanPairs.reduce(
+          (obj: Record<string, string>, { key, value }: { key: string; value: string }) => {
+            // remove leading @ if present
+            const sanitizedKey = key.startsWith("@") 
+              ? key.slice(1) 
+              : key;
+        
+            obj[sanitizedKey] = value;
+            return obj;
+          },
+          {}
+        );
+        
+        // 5) Update the contact's JSON attributes column
         await prisma.contact.update({
           where: { phoneNumber: recipient },
-          data: { attributes: existingAttributes },
+          data: { attributes: attributesJson },
         });
-        console.log(`Updated contact ${recipient} with attributes:`, existingAttributes);
     
-        // Find the outgoing edge for success (sourceHandle "source_1")
-        const nextEdge = edges.find(
-          (edge) => edge.sourceId === currentNode.id
-        );
+        // 6) On success, transition along the first outgoing edge
+        const nextEdge = edges.find(edge => edge.sourceId === currentNode.id);
         if (nextEdge) {
-          const nextNode = nodes.find((node) => node.id === nextEdge.targetId);
+          const nextNode = nodes.find(node => node.id === nextEdge.targetId);
           if (nextNode) {
             console.log(`Transitioning to next node: ${nextNode.id}`);
             await processNode(nextNode.nodeId, nodes, edges, recipient);
@@ -834,19 +826,22 @@ export const processNode = async (
       } catch (error) {
         console.error("Error in updateAttribute node:", error);
     
-        // On error, transition using the "source_2" outgoing edge
+        // On error, follow the "source_2" error edge
         const errorEdge = edges.find(
-          (edge) => edge.sourceId === currentNode.id && edge.sourceHandle === "source_2"
+          edge =>
+            edge.sourceId === currentNode.id && edge.sourceHandle === "source_2"
         );
         if (errorEdge) {
-          const errorNode = nodes.find((node) => node.id === errorEdge.targetId);
+          const errorNode = nodes.find(node => node.id === errorEdge.targetId);
           if (errorNode) {
             console.log(`Transitioning to error node: ${errorNode.id}`);
             await processNode(errorNode.nodeId, nodes, edges, recipient);
           }
         }
       }
-      return; // Stop further execution for this node.
+    
+      // Stop further handling for this node
+      return;
     }
     
     if (currentNode.type === "updateChatStatus") {
