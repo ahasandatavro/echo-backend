@@ -83,7 +83,7 @@ export const deleteNodeByChatId = async (req: Request, res: Response) => {
           }>;
         };
       };
-    
+
       if (nodeData?.message_data?.messages) {
         nodeData.message_data.messages.forEach((message) => {
           if (
@@ -98,7 +98,7 @@ export const deleteNodeByChatId = async (req: Request, res: Response) => {
         });
       }
     });
-    
+
 
     // Convert URLs to keys (remove the base URL)
     const keys = fileUrls.map((url) =>
@@ -346,24 +346,28 @@ export const deleteNode = async (req: Request, res: Response) => {
   }
 };
 
-export const getPaginatedChatbots = async (req:Request, res:Response) => {
+export const getPaginatedChatbots = async (req: Request, res: Response) => {
   try {
-    // Extract and cast query parameters
-    const page = parseInt(req.query.page as string, 10) || 1;
-    const limit = parseInt(req.query.limit as string, 10) || 10;
-
-    // Calculate the offset
+    const page   = parseInt(req.query.page  as string, 10) || 1;
+    const limit  = parseInt(req.query.limit as string, 10) || 10;
+    const search = (req.query.search as string)?.trim();
     const offset = (page - 1) * limit;
 
-    // Fetch chatbots with pagination
-    const chatbots = await prisma.chatbot.findMany({
-      skip: offset,
-      take: limit,
-      orderBy: { updatedAt: 'desc' },
-    });
+    // build a dynamic filter
+    const where = search
+      ? { name: { contains: search, mode: 'insensitive' } }
+      : {};
 
-    // Get total count for pagination metadata
-    const total = await prisma.chatbot.count();
+    // run both queries in a transaction
+    const [chatbots, total] = await prisma.$transaction([
+      prisma.chatbot.findMany({
+        where,
+        skip:   offset,
+        take:   limit,
+        orderBy: { updatedAt: 'desc' },
+      }),
+      prisma.chatbot.count({ where }),
+    ]);
 
     res.status(200).json({
       chatbots,
@@ -377,7 +381,6 @@ export const getPaginatedChatbots = async (req:Request, res:Response) => {
     res.status(500).json({ message: 'Failed to fetch chatbots' });
   }
 };
-
 
 
 export const updateChatFlow = async (req: Request, res: Response) => {
