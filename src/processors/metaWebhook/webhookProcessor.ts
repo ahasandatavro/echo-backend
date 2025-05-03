@@ -2,7 +2,7 @@ import { prisma } from "../../models/prismaClient";
 import axios from "axios";
 import { metaWhatsAppAPI } from "../../config/metaConfig";
 import { convertHtmlToWhatsAppText } from "../../helpers/index";
-import { resolveVariables } from "../../helpers/validation";
+import { resolveContactAttributes, resolveVariables } from "../../helpers/validation";
 import { ListMessage } from "../../interphases";
 import { performGoogleSheetAction } from "../../subProcessors/metaWebhook";
 import { MessageStatus } from "../../interphases"; // ✅ Import the correct enum
@@ -758,10 +758,10 @@ export const processNode = async (
                 });
               } else {
                 // Create a new variable
-                await prisma.variable.create({
+               if(variableName!="") await prisma.variable.create({
                   data: {
                     name: variableName,
-                    chatbotId: currentNode.chatbotId,
+                    chatbotId: currentNode.chatId,
                     conversationId: conversation.id,
                   },
                 });
@@ -1209,7 +1209,9 @@ export const sendMessage = async (
           if (!plainText && messageBody.includes("@")) {
             messageBody = await resolveVariables(messageBody, chatbotId);
           }
-
+          if (!plainText && messageBody.includes("{{")) {
+            messageBody = await resolveContactAttributes(messageBody, recipient);
+          }
           payload.text = { body: plainText ? message.message : convertHtmlToWhatsAppText(messageBody) };
           break;
           // payload.type = "text";
@@ -1415,76 +1417,6 @@ export const sendMessageWithList = async (recipient: string, listMessage: ListMe
   }
 };
 
-// export const sendQuestion = async (recipient: string, questionMessage: any, currentNodeId:number) => {
-//   try {
-//     const url = `${metaWhatsAppAPI.baseURL}/${metaWhatsAppAPI.phoneNumberId}/messages`;
-
-//     // Validate options for the question
-//     const validOptions = questionMessage.buttons.filter(
-//       (option: any) => option.id && option.title
-//     );
-
-    
-//     if (validOptions.length === 0) {
-//       throw new Error("No valid options provided for the question.");
-//     }
-
-//     const conversation = await prisma.conversation.findFirst({
-//       where: {
-//         recipient: recipient, // Matches the recipient
-//         chatbotId: questionMessage.chatId,    // Matches the chatbotId
-//       },
-//     });
-    
-//     if (!conversation) {
-//       throw new Error("Conversation not found");
-//     }
-    
-//     await prisma.conversation.update({
-//       where: { id: conversation.id }, // Use the conversation's ID
-//       data: {
-//         answeringQuestion:true,
-//         currentNodeId: currentNodeId,
-//       },
-//     });
-    
-
-//     const payload = {
-//       messaging_product: "whatsapp",
-//       to: recipient,
-//       type: "interactive",
-//       interactive: {
-//         type: "button",
-//         body: { text: convertHtmlToWhatsAppText(questionMessage.text) },
-//         action: {
-//           buttons: validOptions.map((option: any) => ({
-//             type: "reply",
-//             reply: { id: option.id, title: option.title },
-//           })),
-//         },
-//       },
-//       biz_opaque_callback_data: `chatId=${questionMessage.chatId}`
-//     };
-
-//     await axios.post(url, payload, {
-//       headers: {
-//         Authorization: `Bearer ${metaWhatsAppAPI.accessToken}`,
-//         "Content-Type": "application/json",
-//       },
-//     });
-//     await storeMessage({
-//       recipient,
-//       chatbotId: questionMessage.chatId,
-//       messageType: "question",
-//       text: questionMessage.text,
-//     });
-//   } catch (error: any) {
-//     console.error(
-//       "Error sending question message:",
-//       error.response?.data || error.message
-//     );
-//   }
-// };
 export const sendQuestion = async (
   recipient: string,
   questionMessage: any,
