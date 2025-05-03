@@ -11,6 +11,9 @@ import { io } from "../../app";
 import { validateUserResponse } from "../../helpers/validation";
 import { processWebhookMessage } from "../inboxProcessor";
 import { processBroadcastStatus } from "../../subProcessors/metaWebhook";
+import fs from 'fs';
+import path from 'path';
+import { uploadMediaToDigitalOcean } from "../inboxProcessor";
 
 export const processChatFlow = async (chatbotId: number, recipient: string) => {
   try {
@@ -107,7 +110,7 @@ export const processNode = async (
 
       if (messageData && messageData.length > 0) {
         for (const message of messageData) {
-          await sendMessage(recipient, message,currentNode?.chatbotId,1 );
+          await sendMessage(recipient, message,currentNode?.chatId,1 );
         }
       }
 
@@ -189,93 +192,104 @@ export const processNode = async (
       return; // Stop further processing for this node.
     }    
 
-    if (currentNode.type === "buttons") {
-      const buttonData = currentNode.data?.buttons_data;
-      if (buttonData) {
-        const buttons = buttonData.buttons.map(
-          (button: any, index: number) => ({
-            type: "reply",
-            reply: {
-              id: `${index}_node_${currentNode.id}`,
-              title: button.button,
-            },
-          })
-        );
-    
-        const buttonMessage = {
-          text:
-            convertHtmlToWhatsAppText(buttonData.bodyText) ||
-            "Please select an option:",
-          buttons: buttons,
-          header: buttonData?.headerText,
-          footer: buttonData?.footerText,
-          chatId: currentNode?.chatbotId,
-          saveAnswerVariable: buttonData?.saveAnswerVariable,
-        };
-    
-        try {
-          // Send button message
-          await sendMessageWithButtons(recipient, buttonMessage);
-    
-          // Update the Variable table after successful message sending
-          if (buttonData?.saveAnswerVariable) {
-            const variableName = buttonData.saveAnswerVariable.startsWith("@")
-              ? buttonData.saveAnswerVariable.slice(1)
-              : buttonData.saveAnswerVariable;
-    
-            // Find the conversation using recipient and chatId
-            const conversation = await prisma.conversation.findFirst({
-              where: {
-                recipient: recipient,
-                chatbotId: currentNode?.chatbotId,
-              },
-            });
-    
-            if (conversation) {
-              // Check if the variable already exists
-              const existingVariable = await prisma.variable.findFirst({
-                where: {
-                  name: variableName,
-                  chatbotId: currentNode.chatId,
-                  conversationId: conversation.id,
-                },
-              });
-    
-              if (existingVariable) {
-                // Update the existing variable
-                await prisma.variable.update({
-                  where: { id: existingVariable.id },
-                  data: { updatedAt: new Date() }, // Update timestamp
-                });
-              } else {
-                // Create a new variable
-                await prisma.variable.create({
-                  data: {
-                    name: variableName,
-                    chatbotId: currentNode.chatId,
-                    conversationId: conversation.id,
-                  },
-                });
-              }
-    
-              console.log(
-                `Variable "${variableName}" saved for conversation ID ${conversation.id} and chatbot ID ${currentNode.chatbotId}.`
-              );
-            } else {
-              console.warn(
-                `No conversation found for recipient ${recipient} and chatbot ID ${currentNode.chatbotId}.`
-              );
-            }
-          }
-        } catch (error) {
-          console.error(
-            "Error sending button message or updating variable table:",
-            error
-          );
-        }
+  if (currentNode.type === 'buttons') {
+    const buttonData = currentNode.data?.buttons_data;
+    if (!buttonData) return;
+  
+    let headerPayload: any;
+    let headerAttachmentUrl: string | null = null;
+  
+    if (buttonData.mediaHeader && buttonData.headerMedia) {
+      // 1) Decode base64 and write to your uploads folder
+      const uploadsDir = path.join(__dirname, "../../uploads");
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
       }
+    
+      const [meta, base64] = buttonData.headerMedia.url.split(",");
+      const mime = meta.match(/^data:(.+);base64$/)?.[1] ?? "application/octet-stream";
+      const ext = mime.split("/")[1] ?? "bin";
+      const tmpPath = path.join(uploadsDir, `${currentNode.id}.${ext}`);
+    
+      fs.writeFileSync(tmpPath, Buffer.from(base64, "base64"));
+    
+      // 2) Upload to DigitalOcean (or wherever) and grab a public URL
+      try {
+        headerAttachmentUrl = await uploadMediaToDigitalOcean(tmpPath);
+      } catch (err) {
+        console.error("DO upload failed:", err);
+      } finally {
+        fs.unlinkSync(tmpPath);
+      }
+    
+         if (mime.startsWith("image/")) {
+              headerPayload = { type: "image", image: { link: headerAttachmentUrl! } };
+            } else if (mime.startsWith("video/")) {
+              headerPayload = { type: "video", video: { link: headerAttachmentUrl! } };
+            } else {
+             // any other extension → document
+              headerPayload = {
+                type: "document",
+                document: {
+                  link: headerAttachmentUrl!,
+                  filename: buttonData.headerMedia.name,
+                },
+              };
+            }
+    } else {
+      // fallback to plain-text header
+      const txt = convertHtmlToWhatsAppText(buttonData.headerText ?? "");
+      headerPayload = txt ? { type: "text", text: txt } : undefined;
     }
     
+  
+    // Build buttons
+    const buttons = (buttonData.buttons || []).map((btn:any, i:number) => ({
+      type: 'reply',
+      reply: { id: `${i}_node_${currentNode.id}`, title: btn.button },
+    }));
+  
+    // Assemble the interactive payload
+    const interactive = {
+      type: 'button',
+      header: headerPayload,
+      body: { text: convertHtmlToWhatsAppText(buttonData.bodyText) },
+      footer: buttonData.footerText ? { text: buttonData.footerText } : undefined,
+      action: { buttons },
+    };
+  
+    try {
+      // Send to WhatsApp
+      await axios.post(
+        `${metaWhatsAppAPI.baseURL}/${metaWhatsAppAPI.phoneNumberId}/messages`,
+        {
+          messaging_product: 'whatsapp',
+          to: recipient,
+          type: 'interactive',
+          interactive,
+          biz_opaque_callback_data: `chatId=${currentNode.chatbotId}`,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${metaWhatsAppAPI.accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+  
+      // Persist the sent message, including any DO‐hosted header media
+      await storeMessage({
+        recipient,
+        chatbotId: currentNode.chatbotId!,
+        messageType: 'button',
+        text: convertHtmlToWhatsAppText(buttonData.bodyText),
+        buttonOptions: buttons.map((b:any) => ({ id: b.reply.id, title: b.reply.title })),
+        //attachment: headerAttachmentUrl, 
+      });
+    } catch (err) {
+      console.error('Error sending button message:', err);
+    }
+  }
     if (currentNode.type === "list") {
       const listData = currentNode.data?.list_data;
       if (listData) {
@@ -496,7 +510,7 @@ export const processNode = async (
         // Adjust the `where` clause based on how you identify your contact (e.g., phoneNumber, email, etc.)
         const updatedContact = await prisma.contact.upsert({
           where: { phoneNumber: recipient }, // Search by phoneNumber
-          update: { subscribed: true }, // Update if found
+          update: { subscribed: true,sendSMS:true }, // Update if found
           create: { 
             phoneNumber: recipient, 
             subscribed: true, 
@@ -545,7 +559,7 @@ export const processNode = async (
         // Adjust the `where` clause based on how you identify your contact (e.g., phoneNumber, email, etc.)
         const updatedContact = await prisma.contact.upsert({
           where: { phoneNumber: recipient }, // Search by phoneNumber
-          update: { subscribed: false }, // Update if found
+          update: { subscribed: false,sendSMS:false }, // Update if found
           create: { 
             phoneNumber: recipient, 
             subscribed: true, 

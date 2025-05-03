@@ -49,7 +49,7 @@ export const loginUser = async (req: Request, res: Response) => {
     const token = jwt.sign(
       { userId: user.id, role: user.role },
       `${process.env.JWT_SECRET}`,
-      { expiresIn: "1h" }
+      { expiresIn: "24h" }
     );
     res.status(200).json({
       token,
@@ -95,7 +95,7 @@ export const googleCallback = [
       const token = jwt.sign(
         { userId: user.id, role: user.role },
         process.env.JWT_SECRET as string,
-        { expiresIn: "1h" }
+        { expiresIn: "24h" }
       );
 
       // Send the token and user data to the parent window

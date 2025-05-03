@@ -91,8 +91,14 @@ export const getAllContacts = async (req: Request, res: Response) => {
 
 export const getAllImportedContacts = async (req: Request, res: Response) => {
   try {
+    const user:any=req.user;
+    const dbUser=await prisma.user.findFirst({
+      where: { id: user.userId },
+      select: { selectedPhoneNumberId: true },
+    })
     // Fetch all contacts from the database
     const contacts = await prisma.contact.findMany({
+      where: { createdById: dbUser?.id },
       select: {
         id: true,
         name: true,
