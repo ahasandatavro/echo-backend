@@ -1234,6 +1234,17 @@ export const sendMessageController = async (req: Request, res: Response) => {
 
 export const triggerChatbotByPhoneNumber = async (req: Request, res: Response) => {
   try {
+    const dbUser:any=req.user;
+       const userRecord = await prisma.user.findUnique({
+      where: { id: dbUser.userId },
+      select: { 
+        selectedPhoneNumberId: true,
+        selectedWabaId: true
+      }
+    });
+    if (!userRecord || !userRecord.selectedPhoneNumberId || !userRecord.selectedWabaId) {
+      throw new Error("User's selected contact details are not set.");
+    }
     const phoneNumber = req.params.phoneNumber;
     const { text } = req.body;
 
@@ -1247,7 +1258,7 @@ export const triggerChatbotByPhoneNumber = async (req: Request, res: Response) =
       return res.status(404).json({ error: "Contact not found" });
     }
 
-    await handleChatbotTrigger(text, phoneNumber);
+    await handleChatbotTrigger(text, phoneNumber, userRecord.selectedPhoneNumberId);
 
     return res.status(200).json({ success: true, message: "Chatbot triggered successfully" });
   } catch (error) {
