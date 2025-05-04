@@ -5,6 +5,7 @@ import { prisma } from "../models/prismaClient";
 import passport from "passport";
 import "../config/passportConfig";
 import axios from "axios";
+import { sendWelcomeEmail } from "../services/emailService";
 
 export const registerUser = async (req: Request, res: Response) => {
   const { email, password, firstName, lastName, phoneNumber, role } = req.body;
@@ -16,7 +17,7 @@ export const registerUser = async (req: Request, res: Response) => {
       return res.status(400).send("Email already in use.");
     }
     const hashedPassword = await bcrypt.hash(password, 10);
-    await prisma.user.create({
+    const newUser = await prisma.user.create({
       data: {
         email,
         password: hashedPassword,
@@ -26,6 +27,14 @@ export const registerUser = async (req: Request, res: Response) => {
         role:role,
       },
     });
+    
+    // Send welcome email
+    try {
+      await sendWelcomeEmail(email, firstName);
+    } catch (emailError) {
+      console.error('Failed to send welcome email:', emailError);
+      // Don't fail the registration if email fails
+    }
     
     res.status(201).send("User Created successfully");
   } catch (error: unknown) {
