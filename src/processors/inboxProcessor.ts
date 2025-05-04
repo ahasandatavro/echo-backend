@@ -210,7 +210,7 @@ const downloadMedia = async (mediaId: string) => {
 };
 
 // ✅ Upload to DigitalOcean Spaces
-const uploadMediaToDigitalOcean = async (localFilePath: string) => {
+export const uploadMediaToDigitalOcean = async (localFilePath: string) => {
   try {
     const formData = new FormData();
     formData.append("file", fs.createReadStream(localFilePath));

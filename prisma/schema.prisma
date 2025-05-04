@@ -78,6 +78,7 @@ model User {
   keywords             Keyword[]
   hubspotIntegration   HubspotIntegration?
   notificationSettings NotificationSetting[]
+  contactsCreated   Contact[] @relation("ContactCreatedBy")
 }
 
 model BusinessAccount {
@@ -305,6 +306,8 @@ model Contact {
   timerStartTime  DateTime?
   timerEndTime    DateTime?
   broadcasts      BroadcastRecipient[]
+  createdById        Int?
+  createdBy          User?               @relation("ContactCreatedBy", fields: [createdById], references: [id])
 }
 
 model Note {

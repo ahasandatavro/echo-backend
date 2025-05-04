@@ -230,3 +230,62 @@ export const resolveVariables = async (text: string, chatbotId: number): Promise
     return text; // If an error occurs, return the original text
   }
 };
+
+export const resolveContactAttributes = async (
+  text: string,
+  recipient: string
+): Promise<string> => {
+  try {
+    // Find the contact by phoneNumber
+    const contact = await prisma.contact.findUnique({
+      where: { phoneNumber: recipient },
+    });
+    if (!contact) return text;
+
+    // Regex to find all {{key}} placeholders
+    const regex = /\{\{([^}]+)\}\}/g;
+    let resolved = text;
+    let match: RegExpExecArray | null;
+
+    while ((match = regex.exec(text)) !== null) {
+      const placeholder = match[0];      // e.g. "{{foo}}"
+      const key = match[1];              // e.g. "foo"
+      let replacement = '';
+
+      // Special fields
+      if (key === 'name') {
+        replacement = contact.name ?? '';
+      } else if (key === 'phoneNumber') {
+        replacement = contact.phoneNumber;
+      } else if (contact.attributes) {
+        // If attributes is an array of { key, value }
+        if (Array.isArray(contact.attributes)) {
+          const arr = contact.attributes as Array<Record<string, any>>;
+          const entry = arr.find((e) => e.key === key);
+          replacement = typeof entry?.value === 'string'
+            ? entry.value
+            : '';
+        }
+        // If attributes is an object map
+        else if (
+          typeof contact.attributes === 'object' &&
+          contact.attributes !== null
+        ) {
+          const map = contact.attributes as Record<string, any>;
+          const val = map[key];
+          replacement = typeof val === 'string' ? val : '';
+        }
+      }
+      
+
+      // Replace all occurrences of this placeholder
+      resolved = resolved.split(placeholder).join(replacement);
+    }
+
+    return resolved;
+  } catch (error) {
+    console.error('Error resolving contact attributes:', error);
+    return text;
+  }
+};
+
