@@ -273,7 +273,7 @@ export const isTokenExpired = (expirationTimestamp: number): boolean => {
   return now >= expirationTimestamp; // Token is expired if current time is past the expiration time
 };
 
-export const handleChatbotTrigger=async(text:string, recipient:string)=>{
+export const handleChatbotTrigger=async(text:string, recipient:string, phoneNumberId: string | undefined)=>{
   const chatbotName = text.split(":")[1].trim();
 
   const chatbot = await prisma.chatbot.findFirst({
@@ -304,7 +304,7 @@ export const handleChatbotTrigger=async(text:string, recipient:string)=>{
       where: { id: conversation.id },
       data: { answeringQuestion: false },
     });
-    await processChatFlow(chatbot.id, recipient);
+    await processChatFlow(chatbot.id, recipient, phoneNumberId);
   }
 }
 
@@ -453,7 +453,8 @@ if (messageAssignedEmails.length > 0) {
   const processedMessage = await processWebhookMessage(
     sender,
     message,
-    agentPhoneNumber
+    agentPhoneNumber,
+    phoneNumberId
   );
   const agent = await prisma.user.findFirst({
     where: { selectedPhoneNumberId: phoneNumberId },
@@ -475,7 +476,7 @@ const activeRules = await prisma.rule.findMany({
 
 if (activeRules.length > 0) {
   for (const rule of activeRules) {
-    await processRuleForMessage(rule, sender, message);
+    await processRuleForMessage(rule, sender, message, phoneNumberId);
   }
 }
 
@@ -501,7 +502,7 @@ if (activeRules.length > 0) {
   });
 
 //cheks whether the message is a text/button reply/list reply/question response/matches to existing keyword and transfer to logics accordingly
-  await handleConversationFlow(sender, message, agentPhoneNumber);
+  await handleConversationFlow(sender, message, phoneNumberId);
 };
 
 export const isAllowedSender = (sender: string): boolean => {
@@ -515,7 +516,8 @@ export const isAllowedSender = (sender: string): boolean => {
 const processRuleForMessage = async (
   rule: Rule,
   sender: string,
-  message: any
+  message: any,
+  phoneNumberId: string | undefined
 ) => {
   const actionType = rule.action;
   const actionData = rule.actionData as any;
@@ -541,7 +543,7 @@ const processRuleForMessage = async (
         const materialType = messageType; // 'VIDEO', 'TEXT', etc.
         const materialId = parseInt(replyId, 10);
     
-        const sent = await sendDefaultMaterial(materialType, materialId, sender);
+        const sent = await sendDefaultMaterial(materialType, materialId, sender,0,phoneNumberId);
         if (sent) {
           console.log(`sendMessage action executed successfully for rule ${rule.name}`);
         } else {
@@ -560,7 +562,7 @@ const processRuleForMessage = async (
         },
       });
       if (chatbot) {
-        await handleChatbotTrigger("chatbot:"+chatbot.name,sender);
+        await handleChatbotTrigger("chatbot:"+chatbot.name,sender, phoneNumberId);
       }
       break;
     case "updateAttribute":
@@ -739,13 +741,13 @@ export const handleConversationFlow = async (
   }
 
   if (conversation.answeringQuestion) {
-    await handleQuestionResponse(conversation, message, chatbotData, recipient);
+    await handleQuestionResponse(conversation, message, chatbotData, recipient,agentPhoneNumber);
     return;
   }
 
   const text = message?.text?.body?.toLowerCase();
   if (text) {
-    await processKeyword(text, recipient);
+    await processKeyword(text, recipient, agentPhoneNumber);
   }
 };
 
@@ -985,7 +987,8 @@ export const handleQuestionResponse = async (
   conversation: any,
   message: any,
   chatbotData: any,
-  recipient: string
+  recipient: string,
+  agentPhoneNumberId: string | undefined
 ) => {
   const currentNode = await prisma.node.findFirst({
     where: { id: conversation.currentNodeId },
@@ -1021,7 +1024,8 @@ export const handleQuestionResponse = async (
       conversation,
       failureCount,
       validationFailureExitCount,
-      validation
+      validation,
+      agentPhoneNumberId
     );
   }}
 };
@@ -1072,7 +1076,8 @@ export const handleInvalidQuestionResponse = async (
   conversation: any,
   failureCount: number,
   validationFailureExitCount: number,
-  validation: any
+  validation: any,
+  agentPhoneNumberId: string | undefined
 ) => {
   failureCount += 1;
 
@@ -1093,7 +1098,8 @@ export const handleInvalidQuestionResponse = async (
       },
       conversation.chatbotId,
       conversation.userId,
-      true
+      true,
+      agentPhoneNumberId
     );
 
     console.warn("Chatflow ended due to repeated invalid responses.");
@@ -1112,7 +1118,8 @@ export const handleInvalidQuestionResponse = async (
       },
       conversation.chatbotId,
       conversation.userId,
-      true
+      true,
+      agentPhoneNumberId
     );
   }
 };

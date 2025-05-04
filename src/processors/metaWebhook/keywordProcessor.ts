@@ -35,7 +35,7 @@ type WorkingHours = {
   [day: string]: DaySchedule;
 };
 
-export const processKeyword = async (text: string, recipient: String): Promise<boolean> => {
+export const processKeyword = async (text: string, recipient: String, agentPhoneNumberId: string | undefined): Promise<boolean> => {
   if (!text) return false;
   
   const businessPhoneNumberId=5;
@@ -45,7 +45,7 @@ export const processKeyword = async (text: string, recipient: String): Promise<b
     },
   });
   // Use the new helper function
-  const defaultHandled = await checkAndSendDefaultMaterial(defaultActionSettings, recipient);
+  const defaultHandled = await checkAndSendDefaultMaterial(defaultActionSettings, recipient, agentPhoneNumberId);
   if (defaultHandled) return true;
   try {
     // Find keyword with all possible related entities
@@ -82,7 +82,7 @@ export const processKeyword = async (text: string, recipient: String): Promise<b
     }) as KeywordWithRelations | null;
 
     if (!keyword) {
-      return await handleFallbackMaterial(defaultActionSettings, recipient);
+      return await handleFallbackMaterial(defaultActionSettings, recipient, agentPhoneNumberId);
     }
     
     let actionsPerformed = false;
@@ -105,7 +105,7 @@ export const processKeyword = async (text: string, recipient: String): Promise<b
       }
 
       // Process the chatbot flow
-      await processChatFlow(keyword.chatbot.id, recipient);
+      await processChatFlow(keyword.chatbot.id, recipient, agentPhoneNumberId);
       actionsPerformed = true;
     }
 
@@ -254,7 +254,8 @@ export const processKeyword = async (text: string, recipient: String): Promise<b
 
 const checkAndSendDefaultMaterial = async (
   defaultActionSettings: any,
-  recipient: string
+  recipient: string,
+  agentPhoneNumberId: string | undefined
 ): Promise<boolean> => {
   if (
     defaultActionSettings?.outsideWorkingHoursEnabled &&
@@ -267,7 +268,7 @@ const checkAndSendDefaultMaterial = async (
       const id = defaultActionSettings.outsideWorkingHoursMaterialId;
 
       if (type && id) {
-        const sent = await sendDefaultMaterial(type, id, recipient);
+        const sent = await sendDefaultMaterial(type, id, recipient,1,agentPhoneNumberId);
         if (sent) return true;
       }
     }
@@ -280,7 +281,8 @@ export const sendDefaultMaterial = async (
   type: keyof typeof MaterialType | string,
   id: number,
   recipient: string,
-  fallbackChatbotId: number = 1
+  fallbackChatbotId: number = 1,
+  agentPhoneNumberId: string | undefined
 ): Promise<boolean> => {
   try {
     switch (type) {
@@ -325,7 +327,7 @@ export const sendDefaultMaterial = async (
         break;
       }
       case 'chatbot': {
-        await processChatFlow(id, recipient);
+        await processChatFlow(id, recipient, agentPhoneNumberId);
         return true;
       }
 
@@ -365,7 +367,8 @@ export const isWithinWorkingHours = (workingHours: WorkingHours): boolean => {
 
 export const handleFallbackMaterial = async (
   defaultActionSettings: DefaultActionSettings | null,
-  recipient: string
+  recipient: string,
+  agentPhoneNumberId: string | undefined
 ): Promise<boolean> => {
   try {
     if (
@@ -377,8 +380,10 @@ export const handleFallbackMaterial = async (
 
       const sent = await sendDefaultMaterial(
         defaultActionSettings.fallbackMessageMaterialType,
-        defaultActionSettings.fallbackMessageMaterialId,
-        recipient
+        defaultActionSettings.fallbackMessageMaterialId,    
+        recipient,
+        1,
+        agentPhoneNumberId
       );
 
       return sent;

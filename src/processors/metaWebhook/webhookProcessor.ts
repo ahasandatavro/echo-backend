@@ -15,7 +15,7 @@ import fs from 'fs';
 import path from 'path';
 import { uploadMediaToDigitalOcean } from "../inboxProcessor";
 
-export const processChatFlow = async (chatbotId: number, recipient: string) => {
+export const processChatFlow = async (chatbotId: number, recipient: string, agentPhoneNumberId: string | undefined) => {
   try {
     const chatbotData = await prisma.chatbot.findUnique({
       where: { id: chatbotId },
@@ -66,7 +66,8 @@ export const processChatFlow = async (chatbotId: number, recipient: string) => {
       startNode.nodeId,
       chatbotData.nodes,
       chatbotData.edges,
-      recipient
+      recipient,
+      agentPhoneNumberId
     );
     }
 
@@ -80,7 +81,8 @@ export const processNode = async (
   nodeId: string,
   nodes: any[],
   edges: any[],
-  recipient: string
+  recipient: string,
+  agentPhoneNumberId?: string
 ) => {
   try {
     const currentNode = nodes.find((node) => node.nodeId === nodeId);
@@ -99,7 +101,7 @@ export const processNode = async (
           (node) => node.id === outgoingEdge.targetId
         )?.nodeId;
         if (nextNodeId) {
-          await processNode(nextNodeId, nodes, edges, recipient);
+          await processNode(nextNodeId, nodes, edges, recipient, agentPhoneNumberId);
         }
       }
       return;
@@ -110,7 +112,7 @@ export const processNode = async (
 
       if (messageData && messageData.length > 0) {
         for (const message of messageData) {
-          await sendMessage(recipient, message,currentNode?.chatId,1 );
+          await sendMessage(recipient, message, currentNode?.chatId, 1,true, agentPhoneNumberId);
         }
       }
 
@@ -140,7 +142,7 @@ export const processNode = async (
               currentNodeId: currentNode.id + 1,
             },
           });
-          await processNode(nextNodeId, nodes, edges, recipient);
+          await processNode(nextNodeId, nodes, edges, recipient, agentPhoneNumberId);
         }
       }
     }
@@ -161,7 +163,7 @@ export const processNode = async (
     
           let templateId = dbTemplate?.id ||1;
         // Call the sendTemplate function
-        await sendTemplate(recipient, selectedTemplate, currentNode.chatbotId,dbTemplate);}
+        await sendTemplate(recipient, selectedTemplate, currentNode.chatbotId,dbTemplate, agentPhoneNumberId);
     
         // Find and process the outgoing edge on success (handle "source_1")
         const nextEdge = edges.find(
@@ -171,10 +173,10 @@ export const processNode = async (
           const nextNode = nodes.find((node) => node.id === nextEdge.targetId);
           if (nextNode) {
             console.log(`Transitioning to next node: ${nextNode.id}`);
-            await processNode(nextNode.nodeId, nodes, edges, recipient);
+            await processNode(nextNode.nodeId, nodes, edges, recipient, agentPhoneNumberId);
           }
         }
-      } catch (error) {
+      }} catch (error) {
         console.error("Error in template node:", error);
     
         // On error, route to the error branch (handle "source_2")
@@ -185,13 +187,13 @@ export const processNode = async (
           const errorNode = nodes.find((node) => node.id === errorEdge.targetId);
           if (errorNode) {
             console.log(`Transitioning to error node: ${errorNode.id}`);
-            await processNode(errorNode.nodeId, nodes, edges, recipient);
+            await processNode(errorNode.nodeId, nodes, edges, recipient, agentPhoneNumberId);
           }
         }
       }
       return; // Stop further processing for this node.
     }    
-
+  
   if (currentNode.type === 'buttons') {
     const buttonData = currentNode.data?.buttons_data;
     if (!buttonData) return;
@@ -260,22 +262,10 @@ export const processNode = async (
   
     try {
       // Send to WhatsApp
-      await axios.post(
-        `${metaWhatsAppAPI.baseURL}/${metaWhatsAppAPI.phoneNumberId}/messages`,
-        {
-          messaging_product: 'whatsapp',
-          to: recipient,
-          type: 'interactive',
-          interactive,
-          biz_opaque_callback_data: `chatId=${currentNode.chatbotId}`,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${metaWhatsAppAPI.accessToken}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
+      await sendMessageWithButtons(recipient, {
+        ...interactive,
+        chatId: currentNode.chatbotId,
+      }, agentPhoneNumberId);
   
       // Persist the sent message, including any DO‐hosted header media
       await storeMessage({
@@ -285,7 +275,7 @@ export const processNode = async (
         text: convertHtmlToWhatsAppText(buttonData.bodyText),
         buttonOptions: buttons.map((b:any) => ({ id: b.reply.id, title: b.reply.title })),
         //attachment: headerAttachmentUrl, 
-      });
+      }, agentPhoneNumberId);
     } catch (err) {
       console.error('Error sending button message:', err);
     }
@@ -304,7 +294,7 @@ export const processNode = async (
     
         try {
           // Send list message
-          await sendMessageWithList(recipient, listMessage, currentNode.id);
+          await sendMessageWithList(recipient, listMessage, currentNode.id, agentPhoneNumberId);
     
           // Update the Variable table after successful message sending
           if (listData?.saveAnswerVariable) {
@@ -326,14 +316,14 @@ export const processNode = async (
                 where: {
                   name: variableName,
                   chatbotId: currentNode.chatbotId,
-                  conversationId: conversation.id,
+                  conversationId: conversation?.id,
                 },
               });
     
               if (existingVariable) {
                 // Update the existing variable
                 await prisma.variable.update({
-                  where: { id: existingVariable.id },
+                  where: { id: existingVariable?.id },
                   data: { updatedAt: new Date() }, // Update timestamp
                 });
               } else {
@@ -342,13 +332,13 @@ export const processNode = async (
                   data: {
                     name: variableName,
                     chatbotId: currentNode.chatbotId,
-                    conversationId: conversation.id,
+                    conversationId: conversation?.id,
                   },
                 });
               }
     
               console.log(
-                `Variable "${variableName}" saved for conversation ID ${conversation.id} and chatbot ID ${currentNode.chatbotId}.`
+                `Variable "${variableName}" saved for conversation ID ${conversation?.id} and chatbot ID ${currentNode.chatbotId}.`
               );
             } else {
               console.warn(
@@ -401,7 +391,7 @@ export const processNode = async (
             const nextNode = nodes.find((node) => node.id === nextEdge.targetId);
             if (nextNode) {
               console.log(`Transitioning to next node (source1): ${nextNode.id}`);
-              await processNode(nextNode.nodeId,nodes, edges, recipient); // Call the same function for the next node
+              await processNode(nextNode.nodeId,nodes, edges, recipient, agentPhoneNumberId); // Call the same function for the next node
             }
           }
         } catch (error) {
@@ -416,7 +406,7 @@ export const processNode = async (
             const errorNode = nodes.find((node) => node.id === errorEdge.targetId);
             if (errorNode) {
               console.log(`Transitioning to error node (source2): ${errorNode.id}`);
-              await processNode(errorNode,nodes, edges, recipient); // Call the same function for the next node
+              await processNode(errorNode.nodeId,nodes, edges, recipient, agentPhoneNumberId); // Call the same function for the next node
             }
           }
         }
@@ -492,7 +482,7 @@ export const processNode = async (
             const nextNode = nodes.find((node) => node.id === nextEdge.targetId);
             if (nextNode) {
               console.log(`Transitioning to next node: ${nextNode.id}`);
-              await processNode(nextNode.nodeId, nodes, edges, recipient);
+              await processNode(nextNode.nodeId, nodes, edges, recipient, agentPhoneNumberId);
             }
           }
         } catch (error) {
@@ -502,8 +492,6 @@ export const processNode = async (
       return; // Stop further execution for this node
     }
     
-    
-
     if (currentNode.type === "subscribe") {
       try {
         // Attempt to update the contact with the given recipient
@@ -530,7 +518,7 @@ export const processNode = async (
           if (nextNode) {
             console.log(`Transitioning to next node (source1): ${nextNode.id}`);
             // Continue processing with the next node
-            await processNode(nextNode.nodeId, nodes, edges, recipient);
+            await processNode(nextNode.nodeId, nodes, edges, recipient, agentPhoneNumberId);
           }
         }
       } catch (error) {
@@ -545,7 +533,7 @@ export const processNode = async (
           const errorNode = nodes.find((node) => node.id === errorEdge.targetId);
           if (errorNode) {
             console.log(`Transitioning to error node (source2): ${errorNode.id}`);
-            await processNode(errorNode.nodeId, nodes, edges, recipient);
+            await processNode(errorNode.nodeId, nodes, edges, recipient, agentPhoneNumberId);
           }
         }
       }
@@ -579,7 +567,7 @@ export const processNode = async (
           if (nextNode) {
             console.log(`Transitioning to next node (source1): ${nextNode.id}`);
             // Continue processing with the next node
-            await processNode(nextNode.nodeId, nodes, edges, recipient);
+            await processNode(nextNode.nodeId, nodes, edges, recipient, agentPhoneNumberId);
           }
         }
       } catch (error) {
@@ -594,7 +582,7 @@ export const processNode = async (
           const errorNode = nodes.find((node) => node.id === errorEdge.targetId);
           if (errorNode) {
             console.log(`Transitioning to error node (source2): ${errorNode.id}`);
-            await processNode(errorNode.nodeId, nodes, edges, recipient);
+            await processNode(errorNode.nodeId, nodes, edges, recipient, agentPhoneNumberId);
           }
         }
       }
@@ -619,29 +607,29 @@ export const processNode = async (
           throw new Error(`Chatbot "${selectedChatbotName}" not found.`);
         }
         const keywordRecord = await prisma.keyword.findFirst({
-          where: { chatbotId: chatbot.id },
+          where: { chatbotId: chatbot?.id },
         });
         if (!keywordRecord) {
-          throw new Error(`No keyword for chatbot ID ${chatbot.id}.`);
+          throw new Error(`No keyword for chatbot ID ${chatbot?.id}.`);
         }
     
         // 3️⃣ Kick off the flow
-        console.log(`Triggering chatbot with keyword: ${keywordRecord.value}`);
-        await processChatFlow(chatbot.id, recipient);
+        console.log(`Triggering chatbot with keyword: ${keywordRecord?.value}`);
+        await processChatFlow(chatbot?.id||1, recipient, agentPhoneNumberId);
     
-        // 4️⃣ Follow the “success” edge
+        // 4️⃣ Follow the "success" edge
         const nextEdge = edges.find(e => e.sourceId === currentNode.id);
         if (nextEdge) {
           const nextNode = nodes.find(n => n.id === nextEdge.targetId);
           if (nextNode) {
             console.log(`→ moving to node ${nextNode.id}`);
-            await processNode(nextNode.nodeId, nodes, edges, recipient);
+            await processNode(nextNode.nodeId, nodes, edges, recipient, agentPhoneNumberId);
           }
         }
       } catch (error) {
         console.error("Error in triggerChatbot node:", error);
     
-        // 5️⃣ On failure, follow the “source_2” error edge
+        // 5️⃣ On failure, follow the "source_2" error edge
         const errorEdge = edges.find(
           e => e.sourceId === currentNode.id && e.sourceHandle === "source_2"
         );
@@ -649,7 +637,7 @@ export const processNode = async (
           const errorNode = nodes.find(n => n.id === errorEdge.targetId);
           if (errorNode) {
             console.log(`→ moving to error node ${errorNode.id}`);
-            await processNode(errorNode.nodeId, nodes, edges, recipient);
+            await processNode(errorNode.nodeId, nodes, edges, recipient, agentPhoneNumberId);
           }
         }
       }
@@ -687,7 +675,7 @@ export const processNode = async (
           const nextNode = nodes.find((node) => node.id === nextEdge.targetId);
           if (nextNode) {
             console.log(`Transitioning to next node: ${nextNode.id}`);
-            await processNode(nextNode.nodeId, nodes, edges, recipient);
+            await processNode(nextNode.nodeId, nodes, edges, recipient, agentPhoneNumberId);
           }
         }
       } catch (error) {
@@ -702,7 +690,7 @@ export const processNode = async (
           const errorNode = nodes.find((node) => node.id === errorEdge.targetId);
           if (errorNode) {
             console.log(`Transitioning to error node: ${errorNode.id}`);
-            await processNode(errorNode.nodeId, nodes, edges, recipient);
+            await processNode(errorNode.nodeId, nodes, edges, recipient, agentPhoneNumberId);
           }
         }
       }
@@ -724,7 +712,7 @@ export const processNode = async (
         try {
           // Send question message
           console.log(`Sending question message:`, questionMessage);
-          await sendQuestion(recipient, questionMessage, currentNode?.id);
+          await sendQuestion(recipient, questionMessage, currentNode?.id, agentPhoneNumberId);
     
           // Update the Variable table after successful question message sending
           if (questionData.saveAnswerVariable) {
@@ -746,14 +734,14 @@ export const processNode = async (
                 where: {
                   name: variableName,
                   chatbotId: currentNode.chatbotId,
-                  conversationId: conversation.id,
+                  conversationId: conversation?.id,
                 },
               });
     
               if (existingVariable) {
                 // Update the existing variable
                 await prisma.variable.update({
-                  where: { id: existingVariable.id },
+                  where: { id: existingVariable?.id },
                   data: { updatedAt: new Date() }, // Update timestamp
                 });
               } else {
@@ -762,13 +750,13 @@ export const processNode = async (
                   data: {
                     name: variableName,
                     chatbotId: currentNode.chatId,
-                    conversationId: conversation.id,
+                    conversationId: conversation?.id,
                   },
                 });
               }
     
               console.log(
-                `Variable "${variableName}" saved for conversation ID ${conversation.id} and chatbot ID ${currentNode.chatbotId}.`
+                `Variable "${variableName}" saved for conversation ID ${conversation?.id} and chatbot ID ${currentNode.chatbotId}.`
               );
             } else {
               console.warn(
@@ -808,7 +796,7 @@ export const processNode = async (
         );
     
         // 4) Reduce into a flat object for JSON storage
-        //    stripping any leading “@” from the key:
+        //    stripping any leading "@" from the key:
         const attributesJson: Record<string, string> = cleanPairs.reduce(
           (obj: Record<string, string>, { key, value }: { key: string; value: string }) => {
             // remove leading @ if present
@@ -834,7 +822,7 @@ export const processNode = async (
           const nextNode = nodes.find(node => node.id === nextEdge.targetId);
           if (nextNode) {
             console.log(`Transitioning to next node: ${nextNode.id}`);
-            await processNode(nextNode.nodeId, nodes, edges, recipient);
+            await processNode(nextNode.nodeId, nodes, edges, recipient, agentPhoneNumberId);
           }
         }
       } catch (error) {
@@ -849,7 +837,7 @@ export const processNode = async (
           const errorNode = nodes.find(node => node.id === errorEdge.targetId);
           if (errorNode) {
             console.log(`Transitioning to error node: ${errorNode.id}`);
-            await processNode(errorNode.nodeId, nodes, edges, recipient);
+            await processNode(errorNode.nodeId, nodes, edges, recipient, agentPhoneNumberId);
           }
         }
       }
@@ -894,21 +882,21 @@ export const processNode = async (
     
         // Update the conversation's chatStatus field to the selectedStatus.
         await prisma.conversation.update({
-          where: { id: conversation.id },
+          where: { id: conversation?.id },
           data: { chatStatus: selectedStatus },
         });
         console.log(
-          `Updated conversation (ID: ${conversation.id}) with chatStatus: ${selectedStatus}`
+          `Updated conversation (ID: ${conversation?.id}) with chatStatus: ${selectedStatus}`
         );
         await prisma.chatStatusHistory.create({
           data: {
-            contactId: contactRecord.id,
-            previousStatus: contactRecord.ticketStatus,
+            contactId: contactRecord?.id||0,
+            previousStatus: contactRecord?.ticketStatus,
             newStatus: selectedStatus,
             type: "statusChanged",
             changedById: null,
             changedAt: new Date(),
-            timerStartTime: selectedStatus === "Open" ? new Date() : contactRecord.timerStartTime,
+            timerStartTime: selectedStatus === "Open" ? new Date() : contactRecord?.timerStartTime,
           }
         });
         
@@ -921,7 +909,7 @@ export const processNode = async (
           const nextNode = nodes.find((node) => node.id === nextEdge.targetId);
           if (nextNode) {
             console.log(`Transitioning to next node: ${nextNode.id}`);
-            await processNode(nextNode.nodeId, nodes, edges, recipient);
+            await processNode(nextNode.nodeId, nodes, edges, recipient, agentPhoneNumberId);
           }
         }
       } catch (error) {
@@ -936,7 +924,7 @@ export const processNode = async (
           const errorNode = nodes.find((node) => node.id === errorEdge.targetId);
           if (errorNode) {
             console.log(`Transitioning to error node: ${errorNode.id}`);
-            await processNode(errorNode.nodeId, nodes, edges, recipient);
+            await processNode(errorNode.nodeId, nodes, edges, recipient, agentPhoneNumberId);
           }
         }
       }
@@ -954,7 +942,7 @@ export const processNode = async (
           await prisma.contact.update({
             where: { phoneNumber: recipient }, // Assuming contact is identified by phoneNumber
             data: {
-              userId: user.id,
+              userId: user?.id,
             },
           });
           const contactRecord = await prisma.contact.findUnique({
@@ -966,17 +954,17 @@ export const processNode = async (
           }
           await prisma.chatStatusHistory.create({
             data: {
-              contactId: contactRecord.id,
+              contactId: contactRecord?.id||0,
               newStatus: "Assigned",
               type: "assignmentChanged",
               note: `Assigned to agent ${assignedUserEmail}`,
-              assignedToUserId: user.id,
+              assignedToUserId: user?.id,
               changedById:  null,
               changedAt: new Date(),
             }
           });
           
-          console.log(`Assigned user ${user.id} to contact ${recipient}`);
+          console.log(`Assigned user ${user?.id} to contact ${recipient}`);
         } catch (error) {
           console.error(`Failed to assign user to contact ${recipient}:`, error);
         }
@@ -986,7 +974,7 @@ export const processNode = async (
         if (outgoingEdge) {
           const nextNodeId = nodes.find((node) => node.id === outgoingEdge.targetId)?.nodeId;
           if (nextNodeId) {
-            await processNode(nextNodeId, nodes, edges, recipient);
+            await processNode(nextNodeId, nodes, edges, recipient, agentPhoneNumberId);
           }
         } else {
           console.warn(`No outgoing edge found for assignUser node ID: ${currentNode.id}`);
@@ -1031,7 +1019,7 @@ export const processNode = async (
             }
             await prisma.chatStatusHistory.create({
               data: {
-                contactId: contactRecord.id,
+                contactId: contactRecord?.id||0,
                 newStatus: "Assigned",
                 type: "assignmentChanged",
                 note: `Assigned to Teams: ${assignTeamData.join(", ")}`,
@@ -1053,7 +1041,7 @@ export const processNode = async (
         if (outgoingEdge) {
           const nextNodeId = nodes.find((node) => node.id === outgoingEdge.targetId)?.nodeId;
           if (nextNodeId) {
-            await processNode(nextNodeId, nodes, edges, recipient);
+            await processNode(nextNodeId, nodes, edges, recipient, agentPhoneNumberId);
           }
         } else {
           console.warn(`No outgoing edge found for assignTeam node ID: ${currentNode.id}`);
@@ -1084,7 +1072,7 @@ export const processNode = async (
             (node) => node.id === outgoingEdge.targetId
           )?.nodeId;
           if (nextNodeId) {
-            await processNode(nextNodeId, nodes, edges, recipient); // Recursive call to process the next node
+            await processNode(nextNodeId, nodes, edges, recipient, agentPhoneNumberId); // Recursive call to process the next node
           }
         } else {
           console.warn(
@@ -1149,7 +1137,7 @@ export const processNode = async (
             
               if (nextNode) {
                 console.log(`Navigating to the next node: ${nextNode.nodeId}`);
-                await processNode(nextNode.nodeId,nodes, edges, recipient); 
+                await processNode(nextNode.nodeId,nodes, edges, recipient, agentPhoneNumberId); 
               } else {
                 console.warn(`No next node found with nodeId: ${nextNodeId}`);
               }
@@ -1177,20 +1165,21 @@ export const sendMessage = async (
   message: any, 
   chatbotId: number = 1, // Default to 1 if not provided
   userId: number = 1,     // Default to 1 if not provided
-  plainText?: boolean
+  plainText?: boolean,
+  agentPhoneNumberId?: string
 ) => {
   try {
-    const userRecord = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { 
-        selectedPhoneNumberId: true,
-        selectedWabaId: true
-      }
-    });
-    if (!userRecord || !userRecord.selectedPhoneNumberId || !userRecord.selectedWabaId) {
-      throw new Error("User's selected contact details are not set.");
-    }
-    const url = `${metaWhatsAppAPI.baseURL}/${userRecord.selectedPhoneNumberId}/messages`;
+    // const userRecord = await prisma.user.findUnique({
+    //   where: { id: userId },
+    //   select: { 
+    //     selectedPhoneNumberId: true,
+    //     selectedWabaId: true
+    //   }
+    // });
+    // if (!userRecord || !userRecord.selectedPhoneNumberId || !userRecord.selectedWabaId) {
+    //   throw new Error("User's selected contact details are not set.");
+    // }
+    const url = `${metaWhatsAppAPI.baseURL}/${agentPhoneNumberId}/messages`;
     let messageBody;
     const payload: any = {
       messaging_product: "whatsapp",
@@ -1265,7 +1254,7 @@ export const sendMessage = async (
         "Content-Type": "application/json",
       },
     });
-    await storeMessage({ recipient, chatbotId, messageType: message.type, text: messageBody });
+    await storeMessage({ recipient, chatbotId, messageType: message.type, text: messageBody }, agentPhoneNumberId);
   } catch (error) {
     console.error("Error sending message:", error);
   }
@@ -1275,10 +1264,11 @@ export const sendTemplate = async (
   recipient: string,
   selectedTemplate: string,
   chatbotId: number,
-  templateDetails: any
+  templateDetails: any,
+  agentPhoneNumberId?: string
 ) => {
   try {
-    const url = `${metaWhatsAppAPI.baseURL}/${metaWhatsAppAPI.phoneNumberId}/messages`;
+    const url = `${metaWhatsAppAPI.baseURL}/${agentPhoneNumberId}/messages`;
     const payload = {
       messaging_product: "whatsapp",
       to: recipient,
@@ -1296,7 +1286,7 @@ export const sendTemplate = async (
         "Content-Type": "application/json",
       },
     });
-    await storeMessage({ recipient, chatbotId, messageType: "template", text: `Template: ${selectedTemplate}`,templateDetails:templateDetails });
+    await storeMessage({ recipient, chatbotId, messageType: "template", text: `Template: ${selectedTemplate}`,templateDetails:templateDetails }, agentPhoneNumberId);
    
   } catch (error) {
     console.error("Error sending template message:", error);
@@ -1306,10 +1296,11 @@ export const sendTemplate = async (
 
 export const sendMessageWithButtons = async (
   recipient: string,
-  buttonMessage: any
+  buttonMessage: any,
+  agentPhoneNumberId?: string
 ) => {
   try {
-    const url = `${metaWhatsAppAPI.baseURL}/${metaWhatsAppAPI.phoneNumberId}/messages`;
+    const url = `${metaWhatsAppAPI.baseURL}/${agentPhoneNumberId}/messages`;
     const headerText = buttonMessage.header
     ? await resolveVariables(buttonMessage.header, buttonMessage.chatId)
     : undefined;
@@ -1350,15 +1341,20 @@ export const sendMessageWithButtons = async (
       messageType: "button",
       text: bodyText,
       buttonOptions,
-    });
+    }, agentPhoneNumberId);
   } catch (error) {
     console.error("Error sending button message:", error);
   }
 };
 
-export const sendMessageWithList = async (recipient: string, listMessage: ListMessage,nodeId:number) => {
+export const sendMessageWithList = async (
+  recipient: string, 
+  listMessage: ListMessage, 
+  nodeId: number,
+  agentPhoneNumberId?: string
+) => {
   try {
-    const url = `${metaWhatsAppAPI.baseURL}/${metaWhatsAppAPI.phoneNumberId}/messages`;
+    const url = `${metaWhatsAppAPI.baseURL}/${agentPhoneNumberId}/messages`;
     const listItems = listMessage.sections.flatMap((section: any, sectionIndex: number) =>
       section.rows.map((row: any, rowIndex: number) => ({
         id: `source_${sectionIndex}_${rowIndex}_node_${nodeId}`,
@@ -1411,7 +1407,7 @@ export const sendMessageWithList = async (recipient: string, listMessage: ListMe
       messageType: "list",
       text: listMessage.text,
       listItems,
-    });
+    }, agentPhoneNumberId);
   } catch (error) {
     console.error("Error sending list message:", error);
   }
@@ -1420,10 +1416,11 @@ export const sendMessageWithList = async (recipient: string, listMessage: ListMe
 export const sendQuestion = async (
   recipient: string,
   questionMessage: any,
-  currentNodeId: number
+  currentNodeId: number,
+  agentPhoneNumberId?: string
 ) => {
   try {
-    const url = `${metaWhatsAppAPI.baseURL}/${metaWhatsAppAPI.phoneNumberId}/messages`;
+    const url = `${metaWhatsAppAPI.baseURL}/${agentPhoneNumberId}/messages`;
     const textBody = convertHtmlToWhatsAppText(questionMessage.text);
 
     // Filter out only well-formed buttons
@@ -1433,7 +1430,7 @@ export const sendQuestion = async (
 
     // 1️⃣ If no buttons, send a plain text message instead
     if (validOptions.length === 0) {
-      // ✅ fetch & mark the convo as “answeringQuestion”
+      // ✅ fetch & mark the convo as "answeringQuestion"
       const conversation = await prisma.conversation.findFirst({
         where: {
           recipient,
@@ -1471,7 +1468,7 @@ export const sendQuestion = async (
         chatbotId: questionMessage.chatId,
         messageType: "question",
         text: questionMessage.text,
-      });
+      }, agentPhoneNumberId);
       return;
     }
     
@@ -1523,7 +1520,7 @@ export const sendQuestion = async (
       chatbotId: questionMessage.chatId,
       messageType: "question",
       text: questionMessage.text,
-    });
+    }, agentPhoneNumberId);
   } catch (error: any) {
     console.error(
       "Error sending question message:",
@@ -1550,7 +1547,7 @@ export const storeMessage = async ({
   buttonOptions?: { id: string; title: string }[]; // Store button options as JSON
   listItems?: { id: string; title: string; description?: string }[]; // Store list items as JSON
   templateDetails?:any;
-}) => {
+}, agentPhoneNumberId?: string) => {
   try {
     // Attempt to find an existing contact by phone number
     let contact = await prisma.contact.findUnique({
@@ -1658,7 +1655,7 @@ export const processMessageChange = async (change: any, io: any) => {
   if (!chatbotData) return;
 
   // Process the message based on its type
-  await processMessageByType(message, recipient, conversation, chatbotData);
+  await processMessageByType(message, recipient, conversation, chatbotData, agentPhoneNumberId);
 };
 
 export const isAllowedSender = (recipient: string): boolean => {
@@ -1747,19 +1744,19 @@ export const getChatbotData = async (conversation: any) => {
   return chatbotData;
 };
 
-export const processMessageByType = async (message: any, recipient: string, conversation: any, chatbotData: any) => {
+export const processMessageByType = async (message: any, recipient: string, conversation: any, chatbotData: any, agentPhoneNumberId: string | undefined) => {
   if (message?.interactive?.button_reply) {
-    await processButtonReply(message, recipient, chatbotData);
+    await processButtonReply(message, recipient, chatbotData, agentPhoneNumberId);
   } else if (message?.interactive?.list_reply) {
-    await processListReply(message, recipient, chatbotData);
+    await processListReply(message, recipient, chatbotData, agentPhoneNumberId);
   } else if (conversation.answeringQuestion) {
-    await processTextQuestion(message, recipient, conversation, chatbotData);
+    await processTextQuestion(message, recipient, conversation, chatbotData, agentPhoneNumberId);
   } else if (message?.text?.body) {
-    await processKeywordMessage(message.text.body.toLowerCase(), recipient);
+    await processKeywordMessage(message.text.body.toLowerCase(), recipient, agentPhoneNumberId);
   }
 };
 
-export const processButtonReply = async (message: any, recipient: string, chatbotData: any) => {
+export const processButtonReply = async (message: any, recipient: string, chatbotData: any, agentPhoneNumberId: string | undefined) => {
   const parts = message.interactive.button_reply.id.split("_node_");
   const buttonId = "source_" + parts[0];
   const nodeId = parseInt(parts[1]);
@@ -1778,7 +1775,7 @@ export const processButtonReply = async (message: any, recipient: string, chatbo
   await saveButtonVariableIfNeeded(currentNode, message, recipient);
 
   if (nextNodeId) {
-    await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient);
+    await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient, agentPhoneNumberId);
   }
 };
 
@@ -1827,7 +1824,7 @@ export const saveButtonVariableIfNeeded = async (currentNode: any, message: any,
   }
 };
 
-export const processListReply = async (message: any, recipient: string, chatbotData: any) => {
+export const processListReply = async (message: any, recipient: string, chatbotData: any, agentPhoneNumberId: string | undefined) => {
   const listReplyId = message.interactive.list_reply.id;
   const nodeId = parseInt(listReplyId.split("_node_")[1]);
   const buttonId = listReplyId.split("_node_")[0];
@@ -1844,7 +1841,7 @@ export const processListReply = async (message: any, recipient: string, chatbotD
     : null;
 
   if (nextNodeId) {
-    await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient);
+    await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient, agentPhoneNumberId);
   }
 };
 
@@ -1893,7 +1890,7 @@ export const saveListVariableIfNeeded = async (currentNode: any, message: any, r
   }
 };
 
-export const processTextQuestion = async (message: any, recipient: string, conversation: any, chatbotData: any) => {
+export const processTextQuestion = async (message: any, recipient: string, conversation: any, chatbotData: any, agentPhoneNumberId: string | undefined) => {
   const currentNode = await prisma.node.findFirst({
     where: { id: conversation.currentNodeId },
   });
@@ -1916,13 +1913,13 @@ export const processTextQuestion = async (message: any, recipient: string, conve
   const isValid = validateUserResponse(text, validation);
 
   if (isValid) {
-    await handleValidResponse(conversation, currentNode, text, recipient, chatbotData);
+    await handleValidResponse(conversation, currentNode, text, recipient, chatbotData, agentPhoneNumberId);
   } else {
-    await handleInvalidResponse(conversation, failureCount, validationFailureExitCount, validation, recipient);
+    await handleInvalidResponse(conversation, failureCount, validationFailureExitCount, validation, recipient, agentPhoneNumberId);
   }
 };
 
-export const handleValidResponse = async (conversation: any, currentNode: any, text: string, recipient: string, chatbotData: any) => {
+export const handleValidResponse = async (conversation: any, currentNode: any, text: string, recipient: string, chatbotData: any, agentPhoneNumberId: string | undefined) => {
   await prisma.conversation.update({
     where: { id: conversation.id },
     data: {
@@ -1936,7 +1933,7 @@ export const handleValidResponse = async (conversation: any, currentNode: any, t
   console.log("Text response is valid. Proceeding to the next node...");
   const nextNodeId = getNextNodeIdFromQuestion(chatbotData, null, currentNode.id);
   if (nextNodeId) {
-    await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient);
+    await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient, agentPhoneNumberId);
   }
 };
 
@@ -1973,7 +1970,7 @@ export const saveTextVariable = async (currentNode: any, text: string, conversat
   }
 };
 
-export const handleInvalidResponse = async (conversation: any, failureCount: number, validationFailureExitCount: number, validation: any, recipient: string) => {
+export const handleInvalidResponse = async (conversation: any, failureCount: number, validationFailureExitCount: number, validation: any, recipient: string, agentPhoneNumberId: string | undefined) => {
   // Increment failure count
   failureCount += 1;
 
@@ -1995,7 +1992,8 @@ export const handleInvalidResponse = async (conversation: any, failureCount: num
       },
       conversation.chatbotId || 1,
       1,
-      true
+      true,
+      agentPhoneNumberId
     );
 
     console.warn("Chatflow ended due to repeated invalid responses.");
@@ -2015,12 +2013,13 @@ export const handleInvalidResponse = async (conversation: any, failureCount: num
       },
       conversation.chatbotId || 1,
       1,
-      true
+      true,
+      agentPhoneNumberId
     );
   }
 };
 
-export const processKeywordMessage = async (text: string, recipient: string) => {
+export const processKeywordMessage = async (text: string, recipient: string, agentPhoneNumberId: string | undefined) => {
   const keyword = await prisma.keyword.findFirst({
     where: {
       value: {
@@ -2037,7 +2036,7 @@ export const processKeywordMessage = async (text: string, recipient: string) => 
       where: { id: (await prisma.conversation.findFirst({ where: { recipient } }))?.id },
       data: { answeringQuestion: false },
     });
-    await processChatFlow(chatbotId, recipient);
+    await processChatFlow(chatbotId, recipient, agentPhoneNumberId);
   }
 };
 
