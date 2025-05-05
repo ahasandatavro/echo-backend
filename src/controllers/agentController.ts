@@ -1,12 +1,14 @@
 import { PrismaClient } from "@prisma/client";
 import { Request, Response } from "express";
 import bcrypt from 'bcrypt';
+import { sendWelcomeEmail, generateVerificationToken } from "../services/emailService";
+import crypto from 'crypto';
 const prisma = new PrismaClient();
 
 // Create Agent
 export const createAgent = async (req: Request, res: Response) => {
     try {
-        const { email, password, firstName, lastName, contactEmail, phoneNumber } = req.body;
+        const { email, firstName, lastName, contactEmail, phoneNumber } = req.body;
         const reqUser:any=req.user;
         const userId = reqUser.userId; // Assuming middleware extracts logged-in user's ID
 
@@ -23,12 +25,14 @@ export const createAgent = async (req: Request, res: Response) => {
         if (!creator) {
             return res.status(404).json({ error: "Creator user not found" });
         }
-         const hashedPassword = await bcrypt.hash(password, 10);
+
+        const verificationToken = generateVerificationToken();
+
         // Create the agent and assign inherited fields
         const agent = await prisma.user.create({
             data: {
                 email,
-                password:hashedPassword, // TODO: Hash this before saving
+                password: "", // Set empty password
                 firstName,
                 lastName,
                 contactEmail,
@@ -38,8 +42,18 @@ export const createAgent = async (req: Request, res: Response) => {
                 businessAccount: { connect: creator.businessAccount.map(ba => ({ id: ba.id })) },
                 selectedPhoneNumberId: creator.selectedPhoneNumberId,
                 selectedWabaId: creator.selectedWabaId,
+                emailVerified: false,
+                verificationToken,
             },
         });
+
+        // Send welcome email with verification link
+        try {
+            await sendWelcomeEmail(email, firstName, verificationToken);
+        } catch (emailError) {
+            console.error('Failed to send welcome email:', emailError);
+            // Don't fail the agent creation if email fails
+        }
 
         res.status(201).json(agent);
     } catch (error) {

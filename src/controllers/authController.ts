@@ -55,19 +55,44 @@ export const verifyEmail = async (req: Request, res: Response) => {
   const { token } = req.body;
 
   try {
-    const result = await prisma.user.updateMany({
+    // First find the user to check their password
+    const user = await prisma.user.findFirst({
       where: {
         verificationToken: token as string,
         emailVerified: false
-      },
+      }
+    });
+
+    if (!user) {
+      return res.status(400).send({ success: false, message: "Invalid or already verified token."});
+    }
+
+    // Generate reset token if password is empty
+    let resetToken = null;
+    let resetTokenExpiresAt = null;
+    if (!user.password || user.password === "") {
+      resetToken = crypto.randomBytes(32).toString('hex');
+      resetTokenExpiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes from now
+    }
+
+    // Update the user
+    const result = await prisma.user.update({
+      where: { id: user.id },
       data: {
         emailVerified: true,
         verificationToken: null,
+        resetToken,
+        resetTokenExpiresAt,
       },
     });
 
-    if (result.count === 0) {
-      return res.status(400).send({ success: false, message: "Invalid or already verified token."});
+    if (resetToken) {
+      // If we generated a reset token, redirect to password reset
+      return res.status(301).send({
+        success: true,
+        message: "Email verified successfully. Please set your password.",
+        redirectUrl: `${process.env.FRONTEND_URL}/#/reset-password?token=${resetToken}`
+      });
     }
 
     res.status(200).send({success: true, message: "Email verified successfully. You can now log in."});
