@@ -1,5 +1,14 @@
 import express from 'express';
-import { registerUser, loginUser, googleAuth, googleCallback, getAccessToken } from '../controllers/authController';
+import {
+  registerUser,
+  loginUser,
+  googleAuth,
+  googleCallback,
+  getAccessToken,
+  verifyEmail,
+  requestPasswordReset,
+  resetPassword
+} from '../controllers/authController';
 import { authenticateJWT } from '../middlewares/authMiddleware';
 const router = express.Router();
 
@@ -8,4 +17,7 @@ router.post('/login', loginUser);
 router.get('/google', googleAuth);
 router.get('/google-callback', googleCallback);
 router.post("/get-access-token", authenticateJWT,getAccessToken);
+router.post("/verify-email", verifyEmail);
+router.post('/request-password-reset', requestPasswordReset);
+router.post('/reset-password', resetPassword);
 export default router;

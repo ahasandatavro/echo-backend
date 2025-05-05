@@ -54,6 +54,10 @@ model User {
   accessToken           String?
   refreshToken          String?
   accessTokenExpiresAt  Int?
+  emailVerified         Boolean             @default(false)
+  verificationToken     String?
+  resetToken            String?
+  resetTokenExpiresAt   DateTime?
   chatbots              Chatbot[]
   contacts              Contact[]
   conversations         Conversation[]
