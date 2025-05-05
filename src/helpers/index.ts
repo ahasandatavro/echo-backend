@@ -25,7 +25,8 @@ export const preprocessHtmlForWhatsApp = (html: string): string => {
  * @returns {string} - The converted text with WhatsApp formatting.
  */
 export const convertHtmlToWhatsAppText = (html: string): string => {
-  const preprocessedHtml = preprocessHtmlForWhatsApp(html);
+  let preprocessedHtml = "";
+  if(html) preprocessedHtml = preprocessHtmlForWhatsApp(html);
 
   return htmlToText(preprocessedHtml, {
     wordwrap: 130, // Optional: Wrap lines after 130 characters

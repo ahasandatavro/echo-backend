@@ -112,7 +112,7 @@ export const processNode = async (
 
       if (messageData && messageData.length > 0) {
         for (const message of messageData) {
-          await sendMessage(recipient, message, currentNode?.chatId, 1,true, agentPhoneNumberId);
+          await sendMessage(recipient, message, currentNode?.chatId, 1,false, agentPhoneNumberId);
         }
       }
 
@@ -167,7 +167,7 @@ export const processNode = async (
     
         // Find and process the outgoing edge on success (handle "source_1")
         const nextEdge = edges.find(
-          (edge) => edge.sourceId === currentNode.id && edge.sourceHandle === "source_1"
+          (edge) => edge.sourceId === currentNode.id 
         );
         if (nextEdge) {
           const nextNode = nodes.find((node) => node.id === nextEdge.targetId);
@@ -429,7 +429,9 @@ export const processNode = async (
             if (variable.startsWith("@")) {
               variable = await resolveVariables(variable, currentNode?.chatId);
             }
-          
+            if (variable.includes("{{")) {
+              variable = await resolveContactAttributes(variable, recipient);
+            }
     
             // Fetch the actual value of the variable (if it's an object lookup, resolve it)
             let actualValue = variable;
@@ -1304,9 +1306,15 @@ export const sendMessageWithButtons = async (
     const headerText = buttonMessage.header
     ? await resolveVariables(buttonMessage.header, buttonMessage.chatId)
     : undefined;
-
-  const bodyText = await resolveVariables(buttonMessage.text, buttonMessage.chatId);
-  const buttonOptions = buttonMessage.buttons.map((btn: any) => ({
+    let bodyText=buttonMessage.body.text;
+    if (buttonMessage.body.text && buttonMessage.body.text.includes("@")) {
+      bodyText = await resolveVariables(buttonMessage.body.text, buttonMessage.chatId);
+    }
+    if (buttonMessage.body.text && buttonMessage.body.text.includes("{{")) {
+      bodyText = await resolveContactAttributes(buttonMessage.body.text, recipient);
+    }
+  
+  const buttonOptions = buttonMessage.action.buttons.map((btn: any) => ({
     id: btn.reply.id,
     title: btn.reply.title,
   }));
@@ -1323,7 +1331,7 @@ export const sendMessageWithButtons = async (
           footer: buttonMessage.footer
           ? { text: buttonMessage.footer }
           : undefined,
-          action: { buttons: buttonMessage.buttons },
+          action: { buttons: buttonMessage.action.buttons },
         },
         
            biz_opaque_callback_data: `chatId=${buttonMessage.chatId}`
