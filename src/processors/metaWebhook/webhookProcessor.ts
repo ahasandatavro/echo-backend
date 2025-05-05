@@ -112,7 +112,7 @@ export const processNode = async (
 
       if (messageData && messageData.length > 0) {
         for (const message of messageData) {
-          await sendMessage(recipient, message, currentNode?.chatId, 1,true, agentPhoneNumberId);
+          await sendMessage(recipient, message, currentNode?.chatId, 1,false, agentPhoneNumberId);
         }
       }
 

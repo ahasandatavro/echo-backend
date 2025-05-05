@@ -193,7 +193,7 @@ export const getAccessToken = async (
         recipient_type: "individual",
         to: process.env.WHATSAPP_USER_NUMBER,
         type: "text",
-        text: { body: "Your message text here" },
+        text: { body: "Welcome to zilochat" },
       },
       {
         headers: {
