@@ -736,7 +736,7 @@ export const handleConversationFlow = async (
   if (!chatbotData) return;
 
   if (message?.interactive) {
-    await handleInteractiveMessage(message, chatbotData, recipient);
+    await handleInteractiveMessage(message, chatbotData, recipient,agentPhoneNumber);
     return;
   }
 
@@ -831,19 +831,21 @@ export const getChatbotData = async (chatbotId: number): Promise<any> => {
 export const handleInteractiveMessage = async (
   message: any,
   chatbotData: any,
-  recipient: string
+  recipient: string,
+  agentPhoneNumberId: string | undefined
 ) => {
   if (message?.interactive?.button_reply) {
-    await handleButtonReply(message.interactive.button_reply, chatbotData, recipient);
+    await handleButtonReply(message.interactive.button_reply, chatbotData, recipient,agentPhoneNumberId);
   } else if (message?.interactive?.list_reply) {
-    await handleListReply(message.interactive.list_reply, chatbotData, recipient);
+    await handleListReply(message.interactive.list_reply, chatbotData, recipient,agentPhoneNumberId);
   }
 };
 
 export const handleButtonReply = async (
   buttonReply: any,
   chatbotData: any,
-  recipient: string
+  recipient: string,
+  agentPhoneNumberId: string | undefined
 ) => {
   const parts = buttonReply.id.split("_node_");
   const buttonId = "source_" + parts[0];
@@ -868,7 +870,7 @@ export const handleButtonReply = async (
   }
 
   if (nextNodeId) {
-    await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient);
+    await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient,agentPhoneNumberId);
   }
 };
 
@@ -899,7 +901,8 @@ export const saveButtonReplyVariable = async (
 export const handleListReply = async (
   listReply: any,
   chatbotData: any,
-  recipient: string
+  recipient: string,
+  agentPhoneNumberId: string | undefined
 ) => {
   const listReplyId = listReply.id;
   const nodeId = parseInt(listReplyId.split("_node_")[1]);
@@ -923,7 +926,7 @@ export const handleListReply = async (
     : null;
 
   if (nextNodeId) {
-    await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient);
+    await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient,agentPhoneNumberId);
   }
 };
 
@@ -1017,7 +1020,8 @@ export const handleQuestionResponse = async (
       text,
       saveAnswerVariable,
       chatbotData,
-      recipient
+      recipient,
+      agentPhoneNumberId
     );
   } else {
     await handleInvalidQuestionResponse(
@@ -1036,7 +1040,8 @@ export const handleValidQuestionResponse = async (
   text: string,
   saveAnswerVariable: string,
   chatbotData: any,
-  recipient: string
+  recipient: string,
+  agentPhoneNumberId: string | undefined
 ) => {
   await prisma.conversation.update({
     where: { id: conversation.id },
@@ -1068,7 +1073,7 @@ export const handleValidQuestionResponse = async (
   );
   
   if (nextNodeId) {
-    await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient);
+    await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient,agentPhoneNumberId);
   }
 };
 
