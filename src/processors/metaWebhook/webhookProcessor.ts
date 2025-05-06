@@ -1496,6 +1496,7 @@ export const sendQuestion = async (
       data: {
         answeringQuestion: true,
         currentNodeId,
+        chatbotId: questionMessage.chatId,
       },
     });
 

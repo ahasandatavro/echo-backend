@@ -19,7 +19,7 @@ interface ButtonData {
 
 dotenv.config();
 
-const WHATSAPP_GRAPH_API = `${process.env.META_BASE_URL}/${process.env.META_WHATSAPP_BUSINESS_ID}/message_templates`;
+
 
 // Axios instance with headers
 const axiosInstance = axios.create({
@@ -90,7 +90,8 @@ export const getAllTemplates = async (req: Request, res: Response) => {
 };
 
 // **Create a New Template**
-export const   createTemplate = async (req: Request, res: Response) => {
+export const createTemplate = async (req: Request, res: Response) => {
+
   try {
     const user: any = req.user;
     const dbUser = await prisma.user.findFirst({
@@ -98,6 +99,7 @@ export const   createTemplate = async (req: Request, res: Response) => {
       select: { selectedWabaId: true },
     });
     const selectedWabaId = dbUser?.selectedWabaId;
+    const WHATSAPP_GRAPH_API = `${process.env.META_BASE_URL}/${selectedWabaId}/message_templates`;
     const { name, category, language } = req.body;
     const file = req.file;
     const filePath = req?.file?.path || "";
@@ -263,6 +265,13 @@ export const   createTemplate = async (req: Request, res: Response) => {
 // **Delete a Template**
 export const deleteTemplate = async (req: Request, res: Response) => {
   try {
+    const user: any = req.user;
+    const dbUser = await prisma.user.findFirst({
+      where: { id: user.userId },
+      select: { selectedWabaId: true },
+    });
+    const selectedWabaId = dbUser?.selectedWabaId;
+    const WHATSAPP_GRAPH_API = `${process.env.META_BASE_URL}/${selectedWabaId}/message_templates`;
     const { templateName } = req.params;
     const deleteURL = `${WHATSAPP_GRAPH_API}/${templateName}`;
 

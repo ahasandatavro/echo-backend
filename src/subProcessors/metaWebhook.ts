@@ -733,15 +733,18 @@ export const handleConversationFlow = async (
   const conversation = await findOrCreateConversation(recipient, message);
   if (!conversation) return;
 
-  const chatbotData = await getChatbotData(conversation.lastNodeId);
-  if (!chatbotData) return;
+
 
   if (message?.interactive) {
+    const chatbotData = await getChatbotData(conversation.lastNodeId);
+    if (!chatbotData) return;
     await handleInteractiveMessage(message, chatbotData, recipient,agentPhoneNumber);
     return;
   }
 
   if (conversation.answeringQuestion) {
+    const chatbotData = await getChatbotData(conversation.currentNodeId);
+    if (!chatbotData) return;
     await handleQuestionResponse(conversation, message, chatbotData, recipient,agentPhoneNumber);
     return;
   }
