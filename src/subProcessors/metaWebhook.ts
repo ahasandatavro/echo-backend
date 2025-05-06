@@ -758,7 +758,8 @@ export const findOrCreateConversation = async (
   // 1️⃣ Always start by fetching the latest convo (if any)
   let conversation = await prisma.conversation.findFirst({
     where: { recipient },
-    orderBy: { updatedAt: "desc" },
+    orderBy: [{ updatedAt: 'desc' },{ createdAt:  'desc' }],
+
   });
 
   // 2️⃣ If this is an interactive message, just return that convo
@@ -850,7 +851,24 @@ export const handleButtonReply = async (
   const parts = buttonReply.id.split("_node_");
   const buttonId = "source_" + parts[0];
   const nodeId = parseInt(parts[1]);
+  const nodeWithChatbot = await prisma.node.findUnique({
+    where: { id: nodeId },
+    include: {
+      chatbot: {
+        include: {
+          nodes: true,
+          edges: true,
+        }
+      }
+    }
+  })
 
+  if (!nodeWithChatbot) {
+    throw new Error(`Node ${nodeId} not found`)
+  }
+
+  // now you have the full chatbotData
+   chatbotData = nodeWithChatbot.chatbot;
   const selectedEdge = chatbotData.edges.find(
     (edge:any) => edge.sourceHandle === buttonId && edge.sourceId === nodeId
   );
@@ -907,8 +925,27 @@ export const handleListReply = async (
   const listReplyId = listReply.id;
   const nodeId = parseInt(listReplyId.split("_node_")[1]);
   const buttonId = listReplyId.split("_node_")[0];
-  const currentNode = chatbotData.nodes.find((node:any) => node.id === nodeId);
+  const nodeWithChatbot = await prisma.node.findUnique({
+    where: { id: nodeId },
+    include: {
+      chatbot: {
+        include: {
+          nodes: true,
+          edges: true,
+        }
+      }
+    }
+  })
 
+  if (!nodeWithChatbot) {
+    throw new Error(`Node ${nodeId} not found`)
+  }
+
+ 
+  // now you have the full chatbotData
+   chatbotData = nodeWithChatbot.chatbot;
+ 
+  const currentNode = chatbotData.nodes.find((node:any) => node.id === nodeId);
   if (currentNode?.data?.list_data?.saveAnswerVariable) {
     await saveListReplyVariable(
       currentNode,
@@ -916,7 +953,6 @@ export const handleListReply = async (
       recipient
     );
   }
-
   const selectedEdge = chatbotData.edges.find(
     (edge:any) => edge.sourceId === currentNode?.id && edge.sourceHandle === buttonId
   );
