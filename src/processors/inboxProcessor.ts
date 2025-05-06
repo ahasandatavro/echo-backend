@@ -8,7 +8,7 @@ import mime from "mime-types";
 
 let lastProcessedTime = new Date();
 
-export const processWebhookMessage = async (recipient: string, message: any, agentPhoneNumber?:string, businessPhoneNumberId?:string) => {
+export const processWebhookMessage = async (recipient: string, message: any, agentPhoneNumber?:string, businessPhoneNumberId?:string,contactId?:number) => {
   try {
     let textMessage = "";
     let attachmentUrl: string | null = null;
@@ -68,22 +68,7 @@ export const processWebhookMessage = async (recipient: string, message: any, age
     }
 
     // ✅ Find or Create Contact
-    let contact = await prisma.contact.findFirst({
-      where: { phoneNumber: recipient },
-    });
-
-    if (!contact) {
-      contact = await prisma.contact.create({
-        data: {
-          phoneNumber: recipient,
-          name: "Unknown",
-          source: "WhatsApp",
-          subscribed: true,
-          attributes: [],
-          userId: userId ? parseInt(userId) : undefined,
-        },
-      });
-    }
+   
 
     // ✅ Find or Create Conversation
     let conversation = await prisma.conversation.findFirst({
@@ -106,20 +91,7 @@ export const processWebhookMessage = async (recipient: string, message: any, age
     }
     
     const businessPhoneNumberId = businessPhone.id;
-    // if (!conversation) {
-    //   conversation = await prisma.conversation.create({
-    //     data: {
-    //       recipient,
-    //       contactId: contact.id,
-    //       answeringQuestion: true,
-    //     },
-    //   });
-    // } else if (!conversation.contactId) {
-    //   conversation = await prisma.conversation.update({
-    //     where: { id: conversation.id },
-    //     data: { contactId: contact.id },
-    //   });
-    // }
+
 
     // ✅ Save the Message
     if (!conversation) {
@@ -127,7 +99,7 @@ export const processWebhookMessage = async (recipient: string, message: any, age
       conversation = await prisma.conversation.create({
         data: {
           recipient,
-          contactId: contact.id,
+          contactId: contactId,
           answeringQuestion: false,
           businessPhoneNumberId, // ✅ Use the ID directly
         },
@@ -137,7 +109,7 @@ export const processWebhookMessage = async (recipient: string, message: any, age
       conversation = await prisma.conversation.update({
         where: { id: conversation.id },
         data: {
-          contactId: contact.id,
+          contactId: contactId,
           businessPhoneNumberId, // ✅ Use the ID directly
         },
       });
@@ -145,7 +117,7 @@ export const processWebhookMessage = async (recipient: string, message: any, age
     
     const savedMessage = await prisma.message.create({
       data: {
-        contactId: contact.id,
+        contactId: contactId,
         conversationId: conversation.id,
         sender: "them",
         text: textMessage,

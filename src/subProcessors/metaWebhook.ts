@@ -454,7 +454,8 @@ if (messageAssignedEmails.length > 0) {
     sender,
     message,
     agentPhoneNumber,
-    phoneNumberId
+    phoneNumberId,
+    finalContact.id
   );
   const agent = await prisma.user.findFirst({
     where: { selectedPhoneNumberId: phoneNumberId },
@@ -732,7 +733,7 @@ export const handleConversationFlow = async (
   const conversation = await findOrCreateConversation(recipient, message);
   if (!conversation) return;
 
-  const chatbotData = await getChatbotData(conversation.chatbotId);
+  const chatbotData = await getChatbotData(conversation.lastNodeId);
   if (!chatbotData) return;
 
   if (message?.interactive) {
@@ -815,14 +816,29 @@ else chatbotId = text ? await findChatbotIdByKeyword(text) : null;
 };
 
 
-export const getChatbotData = async (chatbotId: number): Promise<any> => {
-  const chatbotData = await prisma.chatbot.findUnique({
-    where: { id: chatbotId||1 },
-    include: { nodes: true, edges: true },
-  });
+export const getChatbotData = async (nodeId: number): Promise<any> => {
+
+  const nodeWithChatbot = await prisma.node.findUnique({
+    where: { id: nodeId },
+    include: {
+      chatbot: {
+        include: {
+          nodes: true,
+          edges: true,
+        }
+      }
+    }
+  })
+
+  if (!nodeWithChatbot) {
+    throw new Error(`Node ${nodeId} not found`)
+  }
+
+  // now you have the full chatbotData
+   const chatbotData = nodeWithChatbot.chatbot;
 
   if (!chatbotData) {
-    console.warn(`Chatbot with ID ${chatbotId} not found.`);
+    console.warn(`Chatbot with ID  not found.`);
     return null;
   }
 
