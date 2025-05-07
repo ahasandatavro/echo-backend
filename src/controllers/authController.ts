@@ -193,7 +193,10 @@ export const getAccessToken = async (
   res: Response
 ): Promise<Response> => {
   const { code, wabaId, phoneNumberId } = req.body;
-
+  const user:any=req.user;
+  const dbUser=await prisma.user.findFirst({
+    where: { id: user.userId },
+  })
   if (!code) {
     return res.status(400).json({ error: "Authorization code is required" });
   }
@@ -335,15 +338,24 @@ export const getAccessToken = async (
           error: "Phone number already exists for this business account",
         });
     }
+    const rawNumber = phoneNumberFromAPI;
 
+    // remove all plus‐signs and spaces
+    const cleanedNumber = rawNumber.replace(/[+\s]/g, "");
     await prisma.businessPhoneNumber.create({
       data: {
         businessAccountId: businessAccount.id,
         metaPhoneNumberId: phoneNumberId,
-        phoneNumber: phoneNumberFromAPI,
+        phoneNumber: cleanedNumber,
         displayName: displayNameFromAPI,
         connectionStatus: connectionStatusFromAPI,
         subscription: subscriptionFromAPI,
+      },
+    });
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        selectedPhoneNumberId: phoneNumberId,
       },
     });
 

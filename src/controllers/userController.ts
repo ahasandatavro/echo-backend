@@ -328,47 +328,6 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
 };
 
 
-
-// export const getContacts = async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     // Get the logged-in user's ID (set by your auth middleware)
-//     const user:any=req.user;
-//     const userId:any = user?.userId;
-//     if (!userId) {
-//       res.status(401).json({ error: "Unauthorized" });
-//       return;
-//     }
-
-//     // Retrieve the user's business account and its associated phone numbers
-//     const businessAccounts = await prisma.businessAccount.findMany({
-//       where: { userId },
-//       include: { phoneNumbers: true },
-//     });
-
-//     if (!businessAccounts|| businessAccounts.length === 0) {
-//       res.status(404).json({ error: "Business account not found" });
-//       return;
-//     }
-
-//     // Map the phone numbers to the expected UI format
-//     const groupedContacts = businessAccounts.map((account) => ({
-//       businessAccountId: account.metaWabaId,
-//       phoneNumbers: account.phoneNumbers.map((phone) => ({
-//         displayName: phone.displayName || "",
-//         phoneNumber: phone.phoneNumber || "",
-//         phoneNumberId: phone.metaPhoneNumberId,
-//         connectionStatus: phone.connectionStatus || "",
-//         subscription: phone.subscription || "",
-//       })),
-//     }));
-
-//     res.status(200).json(groupedContacts);
-//   } catch (error: any) {
-//     console.error("Error retrieving contacts:", error);
-//     res.status(500).json({ error: "Internal server error" });
-//   }
-// };
-
 export const getContacts = async (req: Request, res: Response): Promise<void> => {
   try {
     const user: any = req.user;
