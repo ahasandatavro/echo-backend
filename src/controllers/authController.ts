@@ -356,6 +356,7 @@ export const getAccessToken = async (
       where: { id: userId },
       data: {
         selectedPhoneNumberId: phoneNumberId,
+        selectedWabaId: wabaId,
       },
     });
 
