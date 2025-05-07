@@ -17,32 +17,42 @@ import path from 'path';
 
 
 export const getAllContacts = async (req: Request, res: Response) => {
+  console.log('🔄 Starting getAllContacts function');
   try {
     // Extract selectedPhoneNumberId from user
     const user:any=req.user;
+    console.log('👤 User from request:', user);
+    
     const dbUser=await prisma.user.findFirst({
       where: { id: user.userId },
       select: { selectedPhoneNumberId: true },
     })
+    console.log('📱 DB User selectedPhoneNumberId:', dbUser?.selectedPhoneNumberId);
+    
     const selectedPhoneNumberId = dbUser?.selectedPhoneNumberId;
 
     if (!selectedPhoneNumberId) {
+      console.log('❌ No selectedPhoneNumberId found');
       return res.status(400).json({ error: "selectedPhoneNumberId is required" });
     }
 
     // Step 1: Find businessPhoneNumberId from BusinessPhoneNumber table
+    console.log('🔍 Looking up business phone number...');
     const businessPhone = await prisma.businessPhoneNumber.findFirst({
       where: { metaPhoneNumberId: selectedPhoneNumberId },
       select: { id: true }, // We only need the businessPhoneNumberId
     });
 
     if (!businessPhone) {
+      console.log('❌ Business phone number not found');
       return res.status(404).json({ error: "Business phone number not found" });
     }
 
     const businessPhoneNumberId = businessPhone.id;
+    console.log('✅ Found businessPhoneNumberId:', businessPhoneNumberId);
 
     // Step 2: Find unique contact IDs from Conversation table linked to this businessPhoneNumberId
+    console.log('🔍 Fetching conversation contacts...');
     const conversationContacts = await prisma.conversation.findMany({
       where: { businessPhoneNumberId },
       select: { contactId: true },
@@ -50,12 +60,15 @@ export const getAllContacts = async (req: Request, res: Response) => {
     });
 
     const contactIds = conversationContacts.map((c) => c.contactId).filter((id) => id !== null);
+    console.log('📊 Found contact IDs:', contactIds.length);
 
     if (contactIds.length === 0) {
+      console.log('ℹ️ No contacts found');
       return res.json([]); // No contacts found
     }
 
     // Step 3: Fetch only the contacts that are linked via conversations
+    console.log('🔍 Fetching contact details...');
     const contacts = await prisma.contact.findMany({
       where: { id: { in: contactIds } },
       select: {
@@ -70,8 +83,10 @@ export const getAllContacts = async (req: Request, res: Response) => {
         updatedAt: true,
       },
     });
+    console.log('✅ Found contacts:', contacts.length);
 
     // Ensure attributes is always an array
+    console.log('🔄 Formatting contact attributes...');
     const formattedContacts = contacts.map((contact) => ({
       ...contact,
       attributes: Array.isArray(contact.attributes)
@@ -81,10 +96,12 @@ export const getAllContacts = async (req: Request, res: Response) => {
             value,
           })),
     }));
+    console.log('✅ Contacts formatted successfully');
 
+    console.log('🎉 Successfully returning contacts');
     res.json(formattedContacts);
   } catch (error) {
-    console.error("Error fetching contacts:", error);
+    console.error('❌ Error in getAllContacts:', error);
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
