@@ -140,6 +140,10 @@ export const createChatFlow = async (req: Request, res: Response) => {
   const { chatBotName, nodes, edges } = req.body;
 
   try {
+    const user:any=req.user;
+    const dbUser=await prisma.user.findFirst({
+      where: { id: user.userId },
+    })
     // Check for existing chatbot names and append a unique suffix if necessary
     let uniqueChatBotName = chatBotName;
     let suffix = 1;
@@ -155,6 +159,7 @@ export const createChatFlow = async (req: Request, res: Response) => {
         name: uniqueChatBotName,
         description: "Generated flow",
         status: "ACTIVE",
+        ownerId: dbUser?.id
       },
     });
 
@@ -200,58 +205,7 @@ export const createChatFlow = async (req: Request, res: Response) => {
   }
 };
 
-// export const createChatFlow = async (req: Request, res: Response) => {
-//   const { chatBotName, nodes, edges } = req.body;
 
-//   try {
-//     const chatbot = await prisma.chatbot.create({
-//       data: {
-//         name: chatBotName,
-//         description: "Generated flow",
-//         status: "ACTIVE",
-//       },
-//     });
-
-//     const createdNodes = await prisma.$transaction(
-//       nodes.map((node: any) =>
-//         prisma.node.create({
-//           data: {
-//             chatId: chatbot.id,
-//             nodeId: node.id,
-//             type: node.type,
-//             data: node.data,
-//             positionX: node.position.x,
-//             positionY: node.position.y,
-//           },
-//         })
-//       )
-//     );
-
-//     const createdEdges = await prisma.$transaction(
-//       edges.map((edge: any) =>
-//         prisma.edge.create({
-//           data: {
-//             chatId: chatbot.id,
-//             sourceId: createdNodes.find((n) => n.nodeId === edge.source)?.id,
-//             targetId: createdNodes.find((n) => n.nodeId === edge.target)?.id,
-//           },
-//         })
-//       )
-//     );
-
-//     res.status(201).json({
-//       message: 'Chat flow created successfully',
-//       chatbot,
-//       nodes: createdNodes,
-//       edges: createdEdges,
-//     });
-//   } catch (error) {
-//     console.error(error);
-//     res.status(500).json({ error: 'Failed to create chat flow' });
-//   }
-// };
-
-// Fetch nodes by Chatbot ID
 export const getNodesByChatId = async (req: Request, res: Response) => {
   const { chatId } = req.params;
   try {
@@ -348,25 +302,35 @@ export const deleteNode = async (req: Request, res: Response) => {
 
 export const getPaginatedChatbots = async (req: Request, res: Response) => {
   try {
-    const page   = parseInt(req.query.page  as string, 10) || 1;
-    const limit  = parseInt(req.query.limit as string, 10) || 10;
+    const { userId } = req.user as { userId: number };
+    const dbUser = await prisma.user.findUnique({ where: { id: userId } });
+    if (!dbUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const page   = parseInt((req.query.page  as string) ?? "1",  10);
+    const limit  = parseInt((req.query.limit as string) ?? "10", 10);
     const search = (req.query.search as string)?.trim();
     const offset = (page - 1) * limit;
 
-    // build a dynamic filter
-    const where = search
-      ? { name: { contains: search, mode: 'insensitive' } }
-      : {};
+    // combine the search filter and createdById into one `where`
+    const whereFilter = {
+      ownerId: dbUser.id,
+      ...(search
+        ? { name: { contains: search, mode: 'insensitive' } }
+        : {}),
+    };
 
-    // run both queries in a transaction
     const [chatbots, total] = await prisma.$transaction([
       prisma.chatbot.findMany({
-        where,
-        skip:   offset,
-        take:   limit,
+        where:   whereFilter,     // <-- use the combined filter here
+        skip:    offset,
+        take:    limit,
         orderBy: { updatedAt: 'desc' },
       }),
-      prisma.chatbot.count({ where }),
+      prisma.chatbot.count({
+        where: whereFilter,       // <-- and here
+      }),
     ]);
 
     res.status(200).json({
@@ -381,6 +345,7 @@ export const getPaginatedChatbots = async (req: Request, res: Response) => {
     res.status(500).json({ message: 'Failed to fetch chatbots' });
   }
 };
+
 
 
 export const updateChatFlow = async (req: Request, res: Response) => {

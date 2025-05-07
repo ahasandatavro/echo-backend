@@ -369,7 +369,11 @@ export const processWebhookChange = async (change: any, io: any) => {
 
 export const processMessageUpdate = async (value: any, io: any) => {
   const agentPhoneNumber = value?.metadata?.display_phone_number;
+ 
   const phoneNumberId = value?.metadata?.phone_number_id;
+  const dbUser = await prisma.user.findFirst({
+    where: { selectedPhoneNumberId: phoneNumberId },
+  });
   const message = value?.messages?.[0];
   const sender = message?.from;
   if (!sender) {
@@ -395,6 +399,8 @@ if (!finalContact) {
       phoneNumber: sender,
       source: "WhatsApp", // or you can dynamically set this
       subscribed: true,
+      sendSMS:true,
+      createdById: dbUser?.id
     },
     include: {
       user: true,
@@ -445,9 +451,9 @@ if (messageAssignedEmails.length > 0) {
 }
   if (!sender) return;
 
-  if (!isAllowedSender(sender)) {
-    return;
-  }
+  // if (!isAllowedSender(sender)) {
+  //   return;
+  // }
 
 //create media url for media messages,otherwise directly save in db with creating conversation
   const processedMessage = await processWebhookMessage(

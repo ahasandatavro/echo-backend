@@ -1171,16 +1171,7 @@ export const sendMessage = async (
   agentPhoneNumberId?: string
 ) => {
   try {
-    // const userRecord = await prisma.user.findUnique({
-    //   where: { id: userId },
-    //   select: { 
-    //     selectedPhoneNumberId: true,
-    //     selectedWabaId: true
-    //   }
-    // });
-    // if (!userRecord || !userRecord.selectedPhoneNumberId || !userRecord.selectedWabaId) {
-    //   throw new Error("User's selected contact details are not set.");
-    // }
+  
     const url = `${metaWhatsAppAPI.baseURL}/${agentPhoneNumberId}/messages`;
     let messageBody;
     const payload: any = {
@@ -1643,9 +1634,9 @@ export const processMessageChange = async (change: any, io: any) => {
 
   if (!recipient) return;
   
-  if (!isAllowedSender(recipient)) {
-    return; // Ignore and exit
-  }
+  // if (!isAllowedSender(recipient)) {
+  //   return; // Ignore and exit
+  // }
   
   // Emit socket event for new message
   const processedMessage = await processWebhookMessage(

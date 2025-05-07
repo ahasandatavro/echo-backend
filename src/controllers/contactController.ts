@@ -94,7 +94,6 @@ export const getAllImportedContacts = async (req: Request, res: Response) => {
     const user:any=req.user;
     const dbUser=await prisma.user.findFirst({
       where: { id: user.userId },
-      select: { selectedPhoneNumberId: true },
     })
     // Fetch all contacts from the database
     const contacts = await prisma.contact.findMany({
@@ -1099,6 +1098,17 @@ export const getCurrentAssignments = async (req: Request, res: Response) => {
 export const sendMessageController = async (req: Request, res: Response) => {
   try {
     const user:any=req.user;
+    const dbUser = await prisma.user.findFirst({
+      where: { id: user.userId },
+      select: { selectedPhoneNumberId: true },
+    });
+
+    if (!dbUser) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    if (!dbUser.selectedPhoneNumberId) {
+      return res.status(400).json({ error: "User does not have a selected Phone Number ID" });
+    }
     const contactId = Number(req.params.contactId); // Ensure it's a number
     const { text, template, chatbotId } = req.body;
     const file = req.file; // Handle file uploads
@@ -1192,7 +1202,9 @@ export const sendMessageController = async (req: Request, res: Response) => {
         contact.phoneNumber,
         { type: messageType, ...messageContent },
         chatbotId,
-        user.userId
+        user.userId,
+        false,
+        dbUser.selectedPhoneNumberId
       );
     }
 
