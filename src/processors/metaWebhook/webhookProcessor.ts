@@ -1265,7 +1265,7 @@ export const sendTemplate = async (
     const payload = {
       messaging_product: "whatsapp",
       to: recipient,
-      biz_opaque_callback_data: `chatId=${chatbotId}`,
+      biz_opaque_callback_data: `chatId=${chatbotId}&type=template`,
       type: "template",
       template: {
         name: selectedTemplate,

@@ -17,22 +17,22 @@ import path from 'path';
 
 
 export const getAllContacts = async (req: Request, res: Response) => {
-  console.log('🔄 Starting getAllContacts function');
+  //console.log('🔄 Starting getAllContacts function');
   try {
     // Extract selectedPhoneNumberId from user
     const user:any=req.user;
-    console.log('👤 User from request:', user);
+    //console.log('👤 User from request:', user);
     
     const dbUser=await prisma.user.findFirst({
       where: { id: user.userId },
       select: { selectedPhoneNumberId: true },
     })
-    console.log('📱 DB User selectedPhoneNumberId:', dbUser?.selectedPhoneNumberId);
+    //console.log('📱 DB User selectedPhoneNumberId:', dbUser?.selectedPhoneNumberId);
     
     const selectedPhoneNumberId = dbUser?.selectedPhoneNumberId;
 
     if (!selectedPhoneNumberId) {
-      console.log('❌ No selectedPhoneNumberId found');
+      //console.log('❌ No selectedPhoneNumberId found');
       return res.status(400).json({ error: "selectedPhoneNumberId is required" });
     }
 
@@ -44,15 +44,15 @@ export const getAllContacts = async (req: Request, res: Response) => {
     });
 
     if (!businessPhone) {
-      console.log('❌ Business phone number not found');
+     // console.log('❌ Business phone number not found');
       return res.status(404).json({ error: "Business phone number not found" });
     }
 
     const businessPhoneNumberId = businessPhone.id;
-    console.log('✅ Found businessPhoneNumberId:', businessPhoneNumberId);
+    //console.log('✅ Found businessPhoneNumberId:', businessPhoneNumberId);
 
     // Step 2: Find unique contact IDs from Conversation table linked to this businessPhoneNumberId
-    console.log('🔍 Fetching conversation contacts...');
+   // console.log('🔍 Fetching conversation contacts...');
     const conversationContacts = await prisma.conversation.findMany({
       where: { businessPhoneNumberId },
       select: { contactId: true },
@@ -60,15 +60,15 @@ export const getAllContacts = async (req: Request, res: Response) => {
     });
 
     const contactIds = conversationContacts.map((c) => c.contactId).filter((id) => id !== null);
-    console.log('📊 Found contact IDs:', contactIds.length);
+   // console.log('📊 Found contact IDs:', contactIds.length);
 
     if (contactIds.length === 0) {
-      console.log('ℹ️ No contacts found');
+      //console.log('ℹ️ No contacts found');
       return res.json([]); // No contacts found
     }
 
     // Step 3: Fetch only the contacts that are linked via conversations
-    console.log('🔍 Fetching contact details...');
+   // console.log('🔍 Fetching contact details...');
     const contacts = await prisma.contact.findMany({
       where: { id: { in: contactIds } },
       select: {
@@ -83,10 +83,10 @@ export const getAllContacts = async (req: Request, res: Response) => {
         updatedAt: true,
       },
     });
-    console.log('✅ Found contacts:', contacts.length);
+   // console.log('✅ Found contacts:', contacts.length);
 
     // Ensure attributes is always an array
-    console.log('🔄 Formatting contact attributes...');
+   // console.log('🔄 Formatting contact attributes...');
     const formattedContacts = contacts.map((contact) => ({
       ...contact,
       attributes: Array.isArray(contact.attributes)
@@ -96,9 +96,9 @@ export const getAllContacts = async (req: Request, res: Response) => {
             value,
           })),
     }));
-    console.log('✅ Contacts formatted successfully');
+   // console.log('✅ Contacts formatted successfully');
 
-    console.log('🎉 Successfully returning contacts');
+   // console.log('🎉 Successfully returning contacts');
     res.json(formattedContacts);
   } catch (error) {
     console.error('❌ Error in getAllContacts:', error);
@@ -1172,7 +1172,7 @@ export const sendMessageController = async (req: Request, res: Response) => {
 
       templateId = dbTemplate.id;
       templateDetails = dbTemplate;
-      await sendTemplate(contact.phoneNumber, template, chatbotId, templateDetails);
+      await sendTemplate(contact.phoneNumber, template, chatbotId, templateDetails,dbUser.selectedPhoneNumberId);
       // savedMessage = await prisma.message.create({
       //   data: {
       //     contact: { connect: { id: contactId } },

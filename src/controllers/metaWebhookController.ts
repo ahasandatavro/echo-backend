@@ -3,6 +3,7 @@ import { Request, Response } from "express";
 import {
   isValidWebhookRequest,
   processWebhookChange,
+  triggerMyWebhooks,
 } from "../subProcessors/metaWebhook";
 
 export const webhookVerification = async (req: Request, res: Response) => {
@@ -12,7 +13,7 @@ export const webhookVerification = async (req: Request, res: Response) => {
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
 
-  if (mode && token === VERIFY_TOKEN) {
+  if (mode === "subscribe"  && token === VERIFY_TOKEN) {
     console.log("Webhook verified");
     res.status(200).send(challenge);
   } else {
@@ -35,6 +36,7 @@ export const handleIncomingMessage = async (req: Request, res: Response) => {
 
       for (const change of changes) {
         await processWebhookChange(change, io);
+        await triggerMyWebhooks(change);
       }
     }
 

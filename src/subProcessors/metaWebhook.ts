@@ -13,6 +13,7 @@ import {
 import { processWebhookMessage } from "../processors/inboxProcessor";
 import { processKeyword, sendDefaultMaterial } from "../processors/metaWebhook/keywordProcessor";
 import { validateUserResponse } from "../helpers/validation";
+import axios from "axios";
 
 export const performGoogleSheetAction = async (
   payload: {
@@ -367,14 +368,118 @@ export const processWebhookChange = async (change: any, io: any) => {
   await processMessageUpdate(change.value, io);
 };
 
+// in your triggerMyWebhooks helper
+const graphFieldMap: Record<string,string> = {
+  MSG_RECEIVED:        "messages",
+  NEW_CONTACT_MSG:     "messages",
+  SESSION_MSG_SENT:    "messages",
+  TEMPLATE_MSG_SENT:   "messages",
+  MSG_DELIVERED:       "messages",  // statuses come under messages for WhatsApp
+  MSG_READ:            "messages",
+  MSG_REPLIED:         "messages",
+  SESSION_MSG_SENT_V2: "messages",
+  TEMPLATE_MSG_SENT_V2:"messages",
+  MSG_DELIVERED_V2:    "messages",
+  PAYMENT_CAPTURED:    "payments",
+  TEMPLATE_MSG_FAILED: "message_template_status_update",
+};
+
+/**
+ * Decide whether this payload should trigger the hook for the given UI-code.
+ */
+function matchesEvent(uiCode: string, value: any): boolean {
+  const msgs     = Array.isArray(value.messages)  ? value.messages  : [];
+  const statuses = Array.isArray(value.statuses)  ? value.statuses  : [];
+
+  switch (uiCode) {
+    case "MSG_RECEIVED":
+    case "NEW_CONTACT_MSG":
+      // any inbound (non-template) message
+      return msgs.some((m: any) =>
+        m.from !== value.metadata.display_phone_number &&
+        m.type !== "template"
+      );
+
+    case "MSG_REPLIED":
+      // user reply (inbound), template or text
+      return msgs.some((m: any) =>
+        m.from !== value.metadata.display_phone_number
+      );
+
+      case "SESSION_MSG_SENT":
+        // “sent” plus no type=template flag → this is a session/text message
+        return statuses.some((s: any) =>
+          s.status === "sent" &&
+          (
+            !s.biz_opaque_callback_data ||             // no biz data at all
+            !/type=template/.test(s.biz_opaque_callback_data)  // or data present but no type=template
+          )
+        );
+  
+      case "TEMPLATE_MSG_SENT":
+        // “sent” plus type=template → this is a template message
+        return statuses.some((s: any) =>
+          s.status === "sent" &&
+          typeof s.biz_opaque_callback_data === "string" &&
+          /type=template/.test(s.biz_opaque_callback_data)
+        );
+  
+      case "MSG_DELIVERED":
+        return statuses.some((s: any) => s.status === "delivered");
+  
+      case "MSG_READ":
+        return statuses.some((s: any) => s.status === "read");
+
+    default:
+      // payments & template failures come via other Graph fields,
+      // so we shouldn’t get here for those
+      return false;
+  }
+}
+
+export const triggerMyWebhooks = async (change: any) => {
+  const graphField       = change.field;                                 // e.g. "messages"
+  const agentPhoneNumber = change.value?.metadata?.display_phone_number;
+
+  // 1) find which UI codes subscribe to this Graph field
+  const matchingUiCodes = Object.entries(graphFieldMap)
+    .filter(([, gf]) => gf === graphField)
+    .map(([ui])        => ui);
+  if (!matchingUiCodes.length) return;
+
+  // 2) load hooks whose eventTypes is one of those UI-codes
+  const hooks = await prisma.webhook.findMany({
+    where: {
+      status: 'Enabled',
+      eventTypes: { in: matchingUiCodes },
+      businessPhoneNumber: { phoneNumber: agentPhoneNumber },
+    },
+  });
+  if (!hooks.length) return;
+
+  // 3) for each hook, only fire if matchesEvent says “yes”
+  await Promise.all(hooks.map(async hook => {
+    if (!matchesEvent(hook.eventTypes, change.value)) {
+      return; // skip it
+    }
+    try {
+      await axios.post(hook.url, { eventType: graphField });
+    } catch (err) {
+      console.error(`Webhook ${hook.id} → ${hook.url} failed`, err);
+    }
+  }));
+};
+
+
 export const processMessageUpdate = async (value: any, io: any) => {
   const agentPhoneNumber = value?.metadata?.display_phone_number;
- 
+  
   const phoneNumberId = value?.metadata?.phone_number_id;
   const dbUser = await prisma.user.findFirst({
     where: { selectedPhoneNumberId: phoneNumberId },
   });
   const message = value?.messages?.[0];
+  const senderName=value?.contacts?.[0]?.profile?.name;
   const sender = message?.from;
   if (!sender) {
     //console.warn("Sender is undefined. Cannot query contact.");
@@ -397,6 +502,7 @@ if (!finalContact) {
   finalContact = await prisma.contact.create({
     data: {
       phoneNumber: sender,
+      name: senderName,
       source: "WhatsApp", // or you can dynamically set this
       subscribed: true,
       sendSMS:true,
