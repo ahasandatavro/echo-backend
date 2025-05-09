@@ -1294,10 +1294,19 @@ export const sendMessageWithButtons = async (
 ) => {
   try {
     const url = `${metaWhatsAppAPI.baseURL}/${agentPhoneNumberId}/messages`;
-    const headerText = buttonMessage.header
+
+    const headerText:any = buttonMessage.header && buttonMessage.header.type === "text"
     ? await resolveVariables(buttonMessage.header, buttonMessage.chatId)
     : undefined;
+
+      const headerPayload = buttonMessage.header && (buttonMessage.header as any).type
+        ? (buttonMessage.header as any)
+        : headerText
+          ? { type: "text", text: headerText.text }
+          : undefined;
+
     let bodyText=buttonMessage.body.text;
+
     if (buttonMessage.body.text && buttonMessage.body.text.includes("@")) {
       bodyText = await resolveVariables(buttonMessage.body.text, buttonMessage.chatId);
     }
@@ -1317,10 +1326,11 @@ export const sendMessageWithButtons = async (
         type: "interactive",
         interactive: {
           type: "button",
-          header: headerText ? { type: "text", text: headerText } : undefined,
+         // header: headerText ? { type: "text", text: headerText.text } : undefined,
+         header:headerPayload,
           body: { text: convertHtmlToWhatsAppText(bodyText) },
           footer: buttonMessage.footer
-          ? { text: buttonMessage.footer }
+          ? { text: buttonMessage.footer.text }
           : undefined,
           action: { buttons: buttonMessage.action.buttons },
         },
