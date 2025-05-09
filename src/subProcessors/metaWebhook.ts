@@ -848,7 +848,7 @@ export const handleConversationFlow = async (
 
 
   if (message?.interactive) {
-    const chatbotData = await getChatbotData(conversation.lastNodeId);
+    const chatbotData = await getChatbotData(conversation.lastNodeId?conversation.lastNodeId:conversation.currentNodeId);
     if (!chatbotData) return;
     await handleInteractiveMessage(message, chatbotData, recipient,agentPhoneNumber);
     return;
