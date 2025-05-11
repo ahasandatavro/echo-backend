@@ -23,6 +23,7 @@ import agentRoutes from "./routes/agentRoute";
 import businessAccountRoutes from "./routes/businessAccountRoute";
 import whatsAppRoute from "./routes/whatsAppRoute";
 import ruleRoutes from "./routes/ruleRoute";
+import businessPhoneNumberRoutes from "./routes/businessPhoneNumberRoute";
 import { Server } from "socket.io";
 import { authenticateJWT } from "./middlewares/authMiddleware"
 import passport from "passport";
@@ -275,7 +276,8 @@ app.use("/auth", authRoutes);
 app.use("/nodes", authenticateJWT,nodeRoutes);
 app.use("/users", authenticateJWT,userRoutes);
 app.use("/agents", authenticateJWT,agentRoutes);
-app.use("/businessAccount",authenticateJWT, businessAccountRoutes)
+app.use("/businessAccount",authenticateJWT, businessAccountRoutes);
+app.use("/businessPhoneNumbers", authenticateJWT, businessPhoneNumberRoutes);
 app.use("/metaWebhook",metaWebhookRoutes);
 app.use("/webhooks",authenticateJWT,webhookRoutes);
 app.use("/notificationSettings",authenticateJWT,notificationSettingsRoutes);

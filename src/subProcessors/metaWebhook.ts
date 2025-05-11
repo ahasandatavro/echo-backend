@@ -11,7 +11,7 @@ import {
   sendTemplate,
 } from "../processors/metaWebhook/webhookProcessor";
 import { processWebhookMessage } from "../processors/inboxProcessor";
-import { processKeyword, sendDefaultMaterial } from "../processors/metaWebhook/keywordProcessor";
+import { handleFallbackMaterial, isWithinWorkingHours, processKeyword, sendDefaultMaterial } from "../processors/metaWebhook/keywordProcessor";
 import { validateUserResponse } from "../helpers/validation";
 import axios from "axios";
 
@@ -842,7 +842,7 @@ export const handleConversationFlow = async (
   message: any,
   agentPhoneNumber: string
 ) => {
-  const conversation = await findOrCreateConversation(recipient, message);
+  const conversation = await findOrCreateConversation(recipient, message, agentPhoneNumber);
   if (!conversation) return;
 
 
@@ -866,10 +866,24 @@ export const handleConversationFlow = async (
     await processKeyword(text, recipient, agentPhoneNumber);
   }
 };
+type TimeSlot = {
+  from: string;
+  to: string;
+};
+
+type DaySchedule = {
+  open: boolean;
+  times: TimeSlot[];
+};
+
+type WorkingHours = {
+  [day: string]: DaySchedule;
+};
 
 export const findOrCreateConversation = async (
   recipient: string,
-  message: any
+  message: any,
+  agentPhoneNumberId: string | undefined
 ): Promise<any> => {
   // 1️⃣ Always start by fetching the latest convo (if any)
   let conversation = await prisma.conversation.findFirst({
@@ -898,12 +912,75 @@ export const findOrCreateConversation = async (
 else chatbotId = text ? await findChatbotIdByKeyword(text) : null;
 
   if (!chatbotId &&  conversation && !conversation.answeringQuestion) {
-    console.warn("No keyword match found. Unable to associate a chatbot.");
+    const businessPhoneNumber = await prisma.businessPhoneNumber.findFirst({
+      where: { metaPhoneNumberId: agentPhoneNumberId },
+      select: {
+        id: true,
+        fallbackEnabled: true,
+        fallbackMessage: true,
+        fallbackTriggerCount: true,
+        defaultActionSettings: true,  // your existing logic
+        fallbackHitCount: true,
+      }
+    });
+   
+    const defaultActionSettings = await prisma.defaultActionSettings.findUnique({
+      where: {
+        businessPhoneNumberId: businessPhoneNumber?.id,
+      },
+    });
+    if (
+      defaultActionSettings?.outsideWorkingHoursEnabled &&
+      defaultActionSettings.workingHours
+    ) {
+      const workingHours = defaultActionSettings.workingHours as WorkingHours;
+  
+      if (!isWithinWorkingHours(workingHours)) {
+        return await handleFallbackMaterial(defaultActionSettings, recipient, agentPhoneNumberId);
+      }
+    }
+ // inside working hours fallback
+ if (businessPhoneNumber?.fallbackEnabled && businessPhoneNumber.fallbackMessage) {
+  const {
+    id,
+    fallbackTriggerCount,
+   fallbackHitCount,
+    fallbackMessage
+  } = businessPhoneNumber;
+
+  const nextHitCount = fallbackHitCount + 1;
+
+  if (nextHitCount >= fallbackTriggerCount) {
+    // threshold reached → reset counter and send
+    await prisma.businessPhoneNumber.update({
+      where: { id },
+      data: { fallbackHitCount: 0 }
+    });
+
+    console.log(
+      `No keyword match—hit ${nextHitCount}/${fallbackTriggerCount}, sending fallback.`
+    );
+
     await sendMessage(
       recipient,
-      "Sorry, no chatbot is available for your query."
+      { type: "text", message: fallbackMessage },
+      1,1,true,agentPhoneNumberId
     );
-    return null;
+  } else {
+    // below threshold → just increment counter
+    await prisma.businessPhoneNumber.update({
+      where: { id },
+      data: { fallbackHitCount: nextHitCount }
+    });
+
+    console.log(
+      `No keyword match—hit ${nextHitCount}/${fallbackTriggerCount}, not sending yet.`
+    );
+  }
+
+  return true;
+}
+    return false;
   }
 
   // 4️⃣ If a convo exists, update its chatbotId if it changed
@@ -1350,7 +1427,7 @@ export const findChatbotIdByKeyword = async (text: string): Promise<number | nul
   const keyword = await prisma.keyword.findFirst({
     where: {
       value: {
-        contains: text,
+        equals: text,
         mode: "insensitive",
       },
     },

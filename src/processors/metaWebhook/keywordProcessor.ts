@@ -37,11 +37,21 @@ type WorkingHours = {
 
 export const processKeyword = async (text: string, recipient: String, agentPhoneNumberId: string | undefined): Promise<boolean> => {
   if (!text) return false;
-  
-  const businessPhoneNumberId=5;
+  const businessPhoneNumber = await prisma.businessPhoneNumber.findFirst({
+    where: { metaPhoneNumberId: agentPhoneNumberId },
+    select: {
+      id: true,
+      fallbackEnabled: true,
+      fallbackMessage: true,
+      fallbackTriggerCount: true,
+      defaultActionSettings: true,  // your existing logic
+      fallbackHitCount: true,
+    }
+  });
+ 
   const defaultActionSettings = await prisma.defaultActionSettings.findUnique({
     where: {
-      businessPhoneNumberId: businessPhoneNumberId,
+      businessPhoneNumberId: businessPhoneNumber?.id,
     },
   });
   // Use the new helper function
@@ -52,7 +62,7 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
     const keyword = await prisma.keyword.findFirst({
       where: {
         value: {
-          contains: text,
+          equals: text,
           mode: "insensitive",
         },
       },
@@ -82,13 +92,14 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
     }) as KeywordWithRelations | null;
 
     if (!keyword) {
-      return await handleFallbackMaterial(defaultActionSettings, recipient, agentPhoneNumberId);
+      return false;
+
     }
     
     let actionsPerformed = false;
 
     // 1. Process chatbot if associated
-    if (keyword.chatbot) {
+    if (keyword?.chatbot) {
       console.log(`Triggering chatbot with ID: ${keyword.chatbot.id} for keyword "${keyword.value}"`);
       
       // Update conversation to not be answering a question anymore

@@ -143,6 +143,10 @@ model BusinessPhoneNumber {
   defaultActionSettings DefaultActionSettings?
   webhooks              Webhook[]
   notificationSetting   NotificationSetting?
+ fallbackEnabled       Boolean                @default(false)
+ fallbackMessage       String?
+ fallbackTriggerCount  Int                    @default(3)
+ fallbackHitCount      Int                    @default(0)
 }
 
 model NotificationSetting {
