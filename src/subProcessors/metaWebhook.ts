@@ -281,7 +281,9 @@ export const handleChatbotTrigger=async(text:string, recipient:string, phoneNumb
   const chatbot = await prisma.chatbot.findFirst({
     where: { name: chatbotName },
   });
-
+  if (chatbot) {
+    await bump(chatbot.id, "triggered");
+  }
   let conversation = await prisma.conversation.findFirst({
     where: { recipient },
     orderBy: {

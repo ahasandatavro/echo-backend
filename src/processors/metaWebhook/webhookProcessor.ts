@@ -91,7 +91,7 @@ export const processNode = async (
       console.error(`Node with ID ${nodeId} not found.`);
       return;
     }
-    await bump(currentNode.chatbotId, "stepsFinished");
+    await bump(currentNode.chatId, "stepsFinished");
     if (currentNode.type === "start") {
       const outgoingEdge = edges.find(
         (edge) => edge.sourceId === currentNode.id
@@ -105,7 +105,7 @@ export const processNode = async (
         }
       }
       if (!outgoingEdge) {
-        await bump(currentNode.chatbotId, "finished");
+        await bump(currentNode.chatId, "finished");
         return;
       }
       return;
@@ -150,7 +150,7 @@ export const processNode = async (
         }
       }
       if (!outgoingEdge) {
-        await bump(currentNode.chatbotId, "finished");
+        await bump(currentNode.chatId, "finished");
         return;
       }
     }
@@ -185,7 +185,7 @@ export const processNode = async (
           }
         }
         if (!nextEdge) {
-          await bump(currentNode.chatbotId, "finished");
+          await bump(currentNode.chatId, "finished");
           return;
         }
       }} catch (error) {
@@ -407,7 +407,7 @@ export const processNode = async (
             }
           }
           if (!nextEdge) {
-            await bump(currentNode.chatbotId, "finished");
+            await bump(currentNode.chatId, "finished");
             return;
           }
         } catch (error) {
@@ -504,7 +504,7 @@ export const processNode = async (
             }
           }
           if (!nextEdge) {
-            await bump(currentNode.chatbotId, "finished");
+            await bump(currentNode.chatId, "finished");
             return;
           }
         } catch (error) {
@@ -544,7 +544,7 @@ export const processNode = async (
           }
         }
         if (!nextEdge) {
-          await bump(currentNode.chatbotId, "finished");
+          await bump(currentNode.chatId, "finished");
           return;
         }
       } catch (error) {
@@ -597,7 +597,7 @@ export const processNode = async (
           }
         }
         if (!nextEdge) {
-          await bump(currentNode.chatbotId, "finished");
+          await bump(currentNode.chatId, "finished");
           return;
         }
       } catch (error) {
@@ -657,7 +657,7 @@ export const processNode = async (
           }
         }
         if (!nextEdge) {
-          await bump(currentNode.chatbotId, "finished");
+          await bump(currentNode.chatId, "finished"); 
           return;
         }
       } catch (error) {
@@ -713,7 +713,7 @@ export const processNode = async (
           }
         }
         if (!nextEdge) {
-          await bump(currentNode.chatbotId, "finished");
+          await bump(currentNode.chatId, "finished");
           return;
         }
       } catch (error) {
@@ -864,7 +864,7 @@ export const processNode = async (
           }
         }
         if (!nextEdge) {
-          await bump(currentNode.chatbotId, "finished");
+          await bump(currentNode.chatId, "finished");
           return;
         }
       } catch (error) {
@@ -955,7 +955,7 @@ export const processNode = async (
           }
         }
         if (!nextEdge) {
-          await bump(currentNode.chatbotId, "finished");
+          await bump(currentNode.chatId, "finished");
           return;
         }
       } catch (error) {
@@ -1024,7 +1024,7 @@ export const processNode = async (
           }
         } else {
           //console.warn(`No outgoing edge found for assignUser node ID: ${currentNode.id}`);
-          await bump(currentNode.chatbotId, "finished");
+          await bump(currentNode.chatId, "finished");
           return;
         }
       }
@@ -1093,7 +1093,7 @@ export const processNode = async (
           }
         } else {
           //console.warn(`No outgoing edge found for assignTeam node ID: ${currentNode.id}`);
-          await bump(currentNode.chatbotId, "finished");
+          await bump(currentNode.chatId, "finished");
           return;
         }
       }
@@ -1128,7 +1128,7 @@ export const processNode = async (
               //console.warn(
           //  `No outgoing edge found for delay node ID: ${currentNode.id}`
           //);
-          await bump(currentNode.chatbotId, "finished");
+          await bump(currentNode.chatId, "finished");
           return;
         }
       }
@@ -1192,12 +1192,12 @@ export const processNode = async (
                 await processNode(nextNode.nodeId,nodes, edges, recipient, agentPhoneNumberId); 
               } else {
                 //console.warn(`No next node found with nodeId: ${nextNodeId}`);
-                await bump(currentNode.chatbotId, "finished");
+                await bump(currentNode.chatId, "finished");
                 return;
               }
             } else {
               //console.warn(`No matching edge found for sourceHandle: ${sourceHandle}`);
-              await bump(currentNode.chatbotId, "finished");
+              await bump(currentNode.chatId, "finished");
               return;
             }
           } else {

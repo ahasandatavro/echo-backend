@@ -34,7 +34,6 @@ export const convertHtmlToWhatsAppText = (html: string): string => {
   });
 };
 
-// helpers/chatbot-metrics.ts
 
 
 export const bump = async (
@@ -42,8 +41,23 @@ export const bump = async (
   field: "triggered" | "stepsFinished" | "finished",
   by = 1
 ) => {
-  await prisma.chatbot.update({
-    where: { id: chatbotId },
-    data: { [field]: { increment: by } }
-  });
+  // 1) log what you’re about to do
+  //console.log(`[bump] called → chatbotId=${chatbotId} field=${field} by=${by}`);
+
+  try {
+    // 2) perform the update and capture the result
+    const updated = await prisma.chatbot.update({
+      where: { id: chatbotId },
+      data: { [field]: { increment: by } },
+      select: { id: true, [field]: true }
+    });
+    // 3) log what came back
+   // console.log(`[bump] success →`, updated);
+    return updated;
+  } catch (err) {
+    // 4) make sure you actually see the error
+    console.error(`[bump] failed → chatbotId=${chatbotId} field=${field}`, err);
+    // optionally re-throw if you want the outer code’s catch to see it:
+   // throw err;
+  }
 };
