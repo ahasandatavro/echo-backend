@@ -330,9 +330,9 @@ model Chatbot {
   id            Int            @id @default(autoincrement())
   name          String
   description   String?
-  triggered     Boolean?       @default(false)
-  stepsFinished Int?
-  finished      Boolean?       @default(false)
+  triggered     Int?          @default(0)
+  stepsFinished Int?          @default(0)
+  finished      Int?          @default(0)
   startNodeId   Int?           @unique
   ownerId       Int?
   status        Status         @default(ACTIVE)

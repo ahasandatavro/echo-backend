@@ -152,3 +152,30 @@ export const updateFallbackSettings = async (req: Request, res: Response) => {
       .json({ message: "Unable to save fallback settings." });
   }
 }; 
+
+// GET /businessPhoneNumbers/chatbot/settings/fallback
+export const getFallbackSettings = async (req: Request, res: Response) => {
+  const user:any = req.user;
+  const dbUser = await prisma.user.findUnique({ 
+    where:{ id: user.userId },
+    select:{ selectedPhoneNumberId: true }
+  });
+  if (!dbUser?.selectedPhoneNumberId) {
+    return res.status(400).json({ message: "No phone number selected" });
+  }
+  const bp = await prisma.businessPhoneNumber.findFirst({
+    where: { metaPhoneNumberId: dbUser.selectedPhoneNumberId },
+    select: { fallbackEnabled:true, fallbackMessage:true, fallbackTriggerCount: true},
+  });
+  if (!bp) {
+      return res
+        .status(404)
+        .json({ message: `No BusinessPhoneNumber found` });
+    }
+
+  return res.json({
+    enabled: bp?.fallbackEnabled ?? false,
+    message: bp?.fallbackMessage ?? "",
+    maxTriggers: bp?.fallbackTriggerCount ?? 0
+  });
+};

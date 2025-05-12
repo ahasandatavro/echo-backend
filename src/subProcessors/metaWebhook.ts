@@ -14,6 +14,7 @@ import { processWebhookMessage } from "../processors/inboxProcessor";
 import { handleFallbackMaterial, isWithinWorkingHours, processKeyword, sendDefaultMaterial } from "../processors/metaWebhook/keywordProcessor";
 import { validateUserResponse } from "../helpers/validation";
 import axios from "axios";
+import { bump } from "../helpers";
 
 export const performGoogleSheetAction = async (
   payload: {
@@ -1097,6 +1098,8 @@ export const handleButtonReply = async (
 
   if (nextNodeId) {
     await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient,agentPhoneNumberId);
+  } else {
+    await bump(chatbotData.id, "finished");
   }
 };
 
@@ -1171,6 +1174,8 @@ export const handleListReply = async (
 
   if (nextNodeId) {
     await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient,agentPhoneNumberId);
+  } else {
+    await bump(chatbotData.id, "finished");
   }
 };
 
@@ -1318,6 +1323,8 @@ export const handleValidQuestionResponse = async (
   
   if (nextNodeId) {
     await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient,agentPhoneNumberId);
+  } else {
+    await bump(chatbotData.id, "finished");
   }
 };
 

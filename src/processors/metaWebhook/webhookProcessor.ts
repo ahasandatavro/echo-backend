@@ -1,7 +1,7 @@
 import { prisma } from "../../models/prismaClient";
 import axios from "axios";
 import { metaWhatsAppAPI } from "../../config/metaConfig";
-import { convertHtmlToWhatsAppText } from "../../helpers/index";
+import { bump, convertHtmlToWhatsAppText } from "../../helpers/index";
 import { resolveContactAttributes, resolveVariables } from "../../helpers/validation";
 import { ListMessage } from "../../interphases";
 import { performGoogleSheetAction } from "../../subProcessors/metaWebhook";
@@ -91,7 +91,7 @@ export const processNode = async (
       console.error(`Node with ID ${nodeId} not found.`);
       return;
     }
-
+    await bump(currentNode.chatbotId, "stepsFinished");
     if (currentNode.type === "start") {
       const outgoingEdge = edges.find(
         (edge) => edge.sourceId === currentNode.id
@@ -103,6 +103,10 @@ export const processNode = async (
         if (nextNodeId) {
           await processNode(nextNodeId, nodes, edges, recipient, agentPhoneNumberId);
         }
+      }
+      if (!outgoingEdge) {
+        await bump(currentNode.chatbotId, "finished");
+        return;
       }
       return;
     }
@@ -145,6 +149,10 @@ export const processNode = async (
           await processNode(nextNodeId, nodes, edges, recipient, agentPhoneNumberId);
         }
       }
+      if (!outgoingEdge) {
+        await bump(currentNode.chatbotId, "finished");
+        return;
+      }
     }
 
     if (currentNode.type === "template") {
@@ -175,6 +183,10 @@ export const processNode = async (
             console.log(`Transitioning to next node: ${nextNode.id}`);
             await processNode(nextNode.nodeId, nodes, edges, recipient, agentPhoneNumberId);
           }
+        }
+        if (!nextEdge) {
+          await bump(currentNode.chatbotId, "finished");
+          return;
         }
       }} catch (error) {
         console.error("Error in template node:", error);
@@ -394,6 +406,10 @@ export const processNode = async (
               await processNode(nextNode.nodeId,nodes, edges, recipient, agentPhoneNumberId); // Call the same function for the next node
             }
           }
+          if (!nextEdge) {
+            await bump(currentNode.chatbotId, "finished");
+            return;
+          }
         } catch (error) {
           console.error("Google Sheet action failed:", error);
     
@@ -487,6 +503,10 @@ export const processNode = async (
               await processNode(nextNode.nodeId, nodes, edges, recipient, agentPhoneNumberId);
             }
           }
+          if (!nextEdge) {
+            await bump(currentNode.chatbotId, "finished");
+            return;
+          }
         } catch (error) {
           console.error("Condition evaluation failed:", error);
         }
@@ -522,6 +542,10 @@ export const processNode = async (
             // Continue processing with the next node
             await processNode(nextNode.nodeId, nodes, edges, recipient, agentPhoneNumberId);
           }
+        }
+        if (!nextEdge) {
+          await bump(currentNode.chatbotId, "finished");
+          return;
         }
       } catch (error) {
         console.error("Subscribe action failed:", error);
@@ -571,6 +595,10 @@ export const processNode = async (
             // Continue processing with the next node
             await processNode(nextNode.nodeId, nodes, edges, recipient, agentPhoneNumberId);
           }
+        }
+        if (!nextEdge) {
+          await bump(currentNode.chatbotId, "finished");
+          return;
         }
       } catch (error) {
         console.error("Subscribe action failed:", error);
@@ -628,6 +656,10 @@ export const processNode = async (
             await processNode(nextNode.nodeId, nodes, edges, recipient, agentPhoneNumberId);
           }
         }
+        if (!nextEdge) {
+          await bump(currentNode.chatbotId, "finished");
+          return;
+        }
       } catch (error) {
         console.error("Error in triggerChatbot node:", error);
     
@@ -679,6 +711,10 @@ export const processNode = async (
             console.log(`Transitioning to next node: ${nextNode.id}`);
             await processNode(nextNode.nodeId, nodes, edges, recipient, agentPhoneNumberId);
           }
+        }
+        if (!nextEdge) {
+          await bump(currentNode.chatbotId, "finished");
+          return;
         }
       } catch (error) {
         console.error("Error updating tags for contact:", error);
@@ -827,6 +863,10 @@ export const processNode = async (
             await processNode(nextNode.nodeId, nodes, edges, recipient, agentPhoneNumberId);
           }
         }
+        if (!nextEdge) {
+          await bump(currentNode.chatbotId, "finished");
+          return;
+        }
       } catch (error) {
         console.error("Error in updateAttribute node:", error);
     
@@ -914,6 +954,10 @@ export const processNode = async (
             await processNode(nextNode.nodeId, nodes, edges, recipient, agentPhoneNumberId);
           }
         }
+        if (!nextEdge) {
+          await bump(currentNode.chatbotId, "finished");
+          return;
+        }
       } catch (error) {
         console.error("Error in updateChatStatus node:", error);
     
@@ -979,7 +1023,9 @@ export const processNode = async (
             await processNode(nextNodeId, nodes, edges, recipient, agentPhoneNumberId);
           }
         } else {
-          console.warn(`No outgoing edge found for assignUser node ID: ${currentNode.id}`);
+          //console.warn(`No outgoing edge found for assignUser node ID: ${currentNode.id}`);
+          await bump(currentNode.chatbotId, "finished");
+          return;
         }
       }
       return;
@@ -1046,7 +1092,9 @@ export const processNode = async (
             await processNode(nextNodeId, nodes, edges, recipient, agentPhoneNumberId);
           }
         } else {
-          console.warn(`No outgoing edge found for assignTeam node ID: ${currentNode.id}`);
+          //console.warn(`No outgoing edge found for assignTeam node ID: ${currentNode.id}`);
+          await bump(currentNode.chatbotId, "finished");
+          return;
         }
       }
       return;
@@ -1077,9 +1125,11 @@ export const processNode = async (
             await processNode(nextNodeId, nodes, edges, recipient, agentPhoneNumberId); // Recursive call to process the next node
           }
         } else {
-          console.warn(
-            `No outgoing edge found for delay node ID: ${currentNode.id}`
-          );
+              //console.warn(
+          //  `No outgoing edge found for delay node ID: ${currentNode.id}`
+          //);
+          await bump(currentNode.chatbotId, "finished");
+          return;
         }
       }
       return; // Ensure no further processing for the current node
@@ -1141,10 +1191,14 @@ export const processNode = async (
                 console.log(`Navigating to the next node: ${nextNode.nodeId}`);
                 await processNode(nextNode.nodeId,nodes, edges, recipient, agentPhoneNumberId); 
               } else {
-                console.warn(`No next node found with nodeId: ${nextNodeId}`);
+                //console.warn(`No next node found with nodeId: ${nextNodeId}`);
+                await bump(currentNode.chatbotId, "finished");
+                return;
               }
             } else {
-              console.warn(`No matching edge found for sourceHandle: ${sourceHandle}`);
+              //console.warn(`No matching edge found for sourceHandle: ${sourceHandle}`);
+              await bump(currentNode.chatbotId, "finished");
+              return;
             }
           } else {
             console.warn(`Response status ${responseStatus} does not match any expected statuses.`);

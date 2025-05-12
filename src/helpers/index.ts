@@ -1,5 +1,5 @@
 import { htmlToText } from "html-to-text";
-
+import { prisma } from "../models/prismaClient";
 /**
  * Preprocesses HTML to replace specific tags (e.g., <strong>) with WhatsApp-compatible markdown.
  *
@@ -31,5 +31,19 @@ export const convertHtmlToWhatsAppText = (html: string): string => {
   return htmlToText(preprocessedHtml, {
     wordwrap: 130, // Optional: Wrap lines after 130 characters
     preserveNewlines: true, // Preserve line breaks for WhatsApp formatting
+  });
+};
+
+// helpers/chatbot-metrics.ts
+
+
+export const bump = async (
+  chatbotId: number,
+  field: "triggered" | "stepsFinished" | "finished",
+  by = 1
+) => {
+  await prisma.chatbot.update({
+    where: { id: chatbotId },
+    data: { [field]: { increment: by } }
   });
 };

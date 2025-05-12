@@ -4,6 +4,7 @@ import { processChatFlow, sendMessage, sendTemplate } from "./webhookProcessor";
 import { Chatbot, Contact, Keyword, KeywordReplyMaterial, KeywordRoutingMaterial, KeywordTemplate, MaterialType, ReplyMaterial, RoutingMaterial, RoutingType, Team, Template, User } from "@prisma/client";
 import dayjs from 'dayjs';
 import { DefaultActionSettings } from '@prisma/client'; 
+import { bump } from "../../helpers";
 // Define types for the keyword query result
 type KeywordWithRelations = Keyword & {
   chatbot: Chatbot | null;
@@ -101,7 +102,7 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
     // 1. Process chatbot if associated
     if (keyword?.chatbot) {
       console.log(`Triggering chatbot with ID: ${keyword.chatbot.id} for keyword "${keyword.value}"`);
-      
+      await bump(keyword.chatbot.id, "triggered");
       // Update conversation to not be answering a question anymore
       const conversation = await prisma.conversation.findFirst({ 
         where: { recipient },
