@@ -1195,7 +1195,7 @@ export const sendMessageController = async (req: Request, res: Response) => {
       let messageContent: any = { message: text };
       if (text && text.startsWith("TriggerChatbot:"))
         {
-          await handleChatbotTrigger(text,contact.phoneNumber);}
+          await handleChatbotTrigger(text,contact.phoneNumber,dbUser.selectedPhoneNumberId);}
       if (fileUrl) {
         // Determine message type based on file extension
         const fileExtension = fileUrl.split(".").pop()?.toLowerCase();
@@ -1260,6 +1260,10 @@ export const sendMessageController = async (req: Request, res: Response) => {
   }
 };
 
+// types.ts
+type TriggerResult =
+  | { ok: true }
+  | { ok: false; status: number; message: string };
 
 export const triggerChatbotByPhoneNumber = async (req: Request, res: Response) => {
   try {
@@ -1281,18 +1285,19 @@ export const triggerChatbotByPhoneNumber = async (req: Request, res: Response) =
       return res.status(400).json({ error: "Invalid or missing TriggerChatbot text" });
     }
 
-    const contact = await prisma.contact.findFirst({ where: { phoneNumber } });
+    // const contact = await prisma.contact.findFirst({ where: { phoneNumber } });
 
-    if (!contact) {
-      return res.status(404).json({ error: "Contact not found" });
+    // if (!contact) {
+    //   return res.status(404).json({ error: "Contact not found" });
+    // }
+
+    const result: TriggerResult =await handleChatbotTrigger(text, phoneNumber, userRecord.selectedPhoneNumberId);
+    if (!result.ok) {
+      return res.status(result.status).json({ error: result.message });
     }
-
-    await handleChatbotTrigger(text, phoneNumber, userRecord.selectedPhoneNumberId);
-
-    return res.status(200).json({ success: true, message: "Chatbot triggered successfully" });
+    return res.json({ success: true, message: "Chatbot triggered successfully" });
   } catch (error) {
-    console.error("Error triggering chatbot:", error);
-    return res.status(500).json({ error: "Internal server error" });
+    return res.status(result.status).json({ error: result.message });
   }
 };
 

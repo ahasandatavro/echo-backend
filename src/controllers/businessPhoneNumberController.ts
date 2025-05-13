@@ -99,10 +99,9 @@ export const deleteBusinessPhoneNumber = async (req: Request, res: Response) => 
 
 export const updateFallbackSettings = async (req: Request, res: Response) => {
   try {
-    // 1. Get the logged-in user
     const user: any = req.user;
 
-    // 2. Look up which phoneNumber they have selected
+    // 1) Figure out which BusinessPhoneNumber the user has selected
     const dbUser = await prisma.user.findUnique({
       where: { id: user.userId },
       select: { selectedPhoneNumberId: true },
@@ -113,6 +112,7 @@ export const updateFallbackSettings = async (req: Request, res: Response) => {
         .status(400)
         .json({ message: "No phone number selected for this user." });
     }
+
     const metaId = dbUser.selectedPhoneNumberId;
 
     // 2) Find the record by its string metaPhoneNumberId
@@ -120,21 +120,23 @@ export const updateFallbackSettings = async (req: Request, res: Response) => {
       where: { metaPhoneNumberId: metaId },
       select: { id: true },
     });
+
     if (!bp) {
-        return res
-          .status(404)
-          .json({ message: `No BusinessPhoneNumber found for metaId=${metaId}` });
-      }
-    // 3. Pull the payload from the frontend
+      return res
+        .status(404)
+        .json({ message: `No BusinessPhoneNumber found for metaId=${metaId}` });
+    }
+
+    // 3) Pull the payload
     const { enabled, message, maxTriggers } = req.body as {
       enabled: boolean;
       message: string;
       maxTriggers: number;
     };
 
-    // 4. Update the BusinessPhoneNumber record
-    await prisma.businessPhoneNumber.update({
-      where: { id: bp?.id },
+    // 4) Update by the numeric `id`
+    const updated = await prisma.businessPhoneNumber.update({
+      where: { id: bp.id },
       data: {
         fallbackEnabled: enabled,
         fallbackMessage: message,
@@ -144,38 +146,88 @@ export const updateFallbackSettings = async (req: Request, res: Response) => {
 
     return res
       .status(200)
-      .json({ message: "Fallback settings saved successfully." });
+      .json({ message: "Fallback settings saved.", updated });
   } catch (err) {
     console.error("Error saving fallback settings:", err);
     return res
       .status(500)
       .json({ message: "Unable to save fallback settings." });
   }
-}; 
-
-// GET /businessPhoneNumbers/chatbot/settings/fallback
-export const getFallbackSettings = async (req: Request, res: Response) => {
-  const user:any = req.user;
-  const dbUser = await prisma.user.findUnique({ 
-    where:{ id: user.userId },
-    select:{ selectedPhoneNumberId: true }
-  });
-  if (!dbUser?.selectedPhoneNumberId) {
-    return res.status(400).json({ message: "No phone number selected" });
-  }
-  const bp = await prisma.businessPhoneNumber.findFirst({
-    where: { metaPhoneNumberId: dbUser.selectedPhoneNumberId },
-    select: { fallbackEnabled:true, fallbackMessage:true, fallbackTriggerCount: true},
-  });
-  if (!bp) {
-      return res
-        .status(404)
-        .json({ message: `No BusinessPhoneNumber found` });
-    }
-
-  return res.json({
-    enabled: bp?.fallbackEnabled ?? false,
-    message: bp?.fallbackMessage ?? "",
-    maxTriggers: bp?.fallbackTriggerCount ?? 0
-  });
 };
+
+
+// export const updateFallbackSettings = async (req: Request, res: Response) => {
+//   try {
+//     // 1. Get the logged-in user
+//     const user: any = req.user;
+
+//     // 2. Look up which phoneNumber they have selected and their business account
+//     const dbUser = await prisma.user.findUnique({
+//       where: { id: user.userId },
+//       select: { 
+//         selectedPhoneNumberId: true,
+//         businessAccount: {
+//           select: {
+//             id: true,
+//             phoneNumbers: {
+//               where: {
+//                 id: Number(user.selectedPhoneNumberId)
+//               },
+//               select: {
+//                 id: true
+//               }
+//             }
+//           }
+//         }
+//       },
+//     });
+
+//     if (!dbUser?.selectedPhoneNumberId) {
+//       return res
+//         .status(400)
+//         .json({ message: "No phone number selected for this user." });
+//     }
+
+//     if (!dbUser.businessAccount?.[0]) {
+//       return res
+//         .status(400)
+//         .json({ message: "No business account found for this user." });
+//     }
+
+//     // 3. Pull the payload from the frontend
+//     const { enabled, message, maxTriggers } = req.body as {
+//       enabled: boolean;
+//       message: string;
+//       maxTriggers: number;
+//     };
+
+//     // 4. Create or update the BusinessPhoneNumber record
+//     const phoneNumber = await prisma.businessPhoneNumber.upsert({
+//       where: { id: dbUser.businessAccount[0].phoneNumbers[0].id},
+//       update: {
+//         fallbackEnabled: enabled,
+//         fallbackMessage: message,
+//         fallbackTriggerCount: maxTriggers,
+//       },
+//       create: {
+//         metaPhoneNumberId: dbUser.selectedPhoneNumberId,
+//         businessAccountId: dbUser.businessAccount[0].id,
+//         fallbackEnabled: enabled,
+//         fallbackMessage: message,
+//         fallbackTriggerCount: maxTriggers,
+//       },
+//     });
+
+//     return res
+//       .status(200)
+//       .json({ 
+//         message: "Fallback settings saved successfully.",
+//         phoneNumber 
+//       });
+//   } catch (err) {
+//     console.error("Error saving fallback settings:", err);
+//     return res
+//       .status(500)
+//       .json({ message: "Unable to save fallback settings." });
+//   }
+// }; 

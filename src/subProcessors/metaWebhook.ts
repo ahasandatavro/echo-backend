@@ -284,8 +284,11 @@ export const handleChatbotTrigger=async(text:string, recipient:string, phoneNumb
   if (chatbot) {
     await bump(chatbot.id, "triggered");
   }
+  const bp=await prisma.businessPhoneNumber.findFirst({
+    where: { metaPhoneNumberId: phoneNumberId },
+  });
   let conversation = await prisma.conversation.findFirst({
-    where: { recipient },
+    where: { recipient, businessPhoneNumberId: bp?.id },
     orderBy: {
       updatedAt: 'desc', // Orders by the most recently updated conversation
     },
@@ -302,7 +305,33 @@ export const handleChatbotTrigger=async(text:string, recipient:string, phoneNumb
   
             console.log("New conversation created:", conversation);
           }
-          
+          let contact = await prisma.contact.findUnique({
+            where: { phoneNumber: recipient }
+          });
+          if (!contact) {
+            return {
+              ok: false,
+              status: 400,
+              message: "Please open a conversation by sending a message to this number first."
+            };
+          }
+          const lastMsg = await prisma.message.findFirst({
+            where: { 
+              conversationId: conversation?.id,
+              contactId: contact?.id, 
+              sender: "them"
+            },
+            orderBy: { time: 'desc' }
+          });
+            // 2) if no message or older than 24h → error
+            const WINDOW = 24 * 60 * 60 * 1000; // ms
+            if (!lastMsg || Date.now() - lastMsg.time.getTime() > WINDOW) {
+              return {
+                ok: false,
+                status: 400,
+                message: "Please open a conversation by sending a message to this number first."
+              };
+            }    
   if (chatbot) {
     await prisma.conversation.update({
       where: { id: conversation.id },
@@ -310,6 +339,7 @@ export const handleChatbotTrigger=async(text:string, recipient:string, phoneNumb
     });
     await processChatFlow(chatbot.id, recipient, phoneNumberId);
   }
+  return { ok: true };
 }
 
 export async function processBroadcastStatus(statuses: any[]): Promise<void> {
