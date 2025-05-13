@@ -155,9 +155,43 @@ export const updateFallbackSettings = async (req: Request, res: Response) => {
   }
 };
 
+export const getFallbackSettings = async (req: Request, res: Response) => {
+  try {
+    const userId = (req.user as any).userId;
 
-// export const updateFallbackSettings = async (req: Request, res: Response) => {
-//   try {
+    // 1) find which BusinessPhoneNumber this user has selected
+    const dbUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { selectedPhoneNumberId: true },
+    });
+    if (!dbUser?.selectedPhoneNumberId) {
+      return res.status(400).json({ message: "No phone number selected." });
+    }
+const bp=await prisma.businessPhoneNumber.findFirst({
+  where: { metaPhoneNumberId: dbUser.selectedPhoneNumberId },
+  select: { id: true },
+});
+    // 2) load its fallback settings
+    const phone = await prisma.businessPhoneNumber.findUnique({
+      where: { id: bp?.id },
+      select: {
+        fallbackEnabled: true,
+        fallbackMessage: true,
+        fallbackTriggerCount: true,
+      },
+    });
+
+    return res.json({
+      enabled: phone?.fallbackEnabled ?? false,
+      message: phone?.fallbackMessage ?? "",
+      maxTriggers: phone?.fallbackTriggerCount ?? 0,
+    });
+  } catch (err) {
+    console.error("GET fallback settings error:", err);
+    return res.status(500).json({ message: "Failed to load fallback settings." });
+  }
+};
+
 //     // 1. Get the logged-in user
 //     const user: any = req.user;
 

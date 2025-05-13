@@ -994,12 +994,12 @@ else chatbotId = text ? await findChatbotIdByKeyword(text) : null;
       `No keyword match—hit ${nextHitCount}/${fallbackTriggerCount}, sending fallback.`
     );
 
+  } else {
     await sendMessage(
       recipient,
       { type: "text", message: fallbackMessage },
       1,1,true,agentPhoneNumberId
     );
-  } else {
     // below threshold → just increment counter
     await prisma.businessPhoneNumber.update({
       where: { id },
