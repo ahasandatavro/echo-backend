@@ -28,7 +28,8 @@ export const brodcastTemplate = async (
         },
       });
      
-    } catch (error) {
-      console.error("Error sending template message:", error);
+    } catch (error: any) {
+      console.error("Error sending template message:", error.response.data.error.message);
+      throw error;
     }
   };
