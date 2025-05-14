@@ -103,8 +103,9 @@ export const createKeyword = async (req: Request, res: Response) => {
 
 export const getAllKeywords = async (req: Request, res: Response) => {
   try {
-    console.log("hit");
+    //console.log("hit");
     const keywords = await prisma.keyword.findMany({
+      where: { userId: req.user.userId },
       include: {
         replyMaterials: {
           include: {
