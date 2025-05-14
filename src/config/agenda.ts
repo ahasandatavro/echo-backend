@@ -51,7 +51,8 @@ agenda.define<SendScheduledBroadcastData>('sendScheduledBroadcast', async (job: 
         recipient.contact.phoneNumber,
         broadcast.templateName,
         0,
-        broadcast.id
+        broadcast.id,
+        broadcast?.phoneNumberId || undefined
       );
     }
 

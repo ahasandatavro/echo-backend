@@ -5,10 +5,11 @@ export const brodcastTemplate = async (
     recipient: string,
     selectedTemplate: string,
     chatbotId: number,
-    broadcastId?: number
+    broadcastId: number,
+    phoneNumberId?: string
   ) => {
     try {
-      const url = `${metaWhatsAppAPI.baseURL}/${metaWhatsAppAPI.phoneNumberId}/messages`;
+      const url = `${metaWhatsAppAPI.baseURL}/${phoneNumberId}/messages`;
       const payload = {
         messaging_product: "whatsapp",
         to: recipient,

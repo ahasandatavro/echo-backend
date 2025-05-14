@@ -294,6 +294,9 @@ export const createBroadcast = async (req: Request, res: Response) => {
       select: { id: true, selectedPhoneNumberId: true },
     });
     const phoneNumberId = dbUser?.selectedPhoneNumberId;
+    if (!phoneNumberId) {
+      return res.status(400).json({ message: "No phone number selected." });
+    }
     const contactsToConnect = await prisma.contact.findMany({
       where: {
         phoneNumber: { in: contacts },
@@ -346,7 +349,8 @@ export const createBroadcast = async (req: Request, res: Response) => {
           phoneNumber,
           templateName,
           chatbotId,
-          broadcast.id
+          broadcast.id,
+          phoneNumberId
         );
       }
 
