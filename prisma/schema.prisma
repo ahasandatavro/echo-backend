@@ -121,11 +121,16 @@ model Rule {
   conditions Json? // Filters and conditions
   actionData Json? // Details specific to the action type
 
-  // User association
+  // Who created the rule
   userId Int
   user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+//the rule under the businessPhoneNumber
+  businessPhoneNumberId Int
+  businessPhoneNumber   BusinessPhoneNumber @relation(fields: [businessPhoneNumberId], references: [id], onDelete: Cascade)
+
   @@index([userId])
+   @@index([businessPhoneNumberId])
 }
 
 model BusinessPhoneNumber {
@@ -147,6 +152,7 @@ model BusinessPhoneNumber {
  fallbackMessage       String?
  fallbackTriggerCount  Int                    @default(3)
  fallbackHitCount      Int                    @default(0)
+ rules                 Rule[]
 }
 
 model NotificationSetting {

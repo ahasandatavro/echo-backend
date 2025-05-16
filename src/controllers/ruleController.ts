@@ -8,9 +8,21 @@ export const getAllRules = async (req: Request, res: Response) => {
   try {
     const reqUser: any = req.user;
     const userId = reqUser.userId;
-    
+    const dbUser = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+    if (!dbUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    const businessPhoneNumberId = dbUser.selectedPhoneNumberId;
+    const bp = await prisma.businessPhoneNumber.findFirst({
+      where: { metaPhoneNumberId: businessPhoneNumberId||"" },
+    });
+    if (!bp) {
+      return res.status(404).json({ error: 'Business phone number not found' });
+    }
     const rules = await prisma.rule.findMany({
-      where: { userId },
+      where: { businessPhoneNumberId: bp.id },
       orderBy: { lastUpdated: 'desc' },
     });
     
@@ -31,7 +43,6 @@ export const getRule = async (req: Request, res: Response) => {
     const rule = await prisma.rule.findFirst({
       where: { 
         id: parseInt(id),
-        userId
       }
     });
     
@@ -51,6 +62,19 @@ export const createRule = async (req: Request, res: Response) => {
   try {
     const reqUser: any = req.user;
     const userId = reqUser.userId;
+    const dbUser = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+    if (!dbUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    const businessPhoneNumberId = dbUser.selectedPhoneNumberId;
+    const bp = await prisma.businessPhoneNumber.findFirst({
+      where: { metaPhoneNumberId: businessPhoneNumberId||"" },
+    });
+    if (!bp) {
+      return res.status(404).json({ error: 'Business phone number not found' });
+    }
     const { name, triggerType, action, status, conditions, actionData } = req.body;
     
     if (!name || !triggerType || !action) {
@@ -72,6 +96,7 @@ export const createRule = async (req: Request, res: Response) => {
         status: status || 'Active',
         conditions: safeConditions,
         actionData: safeActionData,
+        businessPhoneNumberId: bp.id,
         userId,
       },
     });
@@ -88,6 +113,19 @@ export const updateRule = async (req: Request, res: Response) => {
   try {
     const reqUser: any = req.user;
     const userId = reqUser.userId;
+    const dbUser = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+    if (!dbUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    const businessPhoneNumberId = dbUser.selectedPhoneNumberId;
+    const bp = await prisma.businessPhoneNumber.findFirst({
+      where: { metaPhoneNumberId: businessPhoneNumberId||"" },
+    });
+    if (!bp) {
+      return res.status(404).json({ error: 'Business phone number not found' });
+    }
     const { id } = req.params;
     const { name, triggerType, action, status, conditions, actionData } = req.body;
     
@@ -97,7 +135,7 @@ export const updateRule = async (req: Request, res: Response) => {
     const existingRule = await prisma.rule.findFirst({
       where: { 
         id: ruleId,
-        userId
+        businessPhoneNumberId: bp.id
       }
     });
     
@@ -134,17 +172,13 @@ export const updateRule = async (req: Request, res: Response) => {
 // Delete a rule
 export const deleteRule = async (req: Request, res: Response) => {
   try {
-    const reqUser: any = req.user;
-    const userId = reqUser.userId;
     const { id } = req.params;
-    
     const ruleId = parseInt(id);
     
     // Verify the rule exists and belongs to the user
     const existingRule = await prisma.rule.findFirst({
       where: { 
-        id: ruleId,
-        userId
+        id: ruleId
       }
     });
     
