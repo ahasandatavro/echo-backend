@@ -1,22 +1,3 @@
-// import { Router } from 'express';
-// import {
-//   createTextMaterial,
-//   getAllTextMaterials,
-//   updateTextMaterial,
-//   deleteTextMaterial,
-// } from '../controllers/textMaterialController';
-
-// const router: Router = Router();
-
-// // Define CRUD routes
-// router.post('/', createTextMaterial);
-// router.get('/', getAllTextMaterials);
-// router.put('/:id', updateTextMaterial);
-// router.delete('/:id', deleteTextMaterial);
-
-// export default router;
-
-// replyMaterials.ts
 import express, { Request, Response } from 'express';
 import multer from 'multer';
 import axios from 'axios';
@@ -45,21 +26,6 @@ export const uploadFileToDigitalOcean = async (file: Express.Multer.File): Promi
   return response.data.fileUrl;
 };
 
-// router.get('/', async (req: Request, res: Response) => {
-//   const { type } = req.query;
-//   try {
-//     const materialType = type ? type as MaterialType : undefined;
-//     const materials = materialType
-//       ? await prisma.replyMaterial.findMany({
-//           where: { type: materialType },
-//         })
-//       : await prisma.replyMaterial.findMany();
-//     res.json(materials);
-//   } catch (error) {
-//     console.error('Error fetching reply materials:', error);
-//     res.status(500).json({ message: 'Failed to fetch reply materials', error });
-//   }
-// });
 router.get('/', async (req: Request, res: Response) => {
   const { type } = req.query;
 
@@ -141,7 +107,7 @@ router.post('/', upload.single('file'), async (req: Request, res: Response) => {
     }
     if (type === "CONTACT_ATTRIBUTES") {
       // Assume req.body.contactAttributes contains your attribute data (as JSON or a string)
-      const contactAttributes = req.body.contactAttributes;
+      const contactAttributes = req.body.content;
       content = typeof contactAttributes === "string" ? contactAttributes : JSON.stringify(contactAttributes);
     }
 
@@ -167,7 +133,7 @@ router.post('/', upload.single('file'), async (req: Request, res: Response) => {
 router.put('/:id', upload.single('file'), async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id);
-    const { type, content } = req.body;
+    let { type, content } = req.body;
     let name = req.body.name || '';
     let fileUrl: string | undefined;
 
@@ -176,14 +142,24 @@ router.put('/:id', upload.single('file'), async (req: Request, res: Response) =>
       name = req.file.originalname;
       fileUrl = await uploadFileToDigitalOcean(req.file);
     }
-
+    if (type === "CONTACT_ATTRIBUTES"|| type === "Contact Attributes") {
+      // Assume req.body.contactAttributes contains your attribute data (as JSON or a string)
+      type = MaterialType.CONTACT_ATTRIBUTES;
+      const contactAttributes = req.body.content;
+      content = typeof contactAttributes === "string" ? contactAttributes : JSON.stringify(contactAttributes);
+    }
     const updatedMaterial = await prisma.replyMaterial.update({
       where: { id },
       data: {
         type: type as MaterialType,
         name,
-        content: type === MaterialType.TEXT ? content : null,
-        // Only update fileUrl if a new one was generated
+        //content: type === (MaterialType.TEXT || MaterialType.CONTACT_ATTRIBUTES ||"CONTACT_ATTRIBUTES") ? content : null,
+        content: (
+          type === MaterialType.TEXT ||
+          type === MaterialType.CONTACT_ATTRIBUTES ||
+          type === "CONTACT_ATTRIBUTES"
+        ) ? content : null,
+        
         ...(fileUrl && { fileUrl }),
       },
     });

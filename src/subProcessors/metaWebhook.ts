@@ -508,6 +508,9 @@ export const processMessageUpdate = async (value: any, io: any) => {
   const agentPhoneNumber = value?.metadata?.display_phone_number;
   
   const phoneNumberId = value?.metadata?.phone_number_id;
+  const bp = await prisma.businessPhoneNumber.findFirst({
+    where: { metaPhoneNumberId: phoneNumberId||"" },
+  });
   const dbUser = await prisma.user.findFirst({
     where: { selectedPhoneNumberId: phoneNumberId },
   });
@@ -590,9 +593,6 @@ if (messageAssignedEmails.length > 0) {
 }
   if (!sender) return;
 
-  // if (!isAllowedSender(sender)) {
-  //   return;
-  // }
 
 //create media url for media messages,otherwise directly save in db with creating conversation
   const processedMessage = await processWebhookMessage(
@@ -614,7 +614,7 @@ if (messageAssignedEmails.length > 0) {
 // Fetch Active Rules for this agent/user
 const activeRules = await prisma.rule.findMany({
   where: {
-    userId: 1,
+    businessPhoneNumberId: bp?.id,
     status: "Active",
     triggerType: "whatsappMessage",
   },
@@ -680,7 +680,7 @@ const processRuleForMessage = async (
   // Step 2: Perform the action (same as before)
   switch (actionType) {
     case "sendTemplate":
-      await sendTemplate(sender, actionData.templateId, 0, {});
+      await sendTemplate(sender, actionData.templateId, 0, {}, phoneNumberId);
       break;
     case "sendMessage": {
       const { messageType, replyId } = actionData;

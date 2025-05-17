@@ -316,7 +316,7 @@ export const sendDefaultMaterial = async (
                 },
               };
 
-          await sendMessage(recipient, messageContent, fallbackChatbotId);
+          await sendMessage(recipient, messageContent, fallbackChatbotId,1,true,agentPhoneNumberId);
           return true;
         }
         break;
@@ -325,7 +325,7 @@ export const sendDefaultMaterial = async (
       case 'template': {
         const template = await prisma.template.findUnique({ where: { id } });
         if (template) {
-          await sendTemplate(recipient, template.name, fallbackChatbotId, template);
+          await sendTemplate(recipient, template.name, fallbackChatbotId, template,agentPhoneNumberId);
           return true;
         }
         break;
@@ -333,7 +333,7 @@ export const sendDefaultMaterial = async (
       case 'templates': {
         const template = await prisma.template.findUnique({ where: { id } });
         if (template) {
-          await sendTemplate(recipient, template.name, fallbackChatbotId, template);
+          await sendTemplate(recipient, template.name, fallbackChatbotId, template,agentPhoneNumberId);
           return true;
         }
         break;
