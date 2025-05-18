@@ -107,6 +107,12 @@ export const createTemplate = async (req: Request, res: Response) => {
 
     // ✅ Preprocess only BODY type
     const processedComponents = components.map(async (component: any) => {
+      if (
+        component.type === "HEADER" &&
+        (!component.format || (!component.text?.trim() && !req.file))
+      ) {
+        return null; // skip
+      }
       if (component.type === "BODY") {
         return {
           ...component,
