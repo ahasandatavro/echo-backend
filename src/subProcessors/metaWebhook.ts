@@ -741,10 +741,19 @@ const evaluateRuleConditions = async (
   // 1️⃣ Keyword Filter
   if (conditions.keywordFilter) {
     const text = message?.text?.body || "";
-    const keywords = conditions.keywordFilter.keywords?.split(",").map((k: string) => k.trim().toLowerCase());
+    const keyword = await prisma.keyword.findFirst({
+      where: {
+        value: {
+          equals: text,
+          mode: "insensitive",
+        },
+      },
+    });
 
-    const matches = keywords?.some((k: string) => text.toLowerCase().includes(k));
-    if (!matches) return false;
+    if (keyword) {
+      return false;
+
+    }
   }
   if (conditions.contactFilter) {
     const { operator, value } = conditions.contactFilter;
@@ -779,7 +788,22 @@ const evaluateRuleConditions = async (
         return false; // Unknown operator, fail-safe
     }
   }
-  
+   if(conditions.selectedFilter==="noKeyword"){
+    const text = message?.text?.body || "";
+    const keyword = await prisma.keyword.findFirst({
+      where: {
+        value: {
+          equals: text,
+          mode: "insensitive",
+        },
+      },
+    });
+
+    if (!keyword) {
+      return false;
+
+    }
+   }
   // 2️⃣ Contact Attribute Filter (Json attributes field)
   if (conditions.contactAttributeFilter) {
     const { attribute, operator, value } = conditions.contactAttributeFilter;

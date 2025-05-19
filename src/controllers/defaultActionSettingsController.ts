@@ -115,17 +115,17 @@ export const createOrUpdateDefaultActionSettings = async (req: Request, res: Res
       waitingMessageEnabled: cb9 || false,
 
       // ✅ Map selectedMaterials dynamically
-      outsideWorkingHoursMaterialId: Number(selectedMaterials.cb1?.materialId) || null,
-      outsideWorkingHoursMaterialType: selectedMaterials.cb1?.materialType || null,
+      outsideWorkingHoursMaterialId: Number(selectedMaterials?.cb1?.materialId) || null,
+      outsideWorkingHoursMaterialType: selectedMaterials?.cb1?.materialType || null,
 
-      noAgentOnlineMaterialId: Number(selectedMaterials.cb2?.materialId) || null,
-      noAgentOnlineMaterialType: selectedMaterials.cb2?.materialType || null,
+      noAgentOnlineMaterialId: Number(selectedMaterials?.cb2?.materialId) || null,
+      noAgentOnlineMaterialType: selectedMaterials?.cb2?.materialType || null,
 
-      fallbackMessageMaterialId: Number(selectedMaterials.cb3?.materialId) || null,
-      fallbackMessageMaterialType: selectedMaterials.cb3?.materialType || null,
+      fallbackMessageMaterialId: Number(selectedMaterials?.cb3?.materialId) || null,
+      fallbackMessageMaterialType: selectedMaterials?.cb3?.materialType || null,
 
-      noResponseAfter24hMaterialId: Number(selectedMaterials.cb4?.materialId) || null,
-      noResponseAfter24hMaterialType: selectedMaterials.cb4?.materialType || null,
+      noResponseAfter24hMaterialId: Number(selectedMaterials?.cb4?.materialId) || null,
+      noResponseAfter24hMaterialType: selectedMaterials?.cb4?.materialType || null,
     };
 
     // ✅ Check if settings already exist
