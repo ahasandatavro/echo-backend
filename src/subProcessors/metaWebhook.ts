@@ -3,6 +3,7 @@ import { prisma } from '../models/prismaClient';
 import { BroadcastStatus } from "@prisma/client";
 import { resolveVariables } from "../helpers/validation";
 import { Rule } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import {
   processChatFlow,
   processNode,
@@ -622,7 +623,7 @@ const activeRules = await prisma.rule.findMany({
 
 if (activeRules.length > 0) {
   for (const rule of activeRules) {
-    await processRuleForMessage(rule, sender, message, phoneNumberId);
+    await processRuleForMessage(rule, sender, message, phoneNumberId, dbUser?.id);
   }
 }
 
@@ -663,7 +664,8 @@ const processRuleForMessage = async (
   rule: Rule,
   sender: string,
   message: any,
-  phoneNumberId: string | undefined
+  phoneNumberId: string | undefined,
+  agentId: number | undefined
 ) => {
   const actionType = rule.action;
   const actionData = rule.actionData as any;
@@ -711,10 +713,83 @@ const processRuleForMessage = async (
         await handleChatbotTrigger("chatbot:"+chatbot.name,sender, phoneNumberId);
       }
       break;
-    case "updateAttribute":
-      // same logic...
-      break;
-    default:
+
+      case "updateAttribute": {
+        const material = await prisma.replyMaterial.findFirst({
+          where: {
+            id: parseInt(actionData.attributeId, 10)
+          }
+        });
+      
+        if (!material?.content) break;
+      
+        let parsedAttributes: { attribute: string; value: string }[] = [];
+      
+        try {
+          parsedAttributes = JSON.parse(material.content);
+        } catch (e) {
+          console.error("Failed to parse attributes JSON:", e);
+          break;
+        }
+      
+        const contact = await prisma.contact.findFirst({
+          where: { phoneNumber: sender }
+        });
+      
+        const normalizeBool = (val: string | null) =>
+          val?.toLowerCase() === "true" ? true : false;
+      
+        const directFields: any = {};
+        const flatAttributes: Record<string, string> = {};
+      
+        parsedAttributes.forEach(({ attribute, value }) => {
+          switch (attribute) {
+            case "allowbrodcast":
+              directFields.subscribed = normalizeBool(value);
+              break;
+            case "allowsms":
+              directFields.sendSMS = normalizeBool(value);
+              break;
+            case "Source":
+            case "Channel":
+              directFields.source = value || "Unknown";
+              break;
+            default:
+              flatAttributes[attribute] = value;
+          }
+        });
+      
+        if (contact) {
+          const existingAttrs = (contact.attributes || {}) as Prisma.JsonObject;
+      
+          await prisma.contact.update({
+            where: { id: contact.id },
+            data: {
+              ...directFields,
+              attributes: {
+                ...existingAttrs,
+                ...flatAttributes,
+              },
+            },
+          });
+      
+          console.log(`Contact ${contact.id} updated with attributes`);
+        } else {
+          await prisma.contact.create({
+            data: {
+              phoneNumber: sender,
+              attributes: flatAttributes,
+              ...directFields,
+              createdById: agentId,
+            },
+          });
+      
+          console.log(`Contact ${sender} created with attributes`);
+        }
+      
+        break;
+      }
+      default:
       console.log(`Rule "${rule.name}" has an unknown action type.`);
   }
 

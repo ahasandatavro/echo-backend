@@ -589,18 +589,70 @@ export const deleteTag = async (req: Request, res: Response) => {
  * ---------------------------------- */
 
 // GET /users/:id/attributes?search=&page=&rowsPerPage=
-export const getAttributes = async (req: Request, res: Response) => {
+// export const getAttributes = async (req: Request, res: Response) => {
+//   try {
+//     const reqUser: any = req.user;
+//     const user = await prisma.user.findFirst({
+//       where: { id: reqUser.userId },
+//     });
+//     if (!user) return res.status(404).json({ error: "User not found" });
+//     const search = (req.query.search as string) || "";
+//     const page = parseInt(req.query.page as string, 10) || 1;
+//     const rowsPerPage = parseInt(req.query.rowsPerPage as string, 10) || 5;
+//     // If attributes is an array of strings:
+//     const allAttrs = (user.attributes as string[]) || [];
+//     const filtered = allAttrs.filter((attr) =>
+//       attr.toLowerCase().includes(search.toLowerCase())
+//     );
+
+//     const totalRows = filtered.length;
+//     const startIndex = (page - 1) * rowsPerPage;
+//     const endIndex = startIndex + rowsPerPage;
+//    // const pageData = filtered.slice(startIndex, endIndex);
+//    const pageData =allAttrs;
+
+//     return res.json({
+//       data: pageData,
+//       totalRows,
+//       currentPage: page,
+//       rowsPerPage,
+//     });
+//   } catch (error: any) {
+//     console.error("Error getting attributes:", error);
+//     return res.status(500).json({ error: error.message });
+//   }
+// };
+export const getBasicAttributes = async (req: Request, res: Response) => {
   try {
     const reqUser: any = req.user;
     const user = await prisma.user.findFirst({
       where: { id: reqUser.userId },
     });
+
     if (!user) return res.status(404).json({ error: "User not found" });
+
     const search = (req.query.search as string) || "";
     const page = parseInt(req.query.page as string, 10) || 1;
     const rowsPerPage = parseInt(req.query.rowsPerPage as string, 10) || 5;
-    // If attributes is an array of strings:
-    const allAttrs = (user.attributes as string[]) || [];
+
+    // Ensure user.attributes is an array
+    const allAttrs: string[] = Array.isArray(user.attributes)
+      ? user.attributes
+      : [];
+
+    const requiredAttrs = ["allowbrodcast", "allowsms", "Source", "Channel"];
+    const missingAttrs = requiredAttrs.filter((attr) => !allAttrs.includes(attr));
+
+    // If there are missing attributes, update the user
+    if (missingAttrs.length > 0) {
+      const updatedAttrs = [...allAttrs, ...missingAttrs];
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { attributes: updatedAttrs },
+      });
+      allAttrs.push(...missingAttrs);
+    }
+
     const filtered = allAttrs.filter((attr) =>
       attr.toLowerCase().includes(search.toLowerCase())
     );
@@ -608,8 +660,7 @@ export const getAttributes = async (req: Request, res: Response) => {
     const totalRows = filtered.length;
     const startIndex = (page - 1) * rowsPerPage;
     const endIndex = startIndex + rowsPerPage;
-   // const pageData = filtered.slice(startIndex, endIndex);
-   const pageData =allAttrs;
+    const pageData = filtered.slice(startIndex, endIndex);
 
     return res.json({
       data: pageData,
@@ -622,6 +673,71 @@ export const getAttributes = async (req: Request, res: Response) => {
     return res.status(500).json({ error: error.message });
   }
 };
+
+export const getAllAttributes = async (req: Request, res: Response) => {
+  try {
+    const reqUser: any = req.user;
+    const user = await prisma.user.findFirst({
+      where: { id: reqUser.userId },
+    });
+
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    // const search = (req.query.search as string) || "";
+    // const page = parseInt(req.query.page as string, 10) || 1;
+    // const rowsPerPage = parseInt(req.query.rowsPerPage as string, 10) || 5;
+
+    const userAttrs: string[] = Array.isArray(user.attributes)
+      ? user.attributes
+      : [];
+
+    const requiredAttrs = ["allowbrodcast", "allowsms", "Source", "Channel"];
+    const missingAttrs = requiredAttrs.filter((attr) => !userAttrs.includes(attr));
+
+    // Update user attributes if any required ones are missing
+    if (missingAttrs.length > 0) {
+      const updatedAttrs = [...userAttrs, ...missingAttrs];
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { attributes: updatedAttrs },
+      });
+      userAttrs.push(...missingAttrs);
+    }
+
+    // 🔍 Fetch attribute keys from contacts created by this user
+    const contacts = await prisma.contact.findMany({
+      where: { createdById: user.id },
+      select: { attributes: true },
+    });
+
+    const contactAttrs = new Set<string>();
+    contacts.forEach((c) => {
+      const attrs = c.attributes as Record<string, any>;
+      if (attrs && typeof attrs === "object") {
+        Object.keys(attrs).forEach((key) => contactAttrs.add(key));
+      }
+    });
+
+    const allAttrs = Array.from(new Set([...userAttrs, ...Array.from(contactAttrs)]));
+
+    // const filtered = allAttrs.filter((attr) =>
+    //   attr.toLowerCase().includes(search.toLowerCase())
+    // );
+
+    // const totalRows = filtered.length;
+    // const startIndex = (page - 1) * rowsPerPage;
+    // const endIndex = startIndex + rowsPerPage;
+    // const pageData = filtered.slice(startIndex, endIndex);
+
+    return res.json({
+      data: allAttrs,
+    });
+  } catch (error: any) {
+    console.error("Error getting attributes:", error);
+    return res.status(500).json({ error: error.message });
+  }
+};
+
 
 // POST /users/attributes  { "attribute": "newAttr" }
 export const createAttribute = async (req: Request, res: Response) => {

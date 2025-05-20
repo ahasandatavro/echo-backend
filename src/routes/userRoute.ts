@@ -14,10 +14,11 @@ import {
   createTag,
   updateTag,
   deleteTag,
-  getAttributes,
+  getAllAttributes,
   createAttribute,
   updateAttribute,
-  deleteAttribute
+  deleteAttribute,
+  getBasicAttributes,
 } from "../controllers/userController"
 import multer from "multer";
 
@@ -35,7 +36,8 @@ router.post("/tags", createTag);
 router.put("/tags/:oldTag", updateTag);
 router.delete("/tags/:tag", deleteTag);
 
-router.get("/attributes", getAttributes);
+router.get("/attributes", getBasicAttributes);
+router.get("/attributes/all", getAllAttributes);
 router.post("/attributes", createAttribute);
 router.put("/attributes/:oldAttr", updateAttribute);
 router.delete("/attributes/:attr", deleteAttribute);

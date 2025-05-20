@@ -153,6 +153,7 @@ model BusinessPhoneNumber {
  fallbackTriggerCount  Int                    @default(3)
  fallbackHitCount      Int                    @default(0)
  rules                 Rule[]
+ replyMaterials        ReplyMaterial[]
 }
 
 model NotificationSetting {
@@ -497,6 +498,9 @@ model ReplyMaterial {
   createdAt DateTime               @default(now())
   updatedAt DateTime               @updatedAt
   keywords  KeywordReplyMaterial[]
+  businessPhoneNumberId  Int?
+  businessPhoneNumber    BusinessPhoneNumber? @relation(fields: [businessPhoneNumberId], references: [id])
+
 }
 
 model RoutingMaterial {
