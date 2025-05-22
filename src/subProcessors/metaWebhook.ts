@@ -670,9 +670,12 @@ const processRuleForMessage = async (
   const actionType = rule.action;
   const actionData = rule.actionData as any;
   const conditions = rule.conditions as any;
+  const contact = await prisma.contact.findUnique({
+    where: { phoneNumber: sender, },
+  });
 
   // Step 1: Evaluate Conditions FIRST
-  const conditionsMet = await evaluateRuleConditions(conditions, sender, message);
+  const conditionsMet = await evaluateRuleConditions(conditions, sender, message,phoneNumberId);
 
   if (!conditionsMet) {
     console.log(`Rule "${rule.name}" skipped: Conditions not met`);
@@ -700,10 +703,81 @@ const processRuleForMessage = async (
       }
       break;
     }
-    case "routeChat":
-      // same logic...
+    case "routeChat": {
+      const { routingType, selectedOptions } = actionData;
+    
+      if (!routingType || !Array.isArray(selectedOptions) || selectedOptions.length === 0) {
+        console.log("❌ Invalid routeChat action data");
+        break;
+      }
+    
+      const selected = selectedOptions[0]; // We're assuming single-select
+    
+      if (routingType === "agent") {
+        await prisma.contact.update({
+          where: { id: contact?.id },
+          data: { userId: selected.id },
+        });
+    if (contact){
+        await prisma.chatStatusHistory.create({
+          data: {
+            contactId: contact?.id,
+            previousStatus: contact?.ticketStatus,
+            newStatus: "Assigned",
+            type: "assignmentChanged",
+            note: `Assigned to agent ${selected.name}`,
+            assignedToUserId: selected.id,
+            changedById: null,
+            changedAt: new Date(),
+          },
+        });
+    
+        console.log(`✅ Assigned agent ${selected.name} to contact ${sender}`);
+      }
+    
+      if (routingType === "team") {
+        // Fetch current assigned teams
+        const fullContact = await prisma.contact.findUnique({
+          where: { id: contact?.id },
+          include: { assignedTeams: true },
+        });
+    
+        const alreadyAssigned = fullContact?.assignedTeams.some((team) => team.id === selected.id);
+    
+        if (!alreadyAssigned) {
+          await prisma.contact.update({
+            where: { id: contact?.id },
+            data: {
+              assignedTeams: {
+                connect: { id: selected.id },
+              },
+            },
+          });
+    if (contact){
+          await prisma.chatStatusHistory.create({
+            data: {
+              contactId: contact?.id,
+              previousStatus: contact?.ticketStatus,
+              newStatus: "TeamAssigned",
+              type: "assignmentChanged",
+              note: `Assigned to team ${selected.name}`,
+              changedById: null,
+              changedAt: new Date(),
+              timerStartTime: contact?.ticketStatus === "Open" ? new Date() : contact?.timerStartTime,
+            },
+          });
+    
+          console.log(`✅ Assigned team ${selected.name} to contact ${sender}`);
+        }
+      }
+    
       break;
-    case "startChatbot":
+    }
+    
+  }
+  break;
+}
+    case "startChatbot":{
       const chatbot = await prisma.chatbot.findFirst({
         where: {
           id: parseInt(actionData.chatbotId, 10),
@@ -713,10 +787,10 @@ const processRuleForMessage = async (
         await handleChatbotTrigger("chatbot:"+chatbot.name,sender, phoneNumberId);
       }
       break;
-
-      case "updateAttribute": {
-        const material = await prisma.replyMaterial.findFirst({
-          where: {
+    }
+    case "updateAttribute": {
+      const material = await prisma.replyMaterial.findFirst({
+        where: {
             id: parseInt(actionData.attributeId, 10)
           }
         });
@@ -803,7 +877,8 @@ const processRuleForMessage = async (
 const evaluateRuleConditions = async (
   conditions: any,
   sender: string,
-  message: any
+  message: any,
+  phoneNumberId: string | undefined
 ): Promise<boolean> => {
   if (!conditions || Object.keys(conditions).length === 0) return true;
 
@@ -882,11 +957,30 @@ const evaluateRuleConditions = async (
   // 2️⃣ Contact Attribute Filter (Json attributes field)
   if (conditions.contactAttributeFilter) {
     const { attribute, operator, value } = conditions.contactAttributeFilter;
-    
-    const attributesObj = contact.attributes as Record<string, any>; // Fix typing
-    const attrValue = attributesObj?.[attribute];
   
-    if (attrValue === undefined) return false;
+    // Check direct fields first
+    const directFields = ["allowbrodcast", "allowsms", "Source", "Channel"];
+    let attrValue: any;
+  
+    if (directFields.includes(attribute)) {
+      switch (attribute) {
+        case "allowbrodcast":
+          attrValue = contact.subscribed;
+          break;
+        case "allowsms":
+          attrValue = contact.sendSMS;
+          break;
+        case "Source":
+        case "Channel":
+          attrValue = contact.source;
+          break;
+      }
+    } else {
+      const attributesObj = contact.attributes as Record<string, any>;
+      attrValue = attributesObj?.[attribute];
+    }
+  
+    if (attrValue === undefined || attrValue === null) return false;
   
     const attrStr = attrValue.toString().toLowerCase();
     const filterVal = value.toString().toLowerCase();
@@ -907,9 +1001,8 @@ const evaluateRuleConditions = async (
       default:
         return false;
     }
-  }
+  }  
   
-
   // 3️⃣ Tags Filter (You can add a new type if you like)
   if (conditions.tagsFilter) {
     const requiredTags = conditions.tagsFilter.tags?.map((t: string) => t.trim().toLowerCase());
@@ -924,37 +1017,76 @@ const evaluateRuleConditions = async (
     const operator = conditions.timestampFilter.operator;
     const value = parseInt(conditions.timestampFilter.value, 10);
     const unit = conditions.timestampFilter.unit;
-
-    const receivedAt = new Date(message.timestamp * 1000); // assuming UNIX timestamp in seconds
     const now = new Date();
-    const diffMs = now.getTime() - receivedAt.getTime();
-    const diffMinutes = diffMs / (1000 * 60);
-    const diffHours = diffMinutes / 60;
-
-    const compareValue = unit === "hours" ? diffHours : diffMinutes;
-
-    switch (operator) {
-      case "less_than":
-        if (!(compareValue < value)) return false;
-        break;
-      case "greater_than":
-        if (!(compareValue > value)) return false;
-        break;
-      default:
-        return false;
+  
+    // ⬇️ If working hour related, fetch DefaultActionSettings from Prisma
+    if (operator === "is_within" || operator === "not_within") {
+      const bp=await prisma.businessPhoneNumber.findFirst({where:{metaPhoneNumberId:phoneNumberId}});
+      const defaultActionSettings = await prisma.defaultActionSettings.findUnique({
+        where: {
+          businessPhoneNumberId: bp?.id, // ⬅️ Make sure you have this available
+        },
+        select: {
+          workingHours: true,
+        },
+      });
+  
+      const workingHours: any = defaultActionSettings?.workingHours || {};
+      const dayName = now.toLocaleDateString("en-US", { weekday: "long" });
+      const todaySchedule = workingHours[dayName];
+  
+      let isWithin = false;
+  
+      if (todaySchedule?.open && Array.isArray(todaySchedule.times)) {
+        const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  
+        isWithin = todaySchedule.times.some((slot: { from: string; to: string }) => {
+          const [fromH, fromM] = slot.from.split(":").map(Number);
+          const [toH, toM] = slot.to.split(":").map(Number);
+  
+          const fromMinutes = fromH * 60 + fromM;
+          const toMinutes = toH * 60 + toM;
+  
+          // Handle overnight time spans
+          if (fromMinutes <= toMinutes) {
+            return nowMinutes >= fromMinutes && nowMinutes <= toMinutes;
+          } else {
+            return nowMinutes >= fromMinutes || nowMinutes <= toMinutes;
+          }
+        });
+      }
+  
+      if (operator === "is_within" && !isWithin) return false;
+      if (operator === "not_within" && isWithin) return false;
+    }
+  
+    // ⬇️ Continue with time difference comparisons
+    if (operator === "less_than" || operator === "greater_than") {
+      const receivedAt = new Date(message.timestamp * 1000); // UNIX timestamp
+      const diffMs = now.getTime() - receivedAt.getTime();
+      const diffMinutes = diffMs / (1000 * 60);
+      const diffHours = diffMinutes / 60;
+  
+      const compareValue = unit === "hours" ? diffHours : diffMinutes;
+  
+      if (operator === "less_than" && !(compareValue < value)) return false;
+      if (operator === "greater_than" && !(compareValue > value)) return false;
     }
   }
+  
 
   // 5️⃣ New Chat Filter
-  if (conditions.newChatFilter) {
+  if (conditions.selectedFilter==="newChat") {
+    const bp=await prisma.businessPhoneNumber.findFirst({where:{metaPhoneNumberId:phoneNumberId}});
     const recentConversation = await prisma.conversation.findFirst({
-      where: { recipient: sender },
+      where: { recipient: sender, businessPhoneNumberId: bp?.id },
       orderBy: { createdAt: "desc" },
     });
-
-    const isNewChat = !recentConversation;
-    if (conditions.newChatFilter.newChatValue === "true" && !isNewChat) return false;
-    if (conditions.newChatFilter.newChatValue === "false" && isNewChat) return false;
+    const messageCount = await prisma.message.count({
+      where: { conversationId: recentConversation?.id },
+    });
+if (messageCount<2) return true;
+ else return false;
   }
 
   // 6️⃣ Condition Blocks (Advanced: skip or implement later)

@@ -14,7 +14,7 @@ import FormData from "form-data";
 import axios from "axios";
 import { parse } from 'csv-parse/sync';
 import path from 'path';
-
+import { ProcessRulesForAttributes } from "../processors/contactProcessor/contactProcessor";
 
 export const getAllContacts = async (req: Request, res: Response) => {
   //console.log('🔄 Starting getAllContacts function');
@@ -106,15 +106,97 @@ export const getAllContacts = async (req: Request, res: Response) => {
   }
 };
 
+// export const getAllImportedContacts = async (req: Request, res: Response) => {
+//   try {
+//     const user:any=req.user;
+//     const dbUser=await prisma.user.findFirst({
+//       where: { id: user.userId },
+//     })
+//     // Fetch all contacts from the database
+//     const contacts = await prisma.contact.findMany({
+//       where: { createdById: dbUser?.id },
+//       select: {
+//         id: true,
+//         name: true,
+//         phoneNumber: true,
+//         attributes: true,
+//         subscribed: true,
+//         sendSMS: true,
+//         ticketStatus: true,
+//         createdAt: true,
+//         updatedAt: true,
+//       },
+//     });
+
+//     // Ensure attributes is always returned as an array
+//     const formattedContacts = contacts.map((contact) => ({
+//       ...contact,
+//       attributes: Array.isArray(contact.attributes)
+//         ? contact.attributes
+//         : Object.entries(contact.attributes || {}).map(([key, value]) => ({
+//             key,
+//             value,
+//           })),
+//     }));
+
+//     res.json(formattedContacts);
+//   } catch (error) {
+//     console.error("Error fetching contacts:", error);
+//     res.status(500).json({ error: "Internal Server Error" });
+//   }
+// };
 export const getAllImportedContacts = async (req: Request, res: Response) => {
   try {
-    const user:any=req.user;
-    const dbUser=await prisma.user.findFirst({
+    const user: any = req.user;
+
+    const dbUser = await prisma.user.findFirst({
       where: { id: user.userId },
-    })
-    // Fetch all contacts from the database
+      select: {
+        id: true,
+        agent: true,
+        createdById: true,
+      },
+    });
+
+    if (!dbUser) return res.status(404).json({ error: "User not found" });
+
+    let userIdsToInclude: number[] = [];
+
+    if (dbUser.agent) {
+      // ✅ If agent: include self + same creator + fellow agents
+      const agents = await prisma.user.findMany({
+        where: {
+          createdById: dbUser.createdById || undefined,
+          agent: true,
+        },
+        select: { id: true },
+      });
+
+      userIdsToInclude = [
+        ...agents.map((a) => a.id),
+        dbUser.createdById!,
+        dbUser.id,
+      ];
+    } else {
+      // ✅ If creator: include self + agents created by them
+      const agents = await prisma.user.findMany({
+        where: {
+          createdById: dbUser.id,
+          agent: true,
+        },
+        select: { id: true },
+      });
+
+      userIdsToInclude = [dbUser.id, ...agents.map((a) => a.id)];
+    }
+
+    // ✅ Fetch all contacts created by any of the users in the set
     const contacts = await prisma.contact.findMany({
-      where: { createdById: dbUser?.id },
+      where: {
+        createdById: {
+          in: userIdsToInclude,
+        },
+      },
       select: {
         id: true,
         name: true,
@@ -128,7 +210,7 @@ export const getAllImportedContacts = async (req: Request, res: Response) => {
       },
     });
 
-    // Ensure attributes is always returned as an array
+    // ✅ Format attributes into array of {key, value} objects
     const formattedContacts = contacts.map((contact) => ({
       ...contact,
       attributes: Array.isArray(contact.attributes)
@@ -268,10 +350,15 @@ export const updateContact = async (req: Request, res: Response) => {
     if (!existingContact) {
       return res.status(404).json({ error: "Contact not found" });
     }
-    
-    // Determine which userId to use (new one from request or existing one)
+  
+  // Determine which userId to use (new one from request or existing one)
     let contactUserId = userId !== undefined ? userId : existingContact.userId;
-    
+    const dbUser = await prisma.user.findFirst({
+      where: { id: req.user.userId },
+    });
+    const bp = await prisma.businessPhoneNumber.findFirst({
+      where: { metaPhoneNumberId: dbUser?.selectedPhoneNumberId },
+    });
     // If userId is not provided in request but we need one, try to get from the logged-in user
     if (contactUserId === undefined || contactUserId === null) {
       const reqUser: any = req.user;
@@ -287,6 +374,7 @@ export const updateContact = async (req: Request, res: Response) => {
         parsedAttributes = typeof attributes === 'string' 
           ? JSON.parse(attributes) 
           : attributes;
+          await ProcessRulesForAttributes(existingContact.attributes, parsedAttributes, bp);
       } catch (error) {
         console.error("Error parsing attributes:", error);
         return res.status(400).json({ error: "Invalid attributes format" });

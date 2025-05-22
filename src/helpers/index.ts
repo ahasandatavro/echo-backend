@@ -61,3 +61,61 @@ export const bump = async (
    // throw err;
   }
 };
+
+export const notifyAgent = async (
+  io: any,
+  assignedToEmail: string,
+  assignedByEmail: string,
+  contactName: string
+): Promise<void> => {
+  const assignee = await prisma.user.findUnique({
+    where: { email: assignedByEmail },
+    include: { createdBy: true },
+  });
+
+  if (!assignee) return;
+
+  let recipients: string[] = [];
+
+  if (!assignee.agent) {
+    // Creator: notify all their agents
+    const createdAgents = await prisma.user.findMany({
+      where: {
+        createdById: assignee.id,
+        agent: true,
+      },
+      select: { email: true },
+    });
+
+    recipients = createdAgents.map((u) => u.email);
+  } else if (assignee.createdById) {
+    // Agent: notify sibling agents and the creator
+    const otherAgents = await prisma.user.findMany({
+      where: {
+        createdById: assignee.createdById,
+        agent: true,
+        NOT: { email: assignedToEmail },
+      },
+      select: { email: true },
+    });
+
+    const creator = await prisma.user.findUnique({
+      where: { id: assignee.createdById },
+      select: { email: true },
+    });
+
+    recipients = [
+      ...otherAgents.map((a) => a.email),
+      ...(creator?.email ? [creator.email] : []),
+    ];
+  }
+
+  for (const email of recipients) {
+    io.emit("chatAssignedToAgent", {
+      email,
+      assignedToEmail,
+      assignedByEmail,
+      contactName,
+    });
+  }
+};
