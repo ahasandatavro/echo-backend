@@ -89,6 +89,7 @@ export const getAllTemplates = async (req: Request, res: Response) => {
   }
 };
 
+
 // **Create a New Template**
 export const createTemplate = async (req: Request, res: Response) => {
 
@@ -277,11 +278,21 @@ export const deleteTemplate = async (req: Request, res: Response) => {
       select: { selectedWabaId: true },
     });
     const selectedWabaId = dbUser?.selectedWabaId;
-    const WHATSAPP_GRAPH_API = `${process.env.META_BASE_URL}/${selectedWabaId}/message_templates`;
+    const WHATSAPP_GRAPH_API = `${process.env.META_BASE_URL}/${selectedWabaId}/message_templates?name=`;
     const { templateName } = req.params;
-    const deleteURL = `${WHATSAPP_GRAPH_API}/${templateName}`;
+    const deleteURL = `${WHATSAPP_GRAPH_API}${templateName}`;
 
     const response = await axiosInstance.delete(deleteURL);
+    if (response.status >= 200 && response.status < 300) {
+      await prisma.template.deleteMany({
+        where: {
+          name: templateName,
+          userId: user.userId,
+          wabaId: selectedWabaId,
+        },
+      });
+    }
+
     res.status(200).json(response.data);
   } catch (error: any) {
     res.status(500).json({
@@ -384,6 +395,52 @@ export const createBroadcast = async (req: Request, res: Response) => {
     });
   }
 };
+export const deleteBroadcast = async (req: Request, res: Response) => {
+  try {
+    const user: any = req.user;
+    const broadcastId = parseInt(req.params.id, 10);
+    if (isNaN(broadcastId)) {
+      return res.status(400).json({ message: "Invalid broadcast ID." });
+    }
+
+    // 1) fetch the broadcast and ensure it belongs to this user
+    const existing = await prisma.broadcast.findUnique({
+      where: { id: broadcastId },
+      select: { id: true, userId: true, status: true },
+    });
+    if (!existing || existing.userId !== user.userId) {
+      return res.status(404).json({ message: "Broadcast not found." });
+    }
+
+    // 2) if still scheduled, cancel the Agenda job
+    if (existing.status === "SCHEDULED") {
+      const agenda = (await import("../config/agenda")).default;
+      await agenda.cancel({
+        name: "sendScheduledBroadcast",
+        "data.broadcastId": broadcastId,
+      });
+    }
+
+    // 3) delete the broadcast (recipients cascade by FK+onDelete)
+    await prisma.broadcast.delete({
+      where: { id: broadcastId },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Broadcast deleted successfully.",
+      broadcastId,
+    });
+  } catch (err: any) {
+    console.error("deleteBroadcast error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to delete broadcast.",
+      error: err.message,
+    });
+  }
+};
+
 
 export const getBroadcastStats = async (req: Request, res: Response) => {
   try {

@@ -6,7 +6,8 @@ import {
   createBroadcast,
   getBroadcastStats,
   getBroadcasts,
-  getTemplateByName
+  getTemplateByName,
+  deleteBroadcast
 } from "../controllers/templateController";
 import multer from "multer";
 
@@ -17,6 +18,7 @@ router.get("/", getAllTemplates);
 router.post("/", upload.single("file"),createTemplate);
 router.get('/brodcast', getBroadcasts);
 router.post("/brodcast", createBroadcast);
+router.delete("/brodcast/:id", deleteBroadcast);
 router.get("/brodcast/:id/stats", getBroadcastStats);
 router.get("/:templateName", getTemplateByName);
 router.delete("/:templateName", deleteTemplate);
