@@ -7,6 +7,7 @@ import "../config/passportConfig";
 import axios from "axios";
 import { sendWelcomeEmail, generateVerificationToken, sendPasswordResetEmail } from "../services/emailService";
 import crypto from 'crypto';
+import { generateTokens, setTokenCookies } from "../utils/tokenUtils";
 
 export const registerUser = async (req: Request, res: Response) => {
   const { email, password, firstName, lastName, phoneNumber, role } = req.body;
@@ -115,13 +116,12 @@ export const loginUser = async (req: Request, res: Response) => {
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) return res.status(401).send("Invalid password");
 
-    const token = jwt.sign(
-      { userId: user.id, role: user.role },
-      `${process.env.JWT_SECRET}`,
-      { expiresIn: "1h" }
-    );
+    const { accessToken, refreshToken } = generateTokens(user.id, user.role);
+    
+    // Set tokens in HTTP-only cookies
+    setTokenCookies(res, accessToken, refreshToken);
+
     res.status(200).json({
-      token,
       user: {
         email: user.email,
         role: user.role,
@@ -458,5 +458,34 @@ export const resetPassword = async (req: Request, res: Response) => {
       success: false,
       message: "An error occurred while resetting your password."
     });
+  }
+};
+
+export const refreshToken = async (req: Request, res: Response) => {
+  const refreshToken = req.cookies.refreshToken;
+
+  if (!refreshToken) {
+    return res.status(401).json({ message: 'Refresh token not found' });
+  }
+
+  try {
+    const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET || 'default-refresh-secret') as { userId: number, role: string };
+    
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId }
+    });
+
+    if (!user) {
+      return res.status(401).json({ message: 'User not found' });
+    }
+
+    const { accessToken, refreshToken: newRefreshToken } = generateTokens(user.id, user.role);
+    
+    // Set new tokens in HTTP-only cookies
+    setTokenCookies(res, accessToken, newRefreshToken);
+
+    res.status(200).json({ message: 'Tokens refreshed successfully' });
+  } catch (error) {
+    return res.status(401).json({ message: 'Invalid refresh token' });
   }
 };
