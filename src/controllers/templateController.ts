@@ -498,6 +498,11 @@ export const getBroadcasts = async (
 ): Promise<void> => {
   try {
     const { startDate, endDate, dateRange } = req.query;
+    const user: any = req.user;
+    const dbUser = await prisma.user.findFirst({
+      where: { id: user.userId },
+    });
+    const selectedPhoneNumberId = dbUser?.selectedPhoneNumberId;
     let where: any = {};
 
     if (dateRange && dateRange !== "customRange") {
@@ -527,7 +532,7 @@ export const getBroadcasts = async (
       };
     }
     const broadcasts = await prisma.broadcast.findMany({
-      where,
+      where: { phoneNumberId: selectedPhoneNumberId,userId:user.id},
       include: { recipients: true },
     });
     res.status(200).json(broadcasts);
