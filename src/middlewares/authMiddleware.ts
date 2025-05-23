@@ -15,7 +15,7 @@ export const authenticateJWT = async (req: Request, res: Response, next: NextFun
   const refreshToken = req.cookies.refreshToken;
 
   if (!accessToken && !refreshToken) {
-    return res.status(401).send('Access denied. No tokens provided.');
+    return res.status(401).send({message: 'Access denied. Invalid refresh token.', code: 'REFRESH_TOKEN_INVALID'});
   }
 
   try {
@@ -27,13 +27,13 @@ export const authenticateJWT = async (req: Request, res: Response, next: NextFun
   } catch (error) {
     // Access token is invalid or expired
     if (!refreshToken) {
-      return res.status(401).send('Access denied. Invalid access token and no refresh token.');
+      return res.status(401).send({message: 'Access denied. Invalid refresh token.', code: 'REFRESH_TOKEN_INVALID'});
     }
 
     try {
       // Try to verify refresh token
       const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET!) as TokenPayload;
-      
+
       // Get user from database
       const user = await prisma.user.findUnique({
         where: { id: decoded.userId }
@@ -45,7 +45,7 @@ export const authenticateJWT = async (req: Request, res: Response, next: NextFun
 
       // Generate new tokens
       const { accessToken: newAccessToken, refreshToken: newRefreshToken } = generateTokens(user.id, user.role);
-      
+
       // Set new tokens in cookies
       setTokenCookies(res, newAccessToken, newRefreshToken);
 
@@ -53,7 +53,7 @@ export const authenticateJWT = async (req: Request, res: Response, next: NextFun
       req.user = { userId: user.id, role: user.role };
       next();
     } catch (refreshError) {
-      return res.status(401).send('Access denied. Invalid refresh token.');
+      return res.status(401).send({message: 'Access denied. Invalid refresh token.', code: 'REFRESH_TOKEN_INVALID'});
     }
   }
 };

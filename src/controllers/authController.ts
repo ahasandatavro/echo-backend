@@ -104,7 +104,7 @@ export const verifyEmail = async (req: Request, res: Response) => {
 };
 
 export const loginUser = async (req: Request, res: Response) => {
-  const { email, password } = req.body;
+  const { email, password, rememberMe } = req.body;
   try {
     const user = await prisma.user?.findUnique({ where: { email } });
     if (!user) return res.status(401).send("Invalid email");
@@ -116,10 +116,10 @@ export const loginUser = async (req: Request, res: Response) => {
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) return res.status(401).send("Invalid password");
 
-    const { accessToken, refreshToken } = generateTokens(user.id, user.role);
+    const { accessToken, refreshToken } = generateTokens(user.id, user.role, rememberMe);
     
     // Set tokens in HTTP-only cookies
-    setTokenCookies(res, accessToken, refreshToken);
+    setTokenCookies(res, accessToken, refreshToken, rememberMe);
 
     res.status(200).json({
       user: {
@@ -469,7 +469,7 @@ export const refreshToken = async (req: Request, res: Response) => {
   }
 
   try {
-    const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET || 'default-refresh-secret') as { userId: number, role: string };
+    const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET || 'default-refresh-secret') as { userId: number, role: string, rememberMe: boolean };
     
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId }
@@ -479,13 +479,32 @@ export const refreshToken = async (req: Request, res: Response) => {
       return res.status(401).json({ message: 'User not found' });
     }
 
-    const { accessToken, refreshToken: newRefreshToken } = generateTokens(user.id, user.role);
+    const { accessToken, refreshToken: newRefreshToken } = generateTokens(user.id, user.role, decoded.rememberMe);
     
     // Set new tokens in HTTP-only cookies
-    setTokenCookies(res, accessToken, newRefreshToken);
+    setTokenCookies(res, accessToken, newRefreshToken, decoded.rememberMe);
 
     res.status(200).json({ message: 'Tokens refreshed successfully' });
   } catch (error) {
     return res.status(401).json({ message: 'Invalid refresh token' });
   }
+};
+
+export const logout = (req: Request, res: Response) => {
+  // Clear both access and refresh token cookies
+  res.clearCookie('accessToken', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/'
+  });
+  
+  res.clearCookie('refreshToken', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/'
+  });
+
+  res.status(200).json({ message: 'Logged out successfully' });
 };

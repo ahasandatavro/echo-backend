@@ -8,7 +8,8 @@ import {
   verifyEmail,
   requestPasswordReset,
   resetPassword,
-  refreshToken
+  refreshToken,
+  logout
 } from '../controllers/authController';
 import { authenticateJWT } from '../middlewares/authMiddleware';
 const router = express.Router();
@@ -16,6 +17,7 @@ const router = express.Router();
 router.post('/register', registerUser);
 router.post('/login', loginUser);
 router.post('/refresh-token', refreshToken);
+router.post('/logout', logout);
 router.get('/google', googleAuth);
 router.get('/google-callback', googleCallback);
 router.post("/get-access-token", authenticateJWT, getAccessToken);
