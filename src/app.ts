@@ -4,6 +4,7 @@ import "./config/passportConfig";
 import express, { Request, Response } from "express";
 import bodyParser from "body-parser";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import nodeRoutes from "./routes/nodeRoute";
 import authRoutes from "./routes/authRoute";
 import metaWebhookRoutes from "./routes/metaWebhookRoute";
@@ -260,7 +261,20 @@ const upload = multer({
   storage: multer.memoryStorage(),
 });
 
-app.use(cors());
+// Configure CORS
+app.use(cors({
+  origin: process.env.FRONTEND_URL || '*',
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "Cookie", "X-Requested-With"],
+  exposedHeaders: ["Set-Cookie"],
+  preflightContinue: false,
+  optionsSuccessStatus: 204
+}));
+
+// Add cookie parser middleware
+app.use(cookieParser());
+
 app.use(bodyParser.json({ limit: "50mb" }));
 app.use(
   bodyParser.urlencoded({
