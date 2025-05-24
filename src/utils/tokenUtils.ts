@@ -46,8 +46,9 @@ export const setTokenCookies = (res: Response, accessToken: string, refreshToken
   const cookieOptions = {
     httpOnly: true,
     secure: false, // Set to false for localhost
-    sameSite: 'lax' as const,
+    sameSite: 'none' as const,
     path: '/',
+    domain: isLocalhost ? undefined : process.env.COOKIE_DOMAIN || '.ondigitalocean.app', // Use env variable with fallback
     maxAge: undefined // Remove maxAge from base options
   };
 
