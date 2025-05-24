@@ -478,20 +478,18 @@ export const refreshToken = async (req: Request, res: Response) => {
 };
 
 export const logout = (req: Request, res: Response) => {
-  // Clear both access and refresh token cookies
-  res.clearCookie('accessToken', {
+  const isLocalhost = process.env.NODE_ENV !== 'production';
+  
+  const cookieOptions = {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    secure: !isLocalhost,
+    sameSite: (isLocalhost ? 'lax' : 'none') as 'lax' | 'none',
     path: '/'
-  });
+  };
 
-  res.clearCookie('refreshToken', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/'
-  });
+  // Clear both access and refresh token cookies
+  res.clearCookie('accessToken', cookieOptions);
+  res.clearCookie('refreshToken', cookieOptions);
 
   res.status(200).json({ message: 'Logged out successfully' });
 };
