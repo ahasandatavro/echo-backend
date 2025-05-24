@@ -421,14 +421,19 @@ export const deleteBroadcast = async (req: Request, res: Response) => {
       });
     }
 
-    // 3) delete the broadcast (recipients cascade by FK+onDelete)
+    // 3) Delete all recipients first
+    await prisma.broadcastRecipient.deleteMany({
+      where: { broadcastId },
+    });
+
+    // 4) Now delete the broadcast
     await prisma.broadcast.delete({
       where: { id: broadcastId },
     });
 
     return res.status(200).json({
       success: true,
-      message: "Broadcast deleted successfully.",
+      message: "Broadcast and all recipients deleted successfully.",
       broadcastId,
     });
   } catch (err: any) {
@@ -497,8 +502,23 @@ export const getBroadcasts = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { startDate, endDate, dateRange } = req.query;
-    let where: any = {};
+    const { startDate, endDate, dateRange, page = "1", limit = "10", search } = req.query;
+    const user: any = req.user;
+    const dbUser = await prisma.user.findFirst({
+      where: { id: user.userId },
+    });
+    const selectedPhoneNumberId = dbUser?.selectedPhoneNumberId;
+    
+    const pageNum = parseInt(page as string, 10);
+    const limitNum = parseInt(limit as string, 10);
+    const offset = (pageNum - 1) * limitNum;
+    const searchTerm = (search as string)?.trim();
+
+    let where: any = {
+      phoneNumberId: selectedPhoneNumberId,
+      userId: user.userId,
+      ...(searchTerm ? { name: { contains: searchTerm, mode: 'insensitive' } } : {})
+    };
 
     if (dateRange && dateRange !== "customRange") {
       const today = new Date();
@@ -526,11 +546,27 @@ export const getBroadcasts = async (
         lte: new Date(endDate as string),
       };
     }
-    const broadcasts = await prisma.broadcast.findMany({
-      where,
-      include: { recipients: true },
+
+    const [broadcasts, total] = await prisma.$transaction([
+      prisma.broadcast.findMany({
+        where,
+        include: { recipients: true },
+        skip: offset,
+        take: limitNum,
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.broadcast.count({
+        where,
+      }),
+    ]);
+
+    res.status(200).json({
+      broadcasts,
+      total,
+      page: pageNum,
+      limit: limitNum,
+      totalPages: Math.ceil(total / limitNum),
     });
-    res.status(200).json(broadcasts);
   } catch (error) {
     console.error("Error fetching broadcasts:", error);
     res.status(500).json({ error: "Failed to fetch broadcasts" });
