@@ -117,7 +117,7 @@ export const loginUser = async (req: Request, res: Response) => {
     if (!validPassword) return res.status(401).send("Invalid password");
 
     const { accessToken, refreshToken } = generateTokens(user.id, user.role, rememberMe);
-    
+
     // Set tokens in HTTP-only cookies
     setTokenCookies(res, accessToken, refreshToken, rememberMe);
 
@@ -160,30 +160,17 @@ export const googleCallback = [
   async (req: any, res: Response) => {
     try {
       const user = req.user;
-      // Generate a JWT
-      const token = jwt.sign(
-        { userId: user.id, role: user.role },
-        process.env.JWT_SECRET as string,
-        { expiresIn: "24h" }
-      );
+      // Generate tokens
+      const { accessToken, refreshToken } = generateTokens(user.id, user.role, true); // Default to remember me for Google auth
 
-      // Send the token and user data to the parent window
-      res.send(`
-        <script>
-          window.opener.postMessage({
-            token: '${token}',
-            user: {
-              name: '${user.name}',
-              email: '${user.email}',
-              image: '${user.imageUrl}' // Assuming user has an imageUrl property
-            }
-          }, '*');
-          window.close();
-        </script>
-      `);
+      // Set tokens in HTTP-only cookies
+      setTokenCookies(res, accessToken, refreshToken, true);
+
+      // Redirect to frontend with success message
+      res.redirect(`${process.env.FRONTEND_URL}/#`);
     } catch (error) {
       console.error("Google Callback Error:", error);
-      res.status(500).send("Authentication failed");
+      res.redirect(`${process.env.FRONTEND_URL}/#/auth/error`);
     }
   },
 ];
@@ -470,7 +457,7 @@ export const refreshToken = async (req: Request, res: Response) => {
 
   try {
     const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET || 'default-refresh-secret') as { userId: number, role: string, rememberMe: boolean };
-    
+
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId }
     });
@@ -480,7 +467,7 @@ export const refreshToken = async (req: Request, res: Response) => {
     }
 
     const { accessToken, refreshToken: newRefreshToken } = generateTokens(user.id, user.role, decoded.rememberMe);
-    
+
     // Set new tokens in HTTP-only cookies
     setTokenCookies(res, accessToken, newRefreshToken, decoded.rememberMe);
 
@@ -498,7 +485,7 @@ export const logout = (req: Request, res: Response) => {
     sameSite: 'lax',
     path: '/'
   });
-  
+
   res.clearCookie('refreshToken', {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
