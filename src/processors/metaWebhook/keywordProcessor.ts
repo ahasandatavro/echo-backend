@@ -47,9 +47,10 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
       fallbackTriggerCount: true,
       defaultActionSettings: true,  // your existing logic
       fallbackHitCount: true,
+      metaPhoneNumberId: true,
     }
   });
- 
+ const dbUser=await prisma.user.findFirst({where:{selectedPhoneNumberId:businessPhoneNumber?.metaPhoneNumberId}})
   const defaultActionSettings = await prisma.defaultActionSettings.findUnique({
     where: {
       businessPhoneNumberId: businessPhoneNumber?.id,
@@ -66,6 +67,7 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
           equals: text,
           mode: "insensitive",
         },
+        userId: dbUser?.id
       },
       include: { 
         chatbot: true,
