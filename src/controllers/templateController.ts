@@ -89,6 +89,48 @@ export const getAllTemplates = async (req: Request, res: Response) => {
   }
 };
 
+export const getTemplatesLibrary = async (req: Request, res: Response) => {
+  try {
+    const user: any = req.user;
+    const userRecord = await prisma.user.findUnique({
+      where: { id: user.userId },
+      select: {
+        selectedWabaId: true,
+      },
+    });
+    // grab your Cloud-API filters from the querystring
+    const { search, topic, usecase, industry, language } = req.query
+
+    const params = new URLSearchParams({
+      access_token: process.env.META_ACCESS_TOKEN!,
+    })
+    if (search)   params.append('search',   String(search))
+    if (topic)    params.append('search',    String(topic))
+    if (usecase)  params.append('usecase',  String(usecase))
+    if (industry) params.append('industry', String(industry))
+    if (language) params.append('language', String(language))
+
+  //  const url = `https://graph.facebook.com/v15.0/message_template_library?${params.toString()}`
+    const url = `https://graph.facebook.com/v15.0/${userRecord?.selectedWabaId}/message_templates?fields=name,language,category,components`
+  const { data } = await axios.get(url)
+
+    // data.data is your array of templates
+    const templates: any[] = data.data || []
+
+    // compute counts by topic so your tabs show e.g. “Travel (6)”
+    const counts = templates.reduce<Record<string, number>>((acc, t) => {
+      const key = t.topic || 'Others'
+      acc[key] = (acc[key] || 0) + 1
+      acc.All = (acc.All || 0) + 1
+      return acc
+    }, { All: 0 })
+
+    res.json({ templates, counts })
+  } catch (err) {
+      console.error(err)
+    res.status(500).json({ error: 'Failed to fetch templates' })
+  }
+}
 
 // **Create a New Template**
 export const createTemplate = async (req: Request, res: Response) => {
