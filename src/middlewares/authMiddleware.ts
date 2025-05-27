@@ -15,7 +15,7 @@ export const authenticateJWT = async (req: Request, res: Response, next: NextFun
   const refreshToken = req.cookies.refreshToken;
 
   if (!accessToken && !refreshToken) {
-    return res.status(401).send({message: 'Access denied. Invalid refresh token.', code: 'REFRESH_TOKEN_INVALID'});
+    return res.status(401).send({message: 'Access denied. Invalid refresh token. Primary', code: 'REFRESH_TOKEN_INVALID'});
   }
 
   try {
@@ -27,7 +27,7 @@ export const authenticateJWT = async (req: Request, res: Response, next: NextFun
   } catch (error) {
     // Access token is invalid or expired
     if (!refreshToken) {
-      return res.status(401).send({message: 'Access denied. Invalid refresh token.', code: 'REFRESH_TOKEN_INVALID'});
+      return res.status(401).send({message: 'Access denied. Invalid refresh token. Secondary', code: 'REFRESH_TOKEN_INVALID'});
     }
 
     try {
@@ -53,7 +53,7 @@ export const authenticateJWT = async (req: Request, res: Response, next: NextFun
       req.user = { userId: user.id, role: user.role };
       next();
     } catch (refreshError) {
-      return res.status(401).send({message: 'Access denied. Invalid refresh token.', code: 'REFRESH_TOKEN_INVALID'});
+      return res.status(401).send({message: 'Access denied. Invalid refresh token. Final', code: 'REFRESH_TOKEN_INVALID'});
     }
   }
 };
