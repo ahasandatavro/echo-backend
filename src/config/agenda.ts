@@ -1,6 +1,7 @@
 import { Agenda, Job } from '@hokify/agenda';
 import { brodcastTemplate } from '../processors/template/templateProcessor';
 import { prisma } from '../models/prismaClient';
+import { syncTemplates } from '../services/templateService';
 
 if (!process.env.MONGODB_URI) {
   throw new Error('MONGODB_URI environment variable is not set. Please add it to your .env file.');
@@ -75,9 +76,19 @@ agenda.define<SendScheduledBroadcastData>('sendScheduledBroadcast', async (job: 
   }
 });
 
+agenda.define('syncMetaTemplates', async (job: Job) => {
+  try {
+    await syncTemplates()
+    console.log('✅ Meta templates synced')
+  } catch (e) {
+    console.error('❌ syncMetaTemplates failed:', e)
+  }
+})
+
 export const initializeAgenda = async () => {
   try {
     await agenda.start();
+    await agenda.every('24 hours', 'syncMetaTemplates')
     console.log('Agenda started successfully');
   } catch (error) {
     console.error('Failed to start Agenda:', error);

@@ -38,8 +38,10 @@ export const getAllTemplates = async (req: Request, res: Response) => {
         selectedWabaId: true,
       },
     });
+    //send latests templates first
     const templates = await prisma.template.findMany({
       where: { userId: user.userId, wabaId: userRecord?.selectedWabaId },
+      orderBy: { updatedAt: 'desc' },
     });
 
     const formattedTemplates = templates.map((tmpl: any) => {
@@ -105,13 +107,13 @@ export const getTemplatesLibrary = async (req: Request, res: Response) => {
       access_token: process.env.META_ACCESS_TOKEN!,
     })
     if (search)   params.append('search',   String(search))
-    if (topic)    params.append('search',    String(topic))
+    if (topic)    params.append('topic',    String(topic))
     if (usecase)  params.append('usecase',  String(usecase))
     if (industry) params.append('industry', String(industry))
     if (language) params.append('language', String(language))
 
-  //  const url = `https://graph.facebook.com/v15.0/message_template_library?${params.toString()}`
-    const url = `https://graph.facebook.com/v15.0/${userRecord?.selectedWabaId}/message_templates?fields=name,language,category,components`
+    const url = `https://graph.facebook.com/v17.0/message_template_library?${params.toString()}`
+   // const url = `https://graph.facebook.com/v17.0/${userRecord?.selectedWabaId}/message_templates?fields=name,language,category,components`
   const { data } = await axios.get(url)
 
     // data.data is your array of templates
@@ -131,7 +133,16 @@ export const getTemplatesLibrary = async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to fetch templates' })
   }
 }
-
+function extractBodyVariableNumbers(text:string) {
+  // Returns array of variable numbers as strings, in order of appearance
+  const matches = Array.from(text.matchAll(/\{\{(\d+)\}\}/g));
+  return matches.map(m => m[1]);
+}
+function extractHeaderVariableNumbers(text:string) {
+  // Returns array of variable numbers as strings, in order of appearance
+  const matches = Array.from((text || "").matchAll(/\{\{(\d+)\}\}/g));
+  return matches.map(m => m[1]);
+}
 // **Create a New Template**
 export const createTemplate = async (req: Request, res: Response) => {
 
@@ -144,6 +155,7 @@ export const createTemplate = async (req: Request, res: Response) => {
     const selectedWabaId = dbUser?.selectedWabaId;
     const WHATSAPP_GRAPH_API = `${process.env.META_BASE_URL}/${selectedWabaId}/message_templates`;
     const { name, category, language } = req.body;
+    const sampleContents = JSON.parse(req.body.sampleContents || "{}");
     const file = req.file;
     const filePath = req?.file?.path || "";
     const components = JSON.parse(req.body.components || "[]");
@@ -156,10 +168,27 @@ export const createTemplate = async (req: Request, res: Response) => {
       ) {
         return null; // skip
       }
-      if (component.type === "BODY") {
+      if (component.type === "HEADER" && component.format === "TEXT") {
+        const headerText = component.text || "";
+        const variableNumbers = extractHeaderVariableNumbers(headerText);
+        const headerExamples = variableNumbers.map(num => sampleContents[num] || "");
         return {
           ...component,
-          text: preprocessHtmlForWhatsApp(component.text || ""),
+          text: headerText,
+          ...(headerExamples.length > 0 ? { example: { header_text: headerExamples } } : {})
+        };
+      }
+      if (component.type === "BODY") {
+        const processedText = preprocessHtmlForWhatsApp(component.text || "");
+        // Extract variable numbers in order
+        const variableNumbers = extractBodyVariableNumbers(processedText);
+        // Map to sampleContents
+        const bodyExamples = variableNumbers.map(num => sampleContents[num] || "");
+        // Only add example if there are variables
+        return {
+          ...component,
+          text: processedText,
+          ...(bodyExamples.length > 0 ? { example: { body_text: bodyExamples } } : {})
         };
       }
 
@@ -237,13 +266,31 @@ export const createTemplate = async (req: Request, res: Response) => {
               phone_number: rest.phone || "",
             };
 
-          case "Visit Website":
-            return {
-              type: "URL",
-              text: rest.label || "Visit us",
-              url: rest.url || "",
-            };
-
+            case "Visit Website": {
+              const urlTemplate = rest.url || "";
+              // 1) Find every {{1}}, {{2}}, … in the URL
+              const placeholderMatches = Array.from(
+                urlTemplate.matchAll(/\{\{(\d+)\}\}/g)
+              ); // each match’s [1] is the digit string
+            
+              // 2) Map those digit-keys to your sampleContents
+              const examples = placeholderMatches
+                .map(m => sampleContents[m[1]])  // look up sampleContents["1"], ["2"], …
+                .filter((s): s is string => typeof s === "string"); // drop any missing
+            
+              // 3) Only include `example` if we found one sample per placeholder
+              const button: any = {
+                type: "URL",
+                text: rest.label || "Visit us",
+                url: urlTemplate,
+              };
+              if (examples.length === placeholderMatches.length && examples.length > 0) {
+                button.example = examples;
+              }
+            
+              return button;
+            }
+            
           case "Copy offer code":
             // Typically a quick reply with some text
             return {
@@ -271,12 +318,16 @@ export const createTemplate = async (req: Request, res: Response) => {
         buttons: metaButtons,
       });}
       console.log(resolvedComponents);
-    const response = await axiosInstance.post(WHATSAPP_GRAPH_API, {
-      name,
-      category,
-      language,
-      components: resolvedComponents,
-    });
+      //add try catch for response
+      let response:any;
+        response = await axiosInstance.post(WHATSAPP_GRAPH_API, {
+          name,
+          category,
+          language,
+          components: resolvedComponents,
+        });
+
+
     const templateContent = {
       name,
       parameter_format: "POSITIONAL",
