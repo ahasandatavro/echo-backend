@@ -32,32 +32,74 @@ export const syncTemplatesWithWhatsApp = async () => {
 
 
 
-
 export async function syncTemplates() {
-  let after: string|undefined = undefined
-  do {
-    const phoneNumberIds=await prisma.businessPhoneNumber.findMany({select:{metaPhoneNumberId:true}})//find all phone numbers Ids in phoneNumber table
-   //for each phone number id, sync the templates
-   for(const phoneNumberId of phoneNumberIds){
-    const url = `https://graph.facebook.com/22.0/${phoneNumberId.metaPhoneNumberId}/message_templates`
-    const params: any = {
-      access_token: process.env.META_ACCESS_TOKEN,
-      fields: 'name,language,category,status,components,created_time,updated_time',
-      limit: 50,
-    }
-    if (after) params.after = after
+  //no do it by wabaId
+  const metaWabaIds=await prisma.businessAccount.findMany({select:{metaWabaId:true}})
+  for(const metaWabaId of metaWabaIds){
+    let after: string | undefined = undefined 
 
-    const resp = await axios.get(url, { params })
-    const { data, paging } = resp.data 
+    // 2) page through the message_templates edge
+    do {
+      const resp: any = await axios.get(
+        `https://graph.facebook.com/v22.0/${metaWabaId.metaWabaId}/message_templates`,
+        {
+          params: {
+            access_token: process.env.META_ACCESS_TOKEN,
+            fields: 'id,name,language,category,status,components,created_time,updated_time',
+            limit: 50,
+            ...(after && { after })
+          }
+        }
+      )
 
-    for (const template of data) {
-      // upsert by your unique key: (wabaId + name + language)
-      await prisma.template.upsert({
-        where: { name: template.name },
-        update: { status: template.status },
-        create: template,
-      });
-    }
+      const {
+        data,
+        paging
+      }: {
+        data: any[];                // or your real template array type
+        paging: { cursors: { after?: string; before?: string } }
+      } = resp.data;
+      
 
-    after = paging?.cursors?.after
-  }} while (after)}
+      for (const tpl of data) {
+        // 3) skip any template that already exists for this WABA+name+language
+        const exists = await prisma.template.findFirst({
+          where: {
+            wabaId: metaWabaId.metaWabaId,
+            name:   tpl.name,
+            language: tpl.language
+          }
+        })
+        if (exists) continue
+
+        // 4) build the same content object you use in createTemplate
+        const content = {
+          name:             tpl.name,
+          parameter_format: 'POSITIONAL',
+          components:       tpl.components,
+          language:         tpl.language,
+          status:           tpl.status,
+          category:         tpl.category,
+          id:               tpl.id.toString(),
+        }
+       const user=await prisma.user.findFirst({where:{selectedWabaId:metaWabaId.metaWabaId}});
+        // 5) create in your DB
+        await prisma.template.create({
+          data: {
+            name:     tpl.name,
+            language: tpl.language,
+            category: tpl.category,
+            status:   tpl.status,
+            content:  JSON.stringify(content),
+            userId:   user?.id,
+            wabaId:   metaWabaId.metaWabaId,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          }
+        })
+      }
+
+      after = paging?.cursors?.after
+    } while (after)
+  }
+}

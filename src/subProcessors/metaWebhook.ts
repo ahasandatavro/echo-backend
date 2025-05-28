@@ -395,6 +395,9 @@ export const processWebhookChange = async (change: any, io: any) => {
   if (statuses) await processBroadcastStatus(statuses);
 
   if (change.field === "message_template_status_update") {
+    if(change.value.reason){
+      console.log(change.value.reason);
+    }
     await updateTemplateInDb(change.value);
     return;
   }
