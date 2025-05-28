@@ -144,8 +144,226 @@ function extractHeaderVariableNumbers(text:string) {
   return matches.map(m => m[1]);
 }
 // **Create a New Template**
-export const createTemplate = async (req: Request, res: Response) => {
+// export const createTemplate = async (req: Request, res: Response) => {
 
+//   try {
+//     const user: any = req.user;
+//     const dbUser = await prisma.user.findFirst({
+//       where: { id: user.userId },
+//       select: { selectedWabaId: true },
+//     });
+//     const selectedWabaId = dbUser?.selectedWabaId;
+//     const WHATSAPP_GRAPH_API = `${process.env.META_BASE_URL}/${selectedWabaId}/message_templates`;
+//     const { name, category, language, draft } = req.body;
+//     const saveAsDraftInitial =
+//     draft === true || draft === 'true';
+//     const sampleContents = JSON.parse(req.body.sampleContents || "{}");
+//     const file = req.file;
+//     const filePath = req?.file?.path || "";
+//     const components = JSON.parse(req.body.components || "[]");
+
+//     // ✅ Preprocess only BODY type
+//     const processedComponents = components.map(async (component: any) => {
+//       if (
+//         component.type === "HEADER" &&
+//         (!component.format || (!component.text?.trim() && !req.file))
+//       ) {
+//         return null; // skip
+//       }
+//       if (component.type === "HEADER" && component.format === "TEXT") {
+//         const headerText = component.text || "";
+//         const variableNumbers = extractHeaderVariableNumbers(headerText);
+//         const headerExamples = variableNumbers.map(num => sampleContents[num] || "");
+//         return {
+//           ...component,
+//           text: headerText,
+//           ...(headerExamples.length > 0 ? { example: { header_text: headerExamples } } : {})
+//         };
+//       }
+//       if (component.type === "BODY") {
+//         const processedText = preprocessHtmlForWhatsApp(component.text || "");
+//         // Extract variable numbers in order
+//         const variableNumbers = extractBodyVariableNumbers(processedText);
+//         // Map to sampleContents
+//         const bodyExamples = variableNumbers.map(num => sampleContents[num] || "");
+//         // Only add example if there are variables
+//         return {
+//           ...component,
+//           text: processedText,
+//           ...(bodyExamples.length > 0 ? { example: { body_text: bodyExamples } } : {})
+//         };
+//       }
+
+//       // ✅ Process HEADER with media (upload & replace header_handle)
+//       if (component.type === "HEADER" && req.file) {
+//         // ✅ Step 1: Upload Media to WhatsApp API
+//         const mediaUploadResponse = await axios.post(
+//           `${process.env.META_BASE_URL}/${process.env.META_APP_ID}/uploads`,
+//           null,
+//           {
+//             params: {
+//               file_name: req.file.originalname, // The name of the file being uploaded
+//               file_length: req.file.size, // The length of the file in bytes
+//               file_type: req.file.mimetype,
+//               access_token: process.env.META_ACCESS_TOKEN,
+//             },
+//             headers: {
+//               Authorization: `Bearer ${process.env.META_ACCESS_TOKEN}`,
+//             },
+//           }
+//         );
+//         let mediaUploadId = mediaUploadResponse.data.id; // Returns "upload:1233"
+
+//         const form = new FormData();
+//         form.append("file_offset", 0);
+//         form.append("file", fs.createReadStream(filePath));
+//         const fileSize = fs.statSync(filePath).size;
+//         const fileStreams = fs.createReadStream(filePath);
+//         const headers = {
+//           Authorization: `OAuth ${process.env.META_ACCESS_TOKEN}`,
+//           file_offset: "0",
+//           "Content-Length": fileSize,
+//           ...form.getHeaders(),
+//         };
+//         const mediaIdResponse = await axios.post(
+//           `${process.env.META_BASE_URL}/${mediaUploadId}`,
+//           fileStreams,
+//           { headers }
+//         );
+
+//         if (mediaIdResponse.data && mediaIdResponse.data.h) {
+//           // ✅ Replace header_handle with media ID
+//           return {
+//             type: "HEADER",
+//             format: component.format,
+//             example: {
+//               header_handle: [mediaIdResponse.data.h],
+//             },
+//           };
+//         } else {
+//           throw new Error("Failed to upload media to WhatsApp");
+//         }
+//       }
+
+//       return component;
+//     });
+
+//     // ✅ Resolve all async component modifications
+//     const resolvedComponents = await Promise.all(processedComponents);
+//     const buttonsData: ButtonData[] = JSON.parse(req.body.buttons || "[]");
+
+//     // 3) Transform them into Meta's "BUTTONS" component if any exist
+//     if (buttonsData.length > 0) {
+//       // Map each frontend button to a Meta button object
+//       const metaButtons = buttonsData.map((button) => {
+//         // Remove unwanted keys like "id", "labelLimit", etc.
+//         const { id, labelLimit, urlLimit, phoneLimit, codeLimit, ...rest } = button;
+
+//         // We'll convert your custom "type" to Meta's "type" ("PHONE_NUMBER", "URL", or "QUICK_REPLY")
+//         switch (rest.type) {
+//           case "Call Phone":
+//             return {
+//               type: "PHONE_NUMBER",
+//               text: rest.label || "Call",
+//               phone_number: rest.phone || "",
+//             };
+
+//             case "Visit Website": {
+//               const urlTemplate = rest.url || "";
+//               // 1) Find every {{1}}, {{2}}, … in the URL
+//               const placeholderMatches = Array.from(
+//                 urlTemplate.matchAll(/\{\{(\d+)\}\}/g)
+//               ); // each match’s [1] is the digit string
+            
+//               // 2) Map those digit-keys to your sampleContents
+//               const examples = placeholderMatches
+//                 .map(m => sampleContents[m[1]])  // look up sampleContents["1"], ["2"], …
+//                 .filter((s): s is string => typeof s === "string"); // drop any missing
+            
+//               // 3) Only include `example` if we found one sample per placeholder
+//               const button: any = {
+//                 type: "URL",
+//                 text: rest.label || "Visit us",
+//                 url: urlTemplate,
+//               };
+//               if (examples.length === placeholderMatches.length && examples.length > 0) {
+//                 button.example = examples;
+//               }
+            
+//               return button;
+//             }
+            
+//           case "Copy offer code":
+//             // Typically a quick reply with some text
+//             return {
+//               type: "QUICK_REPLY",
+//               text: rest.label || "Offer Code",
+//             };
+
+//           case "Quick replies":
+//             return {
+//               type: "QUICK_REPLY",
+//               text: rest.label || "Reply",
+//             };
+
+//           default:
+//             // Fallback to QUICK_REPLY if unrecognized
+//             return {
+//               type: "QUICK_REPLY",
+//               text: rest.label || "Reply",
+//             };
+//         }
+//       });
+
+//       resolvedComponents.push({
+//         type: "BUTTONS",
+//         buttons: metaButtons,
+//       });}
+//       console.log(resolvedComponents);
+//       //add try catch for response
+//       let response:any;
+//         response = await axiosInstance.post(WHATSAPP_GRAPH_API, {
+//           name,
+//           category,
+//           language,
+//           components: resolvedComponents,
+//         });
+
+
+//     const templateContent = {
+//       name,
+//       parameter_format: "POSITIONAL",
+//       components: resolvedComponents, // the processed components array
+//       language,
+//       // Use response.data.status if available, otherwise default to "PENDING"
+//       status: response.data.status || "PENDING",
+//       category,
+//       // Ensure id is a string; if response.data.id exists, convert it to string
+//       id: response.data.id ? response.data.id.toString() : undefined,
+//     };
+
+//     // Create the template in the database with the new structure in the content field.
+//     const dbTemplate = await prisma.template.create({
+//       data: {
+//         name,
+//         language,
+//         category,
+//         status: "PENDING", // We store pending status initially
+//         content: JSON.stringify(templateContent),
+//         userId: user?.userId,
+//         wabaId: selectedWabaId,
+//       },
+//     });
+
+//     res.status(201).json(response.data);
+//   } catch (error: any) {
+//     res.status(500).json({
+//       error: "Failed to create template",
+//       details: error.response?.data || error.message,
+//     });
+//   }
+// };
+export const createTemplate = async (req: Request, res: Response) => {
   try {
     const user: any = req.user;
     const dbUser = await prisma.user.findFirst({
@@ -154,55 +372,69 @@ export const createTemplate = async (req: Request, res: Response) => {
     });
     const selectedWabaId = dbUser?.selectedWabaId;
     const WHATSAPP_GRAPH_API = `${process.env.META_BASE_URL}/${selectedWabaId}/message_templates`;
-    const { name, category, language } = req.body;
-    const sampleContents = JSON.parse(req.body.sampleContents || "{}");
-    const file = req.file;
-    const filePath = req?.file?.path || "";
-    const components = JSON.parse(req.body.components || "[]");
 
-    // ✅ Preprocess only BODY type
+    const { name, category, language, draft } = req.body;
+    const saveAsDraftInitial =
+      draft === true || draft === 'true';
+
+    const sampleContents = JSON.parse(req.body.sampleContents || "{}");
+    const components = JSON.parse(req.body.components || "[]");
+    const file = req.file;
+    const filePath = file?.path || "";
+
+    // Preprocess components (BODY, HEADER, etc.)
     const processedComponents = components.map(async (component: any) => {
       if (
         component.type === "HEADER" &&
-        (!component.format || (!component.text?.trim() && !req.file))
+        (!component.format || (!component.text?.trim() && !file))
       ) {
-        return null; // skip
+        return null;
       }
+
       if (component.type === "HEADER" && component.format === "TEXT") {
         const headerText = component.text || "";
         const variableNumbers = extractHeaderVariableNumbers(headerText);
-        const headerExamples = variableNumbers.map(num => sampleContents[num] || "");
+        const headerExamples = variableNumbers.map(
+          num => sampleContents[num] || ""
+        );
         return {
           ...component,
           text: headerText,
-          ...(headerExamples.length > 0 ? { example: { header_text: headerExamples } } : {})
-        };
-      }
-      if (component.type === "BODY") {
-        const processedText = preprocessHtmlForWhatsApp(component.text || "");
-        // Extract variable numbers in order
-        const variableNumbers = extractBodyVariableNumbers(processedText);
-        // Map to sampleContents
-        const bodyExamples = variableNumbers.map(num => sampleContents[num] || "");
-        // Only add example if there are variables
-        return {
-          ...component,
-          text: processedText,
-          ...(bodyExamples.length > 0 ? { example: { body_text: bodyExamples } } : {})
+          ...(headerExamples.length > 0
+            ? { example: { header_text: headerExamples } }
+            : {}),
         };
       }
 
-      // ✅ Process HEADER with media (upload & replace header_handle)
-      if (component.type === "HEADER" && req.file) {
-        // ✅ Step 1: Upload Media to WhatsApp API
-        const mediaUploadResponse = await axios.post(
+      if (component.type === "BODY") {
+        const processedText = preprocessHtmlForWhatsApp(
+          component.text || ""
+        );
+        const variableNumbers = extractBodyVariableNumbers(
+          processedText
+        );
+        const bodyExamples = variableNumbers.map(
+          num => sampleContents[num] || ""
+        );
+        return {
+          ...component,
+          text: processedText,
+          ...(bodyExamples.length > 0
+            ? { example: { body_text: bodyExamples } }
+            : {}),
+        };
+      }
+
+      if (component.type === "HEADER" && file) {
+        // upload media and return HEADER with example.header_handle
+        const uploadRes = await axios.post(
           `${process.env.META_BASE_URL}/${process.env.META_APP_ID}/uploads`,
           null,
           {
             params: {
-              file_name: req.file.originalname, // The name of the file being uploaded
-              file_length: req.file.size, // The length of the file in bytes
-              file_type: req.file.mimetype,
+              file_name: file.originalname,
+              file_length: file.size,
+              file_type: file.mimetype,
               access_token: process.env.META_ACCESS_TOKEN,
             },
             headers: {
@@ -210,105 +442,89 @@ export const createTemplate = async (req: Request, res: Response) => {
             },
           }
         );
-        let mediaUploadId = mediaUploadResponse.data.id; // Returns "upload:1233"
-
+        const mediaUploadId = uploadRes.data.id;
         const form = new FormData();
         form.append("file_offset", 0);
         form.append("file", fs.createReadStream(filePath));
-        const fileSize = fs.statSync(filePath).size;
-        const fileStreams = fs.createReadStream(filePath);
         const headers = {
           Authorization: `OAuth ${process.env.META_ACCESS_TOKEN}`,
           file_offset: "0",
-          "Content-Length": fileSize,
+          "Content-Length": fs.statSync(filePath).size,
           ...form.getHeaders(),
         };
-        const mediaIdResponse = await axios.post(
+        const mediaIdRes = await axios.post(
           `${process.env.META_BASE_URL}/${mediaUploadId}`,
-          fileStreams,
+          form,
           { headers }
         );
-
-        if (mediaIdResponse.data && mediaIdResponse.data.h) {
-          // ✅ Replace header_handle with media ID
+        if (mediaIdRes.data?.h) {
           return {
             type: "HEADER",
             format: component.format,
-            example: {
-              header_handle: [mediaIdResponse.data.h],
-            },
+            example: { header_handle: [mediaIdRes.data.h] },
           };
-        } else {
-          throw new Error("Failed to upload media to WhatsApp");
         }
+        throw new Error("Failed to upload media to WhatsApp");
       }
 
       return component;
     });
 
-    // ✅ Resolve all async component modifications
-    const resolvedComponents = await Promise.all(processedComponents);
-    const buttonsData: ButtonData[] = JSON.parse(req.body.buttons || "[]");
+    const resolvedComponents = await Promise.all(
+      processedComponents
+    );
 
-    // 3) Transform them into Meta's "BUTTONS" component if any exist
+    // Transform buttons
+    const buttonsData: ButtonData[] = JSON.parse(
+      req.body.buttons || "[]"
+    );
     if (buttonsData.length > 0) {
-      // Map each frontend button to a Meta button object
-      const metaButtons = buttonsData.map((button) => {
-        // Remove unwanted keys like "id", "labelLimit", etc.
-        const { id, labelLimit, urlLimit, phoneLimit, codeLimit, ...rest } = button;
-
-        // We'll convert your custom "type" to Meta's "type" ("PHONE_NUMBER", "URL", or "QUICK_REPLY")
-        switch (rest.type) {
+      const metaButtons = buttonsData.map(button => {
+        const {
+          urlType,
+          label,
+          phone,
+          url,
+        } = button;
+        switch (button.type) {
           case "Call Phone":
             return {
               type: "PHONE_NUMBER",
-              text: rest.label || "Call",
-              phone_number: rest.phone || "",
+              text: label || "Call",
+              phone_number: phone || "",
             };
 
-            case "Visit Website": {
-              const urlTemplate = rest.url || "";
-              // 1) Find every {{1}}, {{2}}, … in the URL
-              const placeholderMatches = Array.from(
-                urlTemplate.matchAll(/\{\{(\d+)\}\}/g)
-              ); // each match’s [1] is the digit string
-            
-              // 2) Map those digit-keys to your sampleContents
-              const examples = placeholderMatches
-                .map(m => sampleContents[m[1]])  // look up sampleContents["1"], ["2"], …
-                .filter((s): s is string => typeof s === "string"); // drop any missing
-            
-              // 3) Only include `example` if we found one sample per placeholder
-              const button: any = {
-                type: "URL",
-                text: rest.label || "Visit us",
-                url: urlTemplate,
-              };
-              if (examples.length === placeholderMatches.length && examples.length > 0) {
-                button.example = examples;
-              }
-            
-              return button;
-            }
-            
+          case "Visit Website": {
+            const urlTemplate = url || "";
+            const placeholderMatches = Array.from(
+              urlTemplate.matchAll(/\{\{(\d+)\}\}/g)
+            );
+            const examples = placeholderMatches
+              .map(m => sampleContents[m[1]])
+              .filter((s): s is string => typeof s === "string");
+
+            const btn: any = {
+              type: "URL",
+              text: label || "Visit us",
+              url: urlTemplate,
+            };
+                if (
+                    urlType === "Dynamic" &&
+                    examples.length === placeholderMatches.length &&
+                    examples.length > 0
+                  ) {
+                    // Graph API wants a single string, not an array:
+                    btn.example = { url: examples[0] };
+                 }
+            return btn;
+          }
+
           case "Copy offer code":
-            // Typically a quick reply with some text
-            return {
-              type: "QUICK_REPLY",
-              text: rest.label || "Offer Code",
-            };
-
           case "Quick replies":
-            return {
-              type: "QUICK_REPLY",
-              text: rest.label || "Reply",
-            };
-
           default:
-            // Fallback to QUICK_REPLY if unrecognized
             return {
               type: "QUICK_REPLY",
-              text: rest.label || "Reply",
+              text: label || "Reply",
             };
         }
       });
@@ -316,46 +532,77 @@ export const createTemplate = async (req: Request, res: Response) => {
       resolvedComponents.push({
         type: "BUTTONS",
         buttons: metaButtons,
-      });}
-      console.log(resolvedComponents);
-      //add try catch for response
-      let response:any;
-        response = await axiosInstance.post(WHATSAPP_GRAPH_API, {
-          name,
-          category,
-          language,
-          components: resolvedComponents,
-        });
+      });
+    }
 
+    let response: any;
+    let saveAsDraft = saveAsDraftInitial;
+
+    if (!saveAsDraft) {
+      try {
+        response = await axiosInstance.post(
+          WHATSAPP_GRAPH_API,
+          {
+            name,
+            category,
+            language,
+            components: resolvedComponents,
+          }
+        );
+      } catch (err: any) {
+        console.warn(
+          "Meta API call failed, saving template as DRAFT:",
+          err.message
+        );
+        return res.status(500).json({
+          error: "err.response?.data.error.message",
+          details: err.response?.data.error.message || err.message,
+        });
+        saveAsDraft = true;
+      }
+    }
 
     const templateContent = {
       name,
       parameter_format: "POSITIONAL",
-      components: resolvedComponents, // the processed components array
+      components: resolvedComponents,
       language,
-      // Use response.data.status if available, otherwise default to "PENDING"
-      status: response.data.status || "PENDING",
+      status: saveAsDraft
+        ? "DRAFT"
+        : response?.data?.status || "PENDING",
       category,
-      // Ensure id is a string; if response.data.id exists, convert it to string
-      id: response.data.id ? response.data.id.toString() : undefined,
+      id: !saveAsDraft && response?.data?.id
+        ? response.data.id.toString()
+        : undefined,
     };
-
-    // Create the template in the database with the new structure in the content field.
-    const dbTemplate = await prisma.template.create({
+    let dbTemplate: any;
+if (templateContent.status !== "DRAFT"){
+     dbTemplate = await prisma.template.create({
       data: {
         name,
         language,
         category,
-        status: "PENDING", // We store pending status initially
+        status: templateContent.status,
         content: JSON.stringify(templateContent),
-        userId: user?.userId,
+        userId: user.userId,
         wabaId: selectedWabaId,
       },
     });
-
-    res.status(201).json(response.data);
+  }
+  else{
+    const dbTemplate = await prisma.template.update({
+      where: { name: name, userId: user.userId, wabaId: selectedWabaId },
+      data: {
+        status: "PENDING",
+      },
+    });
+  }
+    if (saveAsDraft) {
+      return res.status(201).json(dbTemplate);
+    }
+    return res.status(201).json(response.data);
   } catch (error: any) {
-    res.status(500).json({
+    return res.status(500).json({
       error: "Failed to create template",
       details: error.response?.data || error.message,
     });
@@ -483,12 +730,80 @@ export const createBroadcast = async (req: Request, res: Response) => {
     console.error("Error creating broadcast:", error);
     res.status(500).json({
       success: false,
+      message: error.response?.data?.error?.error_data?.details || error.message,
+      error: error.message,
+    });
+  }
+};
+
+export const updateBroadcast = async (req: Request, res: Response) => {
+  try {
+    const { broadcastId } = req.params;
+    const { scheduledDateTime } = req.body;
+  
+  const broadcast = await prisma.broadcast.findUnique({
+    where: { id: parseInt(broadcastId) },
+  });
+  if (!broadcast) {
+    return res.status(404).json({ message: "Broadcast not found." });
+  }
+
+
+    // If scheduling is requested
+    if (scheduledDateTime) {
+      const scheduledDate = new Date(scheduledDateTime);
+
+      // Schedule the broadcast using Agenda
+      const agenda = (await import('../config/agenda')).default;
+      //don't delete the existing job, just update the scheduled date
+    // inside your update handler, after you compute `scheduledDate` and have `broadcast.id`…
+
+// 1) fetch that single job
+const [job] = await agenda.jobs({
+  name: "sendScheduledBroadcast",
+  "data.broadcastId": broadcast.id,
+});
+
+if (job) {
+  // 2) move its run time
+  job.schedule(scheduledDate);
+
+  // 3) persist the change
+  await job.save();
+} else {
+  // (unlikely) fallback to scheduling if it doesn’t exist
+  await agenda.schedule(scheduledDate, "sendScheduledBroadcast", {
+    broadcastId: broadcast.id,
+  });
+}
+      // Update the broadcast with scheduling info
+      await prisma.broadcast.update({
+        where: { id: broadcast.id },
+        data: {
+          scheduledDateTime: scheduledDate,
+          status: 'SCHEDULED'
+        }
+      });
+
+      res.status(200).json({
+        success: true,
+        broadcastId: broadcast.id,
+        message: "Broadcast scheduled successfully!",
+        scheduledFor: scheduledDate
+      });
+    }
+  } catch (error: any) {
+    console.error("Error creating broadcast:", error);
+    res.status(500).json({
+      success: false,
       message: "Failed to create broadcast",
       error: error.message,
     });
   }
 };
-export const deleteBroadcast = async (req: Request, res: Response) => {
+
+
+  export const deleteBroadcast = async (req: Request, res: Response) => {
   try {
     const user: any = req.user;
     const broadcastId = parseInt(req.params.id, 10);
