@@ -344,6 +344,7 @@ export const getContacts = async (req: Request, res: Response): Promise<void> =>
       select: {
         agent: true,
         selectedWabaId: true,
+        selectedPhoneNumberId: true,
       },
     });
 
@@ -388,6 +389,7 @@ export const getContacts = async (req: Request, res: Response): Promise<void> =>
         connectionStatus: phone.connectionStatus || "",
         subscription: phone.subscription || "",
       })),
+      selectedPhoneNumberId: loggedInUser.selectedPhoneNumberId || "",
     }));
 
     res.status(200).json(groupedContacts);
