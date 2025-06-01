@@ -12,6 +12,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 // Helper: Call the existing /upload endpoint to store the file in DigitalOcean Spaces
 export const uploadFileToDigitalOcean = async (file: Express.Multer.File): Promise<string> => {
+  try{
   const formData = new FormData();
   // Append file buffer with its original name
   formData.append('file', file.buffer, file.originalname);
@@ -24,6 +25,11 @@ export const uploadFileToDigitalOcean = async (file: Express.Multer.File): Promi
   });
 
   return response.data.fileUrl;
+  }
+  catch(error){
+      console.error("Error uploading media to DigitalOcean:", error);
+      return "";
+  }
 };
 
 router.get('/', async (req: Request, res: Response) => {

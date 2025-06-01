@@ -6,6 +6,7 @@ import fs from "fs";
 import FormData from "form-data";
 import { prisma } from "../models/prismaClient";
 import { brodcastTemplate } from "../processors/template/templateProcessor";
+import { uploadFileToDigitalOcean } from "../routes/replyMaterialRoute";
 
 interface ButtonData {
   id?: number;
@@ -41,6 +42,68 @@ export const getAllTemplates = async (req: Request, res: Response) => {
     //send latests templates first
     const templates = await prisma.template.findMany({
       where: { userId: user.userId, wabaId: userRecord?.selectedWabaId },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    const formattedTemplates = templates.map((tmpl: any) => {
+      let parsedContent = {};
+      try {
+        // Try to parse the stored content (which should be in your desired format)
+        parsedContent = JSON.parse(tmpl.content);
+      } catch (e) {
+        // Fallback: if parsing fails, we build the object from DB fields.
+        parsedContent = {
+          name: tmpl.name,
+          parameter_format: "POSITIONAL",
+          components: [],
+          language: tmpl.language,
+          status: tmpl.status,
+          category: tmpl.category,
+          id: tmpl.id.toString(),
+          lastUpdated:tmpl.updatedAt.toISOString().split("T")[0]
+        };
+      }
+      return {
+        ...parsedContent,
+        // Ensure the main fields are present and correctly formatted:
+        name: tmpl.name,
+        language: tmpl.language,
+        status: tmpl.status,
+        category: tmpl.category,
+        id: tmpl.id.toString(),
+        lastUpdated:tmpl.updatedAt.toISOString().split("T")[0]
+      };
+    });
+
+    // Create a dummy paging object. In a real-world scenario you might generate these cursors.
+    const paging = {
+      cursors: {
+        before: "MAZDZD",
+        after: "MjQZD",
+      },
+    };
+
+    res.status(200).json({ data: formattedTemplates, paging });
+  } catch (error: any) {
+    res.status(500).json({
+      error: "Failed to fetch templates",
+      details: error.response?.data || error.message,
+    });
+  }
+};
+
+export const getAllApprovedTemplates = async (req: Request, res: Response) => {
+  try {
+    const user: any = req.user;
+    const userRecord = await prisma.user.findUnique({
+      where: { id: user.userId },
+      select: {
+        selectedWabaId: true,
+      },
+    });
+    //send latests templates first
+    const templates = await prisma.template.findMany({
+      where: { userId: user.userId, wabaId: userRecord?.selectedWabaId, status: "APPROVED" },
       orderBy: { updatedAt: 'desc' },
     });
 
@@ -207,6 +270,12 @@ export const createTemplate = async (req: Request, res: Response) => {
       }
 
       if (component.type === "HEADER" && file) {
+        let fileUrl = "";
+        try{ fileUrl = await uploadFileToDigitalOcean(file);}
+        catch(error){
+          console.error("Error uploading media to DigitalOcean:", error);
+        }
+        if(fileUrl){
         // upload media and return HEADER with example.header_handle
         const uploadRes = await axios.post(
           `${process.env.META_BASE_URL}/${process.env.META_APP_ID}/uploads`,
@@ -243,11 +312,12 @@ export const createTemplate = async (req: Request, res: Response) => {
             type: "HEADER",
             format: component.format,
             example: { header_handle: [mediaIdRes.data.h] },
+            url: fileUrl,
           };
         }
         throw new Error("Failed to upload media to WhatsApp");
-      }
-
+      } 
+    }
       return component;
     });
 
@@ -358,8 +428,14 @@ export const createTemplate = async (req: Request, res: Response) => {
     };
     let dbTemplate: any;
 //if (templateContent.status !== "DRAFT"){
-     dbTemplate = await prisma.template.create({
-      data: {
+//update if already available
+    dbTemplate = await prisma.template.upsert({
+      where: { name: name, userId: user.userId, wabaId: selectedWabaId },
+      update: {
+        status: templateContent.status,
+        content: JSON.stringify(templateContent),
+      },
+      create: {
         name,
         language,
         category,

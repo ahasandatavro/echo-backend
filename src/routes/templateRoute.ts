@@ -9,7 +9,8 @@ import {
   getTemplateByName,
   deleteBroadcast,
   getTemplatesLibrary,
-  updateBroadcast
+  updateBroadcast,
+  getAllApprovedTemplates
 } from "../controllers/templateController";
 import multer from "multer";
 
@@ -17,6 +18,7 @@ const upload = multer({ dest: "uploads/" });
 const router: Router = Router();
 
 router.get("/", getAllTemplates);
+router.get("/approved", getAllApprovedTemplates);
 router.get("/library", getTemplatesLibrary);
 router.post("/", upload.single("file"),createTemplate);
 router.get('/brodcast', getBroadcasts);

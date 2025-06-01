@@ -355,8 +355,14 @@ export const updateChatFlow = async (req: Request, res: Response) => {
   if (isNaN(chatIdNumber)) {
     return res.status(400).json({ error: 'Invalid chatId parameter. Must be a number.' });
   }
-
-  const { nodes, edges } = req.body;
+//save chatbot name in chatbot table if there's chatbot name in req.body
+  const { nodes, edges, chatBotName } = req.body;
+  if(chatBotName){
+    await prisma.chatbot.update({
+      where: { id: chatIdNumber },
+      data: { name: chatBotName },
+    });
+  }
 
   try {
     // Validate if the chatbot exists
