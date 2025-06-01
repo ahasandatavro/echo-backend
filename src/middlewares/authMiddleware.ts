@@ -5,6 +5,7 @@ import { generateTokens, setTokenCookies } from '../utils/tokenUtils';
 import { prisma } from '../models/prismaClient';
 
 interface TokenPayload {
+  rememberMe?: boolean;
   userId: number;
   role: string;
 }
@@ -44,10 +45,10 @@ export const authenticateJWT = async (req: Request, res: Response, next: NextFun
       }
 
       // Generate new tokens
-      const { accessToken: newAccessToken, refreshToken: newRefreshToken } = generateTokens(user.id, user.role);
+      const { accessToken: newAccessToken, refreshToken: newRefreshToken } = generateTokens(user.id, user.role, decoded.rememberMe);
 
       // Set new tokens in cookies
-      setTokenCookies(res, newAccessToken, newRefreshToken);
+      setTokenCookies(res, newAccessToken, newRefreshToken, decoded.rememberMe);
 
       // @ts-ignore: We are adding a custom property `user` to the `Request` object
       req.user = { userId: user.id, role: user.role };
