@@ -136,7 +136,8 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
             recipient, 
             keywordTemplate.template.name, 
             chatbotId,
-            keywordTemplate.template
+            keywordTemplate.template,
+            agentPhoneNumberId
           );
           actionsPerformed = true;
         }
@@ -174,7 +175,7 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
           // Use default chatbotId 1 if no chatbot is associated with the keyword
           const chatbotId = keyword.chatbot?.id || 1;
           
-          await sendMessage(recipient, messageContent, chatbotId);
+          await sendMessage(recipient, messageContent, chatbotId, dbUser?.id, true, agentPhoneNumberId);
           actionsPerformed = true;
         }
       }

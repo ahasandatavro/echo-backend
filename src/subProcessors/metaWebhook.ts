@@ -1110,7 +1110,7 @@ export const handleConversationFlow = async (
   agentPhoneNumber: string
 ) => {
   const conversation = await findOrCreateConversation(recipient, message, agentPhoneNumber);
-  if (!conversation) return;
+  //if (!conversation) return;
 
 
 
@@ -1121,7 +1121,7 @@ export const handleConversationFlow = async (
     return;
   }
 
-  if (conversation.answeringQuestion) {
+  if (conversation && conversation.answeringQuestion) {
     const chatbotData = await getChatbotData(conversation.currentNodeId);
     if (!chatbotData) return;
     await handleQuestionResponse(conversation, message, chatbotData, recipient,agentPhoneNumber);
