@@ -58,7 +58,7 @@ model User {
   verificationToken     String?
   resetToken            String?
   resetTokenExpiresAt   DateTime?
-  apiKey                String?             @unique
+  apiKey                String?
   chatbots              Chatbot[]
   contacts              Contact[]
   conversations         Conversation[]
