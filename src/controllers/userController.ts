@@ -5,6 +5,7 @@ import axios from "axios";
 import fs from "fs";
 import FormData from "form-data";
 import { json } from "body-parser";
+import jwt from "jsonwebtoken";
 const prisma = new PrismaClient();
 interface UserResponse {
   id: number;
@@ -291,12 +292,55 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
       res.status(400).json({ error: "Email already exists" });
       return;
     }
- const hashedPassword = await bcrypt.hash(password, 10);
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Generate API key for new user
+    const apiKey = jwt.sign(
+      { type: 'api_key' }, // We'll add userId after user creation
+      process.env.JWT_SECRET || 'default-secret',
+      { expiresIn: '365d' } // API keys last for 1 year
+    );
+
     const newUser = await prisma.user.create({
-      data: { email, password:hashedPassword, role, firstName, lastName, phoneNumber },
+      data: { 
+        email, 
+        password: hashedPassword, 
+        role, 
+        firstName, 
+        lastName, 
+        phoneNumber,
+        apiKey // Add the API key during user creation
+      },
     });
-    res.status(201).json(newUser);
+
+    // Update the API key with the user's ID
+    const updatedApiKey = jwt.sign(
+      { userId: newUser.id, type: 'api_key' },
+      process.env.JWT_SECRET || 'default-secret',
+      { expiresIn: '365d' }
+    );
+
+    // Update the user with the final API key
+    await prisma.user.update({
+      where: { id: newUser.id },
+      data: { apiKey: updatedApiKey }
+    });
+
+    // Return the user data without sensitive information
+    const userResponse = {
+      id: newUser.id,
+      email: newUser.email,
+      firstName: newUser.firstName,
+      lastName: newUser.lastName,
+      role: newUser.role,
+      phoneNumber: newUser.phoneNumber,
+      apiKey: updatedApiKey // Include the API key in the response
+    };
+
+    res.status(201).json(userResponse);
   } catch (error) {
+    console.error('Error creating user:', error);
     res.status(500).json({ error: "Error creating user" });
   }
 };
@@ -825,5 +869,76 @@ export const deleteAttribute = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error("Error deleting attribute:", error);
     return res.status(500).json({ error: error.message });
+  }
+};
+
+export const getOrGenerateApiKey = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const user: any = req.user;
+    const dbUser = await prisma.user.findUnique({
+      where: { id: user.userId },
+      select: { apiKey: true }
+    });
+
+    if (!dbUser) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+
+    // If user already has an API key, return it
+    if (dbUser.apiKey) {
+      res.json({ apiKey: dbUser.apiKey });
+      return;
+    }
+
+    // Generate new API key using JWT
+    const apiKey = jwt.sign(
+      { userId: user.userId, type: 'api_key' },
+      process.env.JWT_SECRET || 'default-secret',
+      { expiresIn: '365d' } // API keys last for 1 year
+    );
+
+    // Save the API key to the user
+    await prisma.user.update({
+      where: { id: user.userId },
+      data: { apiKey }
+    });
+
+    res.json({ apiKey });
+  } catch (error) {
+    console.error('Error in getOrGenerateApiKey:', error);
+    res.status(500).json({ error: "Error managing API key" });
+  }
+};
+
+export const rotateApiKey = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const user: any = req.user;
+    const dbUser = await prisma.user.findUnique({
+      where: { id: user.userId }
+    });
+
+    if (!dbUser) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+
+    // Generate new API key
+    const apiKey = jwt.sign(
+      { userId: user.userId, type: 'api_key' },
+      process.env.JWT_SECRET || 'default-secret',
+      { expiresIn: '365d' } // API keys last for 1 year
+    );
+
+    // Update the user's API key
+    await prisma.user.update({
+      where: { id: user.userId },
+      data: { apiKey }
+    });
+
+    res.json({ apiKey });
+  } catch (error) {
+    console.error('Error in rotateApiKey:', error);
+    res.status(500).json({ error: "Error rotating API key" });
   }
 };

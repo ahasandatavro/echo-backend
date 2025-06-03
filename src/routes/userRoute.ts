@@ -19,8 +19,11 @@ import {
   updateAttribute,
   deleteAttribute,
   getBasicAttributes,
+  getOrGenerateApiKey,
+  rotateApiKey,
 } from "../controllers/userController"
 import multer from "multer";
+import { authenticateJWT } from "../middlewares/authMiddleware";
 
 const upload = multer({ dest: "uploads/" });
 const router = express.Router();
@@ -42,10 +45,11 @@ router.post("/attributes", createAttribute);
 router.put("/attributes/:oldAttr", updateAttribute);
 router.delete("/attributes/:attr", deleteAttribute);
 router.get("/tags-attributes", getUserTagsAttributes);
+router.get("/api-key", getOrGenerateApiKey);
+router.post("/api-key/rotate", rotateApiKey);
 
 router.get("/:id", getUserById);
 router.put("/:id", updateUser);
 router.delete("/:id", deleteUser);
-
 
 export default router;
