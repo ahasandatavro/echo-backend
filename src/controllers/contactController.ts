@@ -106,45 +106,6 @@ export const getAllContacts = async (req: Request, res: Response) => {
   }
 };
 
-// export const getAllImportedContacts = async (req: Request, res: Response) => {
-//   try {
-//     const user:any=req.user;
-//     const dbUser=await prisma.user.findFirst({
-//       where: { id: user.userId },
-//     })
-//     // Fetch all contacts from the database
-//     const contacts = await prisma.contact.findMany({
-//       where: { createdById: dbUser?.id },
-//       select: {
-//         id: true,
-//         name: true,
-//         phoneNumber: true,
-//         attributes: true,
-//         subscribed: true,
-//         sendSMS: true,
-//         ticketStatus: true,
-//         createdAt: true,
-//         updatedAt: true,
-//       },
-//     });
-
-//     // Ensure attributes is always returned as an array
-//     const formattedContacts = contacts.map((contact) => ({
-//       ...contact,
-//       attributes: Array.isArray(contact.attributes)
-//         ? contact.attributes
-//         : Object.entries(contact.attributes || {}).map(([key, value]) => ({
-//             key,
-//             value,
-//           })),
-//     }));
-
-//     res.json(formattedContacts);
-//   } catch (error) {
-//     console.error("Error fetching contacts:", error);
-//     res.status(500).json({ error: "Internal Server Error" });
-//   }
-// };
 export const getAllImportedContacts = async (req: Request, res: Response) => {
   try {
     const user: any = req.user;
@@ -227,7 +188,6 @@ export const getAllImportedContacts = async (req: Request, res: Response) => {
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
-
 
 /** 📌 Get Contact by ID */
 export const getContactById = async (req: Request, res: Response) => {
@@ -482,7 +442,6 @@ export const deleteContact = async (req: Request, res: Response) => {
   }
 };
 
-
 export const uploadContacts = async (req: Request, res: Response) => {
   if (!req.file) {
     return res.status(400).json({ error: "No file uploaded." });
@@ -615,47 +574,6 @@ export const getAttributes = async (req: Request, res: Response) => {
   }
 };
 
-// export const updateAttribute = async (req: Request, res: Response) => {
-//   try {
-//     const { key, value } = req.body;
-//     const contactId = parseInt(req.params.id);
-
-//     const contact = await prisma.contact.findUnique({
-//       where: { id: contactId },
-//     });
-
-//     if (!contact) return res.status(404).json({ message: "Contact not found" });
-
-//     if (contact.userId) {
-//       const user = await prisma.user.findUnique({
-//         where: { id: contact.userId },
-//       });
-//       const existingUserAttributes = (user?.attributes as Record<string, any>) || {};
-//       const updatedUserAttributes = { ...existingUserAttributes, [key]: value };
-
-//       await prisma.user.update({
-//         where: { id: contact.userId },
-//         data: { attributes: updatedUserAttributes },
-//       });
-//     }
-//     // Ensure attributes is an object before updating
-//     const existingAttributes =
-//       (contact.attributes as Record<string, any>) || {};
-//     const updatedAttributes = { ...existingAttributes, [key]: value };
-
-//     // Update the contact's attributes in the database
-//     await prisma.contact.update({
-//       where: { id: contactId },
-//       data: { attributes: updatedAttributes },
-//     });
-
-//     res.json({ message: "Attribute updated", attributes: updatedAttributes });
-//   } catch (error) {
-//     console.error("Error updating attribute:", error);
-//     res.status(500).json({ error: "Failed to update attribute" });
-//   }
-// };
-
 export const updateAttribute = async (req: Request, res: Response) => {
   try {
     const updateData = req.body;
@@ -726,7 +644,6 @@ export const updateAttribute = async (req: Request, res: Response) => {
     res.status(500).json({ error: "Failed to update attribute" });
   }
 };
-
 
 export const getNotes = async (req: Request, res: Response) => {
   try {
@@ -898,104 +815,6 @@ export const getChatHistory = async (req: Request, res: Response) => {
   }
 };
 
-// export const updateChatStatusAndAssignment  = async (req: Request, res: Response) => {
-//   const { id } = req.params;
-//   const { newStatus, assignedUser, assignedTeams = [] } = req.body;
-//   let assignedUserId: number | null = null;
-
-// if (assignedUser) {
-//   const userRecord = await prisma.user.findUnique({
-//     where: { email: assignedUser },
-//     select: { id: true }
-//   });
-
-//   if (!userRecord) {
-//     return res.status(400).json({ error: `User with email ${assignedUser} not found.` });
-//   }
-
-//   assignedUserId = userRecord.id;
-// }
-
-//   const user:any=req.user;
-//   const dbUser:any=await prisma.user.findFirst({
-//     where: { id: user.userId },
-//     select: { selectedPhoneNumberId: true },
-//   })
-//   try {
-//     const contact = await prisma.contact.findUnique({
-//       where: { id: parseInt(id) },
-//       include: { assignedTeams: true },
-//     });
-//     if (!contact) return res.status(404).json({ error: "Contact not found" });
-//     let teamNames: string[] = [];
-//     if (assignedTeams.length > 0) {
-//       const teams = await prisma.team.findMany({
-//         where: { id: { in: assignedTeams } },
-//         select: { name: true },
-//       });
-//       teamNames = teams.map((team) => team.name);
-//     }
-//     // ✅ Update Contact's current status
-//     await prisma.contact.update({
-//       where: { id: parseInt(id) },
-//       data: {
-//         ticketStatus: newStatus,
-//         userId: assignedUserId ?? contact.userId,
-//         assignedTeams: {
-//           set: assignedTeams.map((teamId: number) => ({ id: teamId })),
-//         },
-//       },
-//     });
-
-//     const historyEntries: any[] = [];
-
-
-//     // ✅ Status change history
-//     historyEntries.push({
-//       contactId: parseInt(id),
-//       previousStatus: contact.ticketStatus,
-//       newStatus,
-//       type: "statusChanged",
-//       changedById: dbUser.id,
-//       changedAt: new Date(),
-//       timerStartTime: newStatus === "Open" ? new Date() : contact.timerStartTime,
-//     });
-
-//     // ✅ Assignment history
-//     if (assignedUser || assignedTeams.length > 0) {
-//       const assignmentNote = `Assigned to ${assignedUser ? `agent ${user?.email}` : ""}${
-//         assignedUser && teamNames.length ? " and " : ""
-//       }${teamNames.length ? `Teams: ${teamNames.join(", ")}` : ""}`;
-
-//       historyEntries.push({
-//         contactId: parseInt(id),
-//         newStatus: "Assigned",
-//         type: "assignmentChanged",
-//         changedById: dbUser.id,
-//         note: assignmentNote,
-//         assignedToUserId: assignedUserId ?? undefined,
-//         changedAt: new Date(),
-//       });
-//     }
-
-//     // ✅ Save all
-//     const [statusChange, assignmentChange] = await Promise.all(
-//       historyEntries.map((entry) => prisma.chatStatusHistory.create({ data: entry }))
-//     );
-//     const io = req.app.get("socketio");
-//     io.emit("chatStatusUpdated", {
-//       contactId: parseInt(id),
-//       chatStatus: newStatus,
-//       changedBy: user?.email || "System",
-//       changedAt: new Date(),
-//     });
-
-//     res.json({ success: true, statusChange, assignmentChange });
-//   } catch (error) {
-//     console.error("Error updating chat status:", error);
-//     res.status(500).json({ error: "Failed to update chat status" });
-//   }
-// };
 export const updateChatStatusAndAssignment = async (req: Request, res: Response) => {
   const { id } = req.params;
   const { newStatus, assignedUser, assignedTeams = [] } = req.body;
@@ -1261,21 +1080,6 @@ export const sendMessageController = async (req: Request, res: Response) => {
       templateId = dbTemplate.id;
       templateDetails = dbTemplate;
       await sendTemplate(contact.phoneNumber, template, chatbotId, templateDetails,dbUser.selectedPhoneNumberId);
-      // savedMessage = await prisma.message.create({
-      //   data: {
-      //     contact: { connect: { id: contactId } },
-      //     sender: "user",
-      //     text: `Template: ${template}`,
-      //     time: new Date(),
-      //     status: "SENT",
-      //     attachment: fileUrl,
-      //     messageType: "template",
-      //     template: { connect: { id: templateId } },
-      //   },
-      //   include: {
-      //     template: true, // Include template details in response
-      //   },
-      // });
     }
     // ✅ Handle Regular Messages (Text, Media)
     else {
@@ -1313,27 +1117,6 @@ export const sendMessageController = async (req: Request, res: Response) => {
       );
     }
 
-    // ✅ Store Message in Database
-  // savedMessage = await prisma.message.create({
-  //     data: {
-  //       contact: {
-  //         connect: { id: contactId }, // ✅ Explicitly linking the contact
-  //       },
-  //       sender: "user",
-  //       text: text || "",
-  //       time: new Date(),
-  //       status: "SENT",
-  //       attachment: fileUrl,
-  //     },
-  //   });
-
-  //   // ✅ Emit message to frontend via socket
-  //   const io = req.app.get("socketio");
-  //   io.emit("newMessage", {
-  //     recipient: contact.phoneNumber, // Ensure correct recipient
-  //     message: savedMessage, // Send the saved message object
-  //     template: templateDetails,
-  //   });
 
     if (filePath) {
       fs.unlink(filePath, (err) => {
@@ -1372,13 +1155,6 @@ export const triggerChatbotByPhoneNumber = async (req: Request, res: Response) =
     if (!text || !text.startsWith("TriggerChatbot:")) {
       return res.status(400).json({ error: "Invalid or missing TriggerChatbot text" });
     }
-
-    // const contact = await prisma.contact.findFirst({ where: { phoneNumber } });
-
-    // if (!contact) {
-    //   return res.status(404).json({ error: "Contact not found" });
-    // }
-
     const result: TriggerResult =await handleChatbotTrigger(text, phoneNumber, userRecord.selectedPhoneNumberId);
     if (!result.ok) {
       return res.status(result.status).json({ error: result.message });
@@ -1626,7 +1402,8 @@ export const importContacts = async (req: Request, res: Response) => {
                   tags: contactData.tags || existingContact.tags,
                   attributes: contactData.attributes || existingContact.attributes,
                   subscribed: contactData.subscribed !== undefined ? contactData.subscribed : existingContact.subscribed,
-                  sendSMS: contactData.sendSMS !== undefined ? contactData.sendSMS : existingContact.sendSMS
+                  sendSMS: contactData.sendSMS !== undefined ? contactData.sendSMS : existingContact.sendSMS,
+                  createdById: reqUser.userId
                 }
               });
               
@@ -1650,7 +1427,8 @@ export const importContacts = async (req: Request, res: Response) => {
                 tags: contactData.tags || [],
                 attributes: contactData.attributes || {},
                 subscribed: contactData.subscribed !== undefined ? contactData.subscribed : false,
-                sendSMS: contactData.sendSMS !== undefined ? contactData.sendSMS : false
+                sendSMS: contactData.sendSMS !== undefined ? contactData.sendSMS : false,
+                createdById: reqUser.userId
               }
             });
             

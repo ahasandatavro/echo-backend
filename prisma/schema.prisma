@@ -84,6 +84,7 @@ model User {
   hubspotIntegration   HubspotIntegration?
   notificationSettings NotificationSetting[]
   contactsCreated   Contact[] @relation("ContactCreatedBy")
+  metaBusinessToken   String?
 }
 
 model BusinessAccount {

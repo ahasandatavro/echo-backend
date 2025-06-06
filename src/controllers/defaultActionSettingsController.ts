@@ -16,7 +16,7 @@ export const getDefaultActionSettings = async (req: Request, res: Response) => {
     });
 
     if (!settings) {
-      return res.status(404).json({ message: "Settings not found" });
+      return res.status(200).json({ message: "Settings not created yet" });
     }
 
     // ✅ Ensure workingHours is always returned in the correct format
