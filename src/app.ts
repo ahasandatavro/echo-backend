@@ -36,6 +36,7 @@ import hubspotRoutes from "./routes/hubspotRoute";
 import webhookRoutes from "./routes/webhookRoute";
 import notificationSettingsRoutes from "./routes/notificationSettingsRoute";
 import agenda, { initializeAgenda } from "./config/agenda";
+import apiV1Route from "./routes/apiV1Route";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -309,6 +310,7 @@ app.use("/templates", authenticateJWT,templateRoutes);
 app.use("/whatsApp", authenticateJWT,whatsAppRoute);
 app.use("/rules", authenticateJWT, ruleRoutes);
 app.use("/hubspot",hubspotRoutes);
+app.use("/apiV1",authenticateJWT,apiV1Route);
 app.post("/upload",upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
