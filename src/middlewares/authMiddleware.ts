@@ -11,7 +11,28 @@ interface TokenPayload {
 }
 
 export const authenticateJWT = async (req: Request, res: Response, next: NextFunction) => {
-  // First try to get token from cookie
+  // First check for API key in Authorization header
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const apiKey = authHeader.split(' ')[1];
+    
+    try {
+      // Verify API key and get user
+      const user = await prisma.user.findFirst({
+        where: { apiKey }
+      });
+
+      if (user) {
+        // @ts-ignore: We are adding a custom property `user` to the `Request` object
+        req.user = { userId: user.id, role: user.role };
+        return next();
+      }
+    } catch (error) {
+      // If API key verification fails, continue to JWT authentication
+    }
+  }
+
+  // Fall back to JWT cookie authentication
   const accessToken = req.cookies.accessToken;
   const refreshToken = req.cookies.refreshToken;
 

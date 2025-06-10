@@ -344,6 +344,7 @@ export const getAccessToken = async (
       data: {
         selectedPhoneNumberId: phoneNumberId,
         selectedWabaId: wabaId,
+        metaBusinessToken: businessToken,
       },
     });
 

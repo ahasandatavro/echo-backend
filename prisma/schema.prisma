@@ -58,6 +58,7 @@ model User {
   verificationToken     String?
   resetToken            String?
   resetTokenExpiresAt   DateTime?
+  apiKey                String?
   chatbots              Chatbot[]
   contacts              Contact[]
   conversations         Conversation[]
@@ -84,6 +85,7 @@ model User {
   hubspotIntegration   HubspotIntegration?
   notificationSettings NotificationSetting[]
   contactsCreated   Contact[] @relation("ContactCreatedBy")
+  metaBusinessToken   String?
 }
 
 model BusinessAccount {
