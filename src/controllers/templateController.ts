@@ -7,6 +7,7 @@ import FormData from "form-data";
 import { prisma } from "../models/prismaClient";
 import { brodcastTemplate } from "../processors/template/templateProcessor";
 import { uploadFileToDigitalOcean } from "../routes/replyMaterialRoute";
+import { syncTemplates as syncTemplatesService } from "../services/templateService";
 
 interface ButtonData {
   id?: number;
@@ -182,7 +183,7 @@ export const getTemplatesLibrary = async (req: Request, res: Response) => {
     // data.data is your array of templates
     const templates: any[] = data.data || []
 
-    // compute counts by topic so your tabs show e.g. “Travel (6)”
+    // compute counts by topic so your tabs show e.g. "Travel (6)"
     const counts = templates.reduce<Record<string, number>>((acc, t) => {
       const key = t.topic || 'Others'
       acc[key] = (acc[key] || 0) + 1
@@ -646,7 +647,7 @@ if (job) {
   // 3) persist the change
   await job.save();
 } else {
-  // (unlikely) fallback to scheduling if it doesn’t exist
+  // (unlikely) fallback to scheduling if it doesn't exist
   await agenda.schedule(scheduledDate, "sendScheduledBroadcast", {
     broadcastId: broadcast.id,
   });
@@ -913,6 +914,29 @@ export const getTemplateByName = async (
   } catch (error) {
     console.error("Error fetching template by name:", error);
     res.status(500).json({ error: "Failed to fetch template" });
+  }
+};
+
+export const syncTemplatesController = async (req: Request, res: Response) => {
+  try {
+    const user: any = req.user;
+    const dbUser = await prisma.user.findFirst({
+      where: { id: user.userId },
+      select: { id: true, selectedWabaId: true },
+    });
+    const wabaId = dbUser?.selectedWabaId;
+    await syncTemplatesService(wabaId as string);
+    res.status(200).json({
+      success: true,
+      message: "Templates synchronized successfully"
+    });
+  } catch (error: any) {
+    console.error("Error syncing templates:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to sync templates",
+      error: error.message
+    });
   }
 };
 

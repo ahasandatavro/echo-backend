@@ -84,16 +84,141 @@ export const updateBusinessPhoneNumber = async (req: Request, res: Response) => 
 
 export const deleteBusinessPhoneNumber = async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const user: any = req.user;
+    const dbUser = await prisma.user.findUnique({
+      where: { id: user.userId },
+      select: { id: true, selectedPhoneNumberId: true, selectedWabaId: true },
+    });
+    if (!dbUser?.id || !dbUser?.selectedPhoneNumberId) {
+      return res.status(400).json({ message: "No phone number selected for this user." });
+    }
 
-    await prisma.businessPhoneNumber.delete({
-      where: { id: Number(id) },
+    const { id } = req.params;
+    const phoneNumberId = parseInt(id, 10);
+
+    if (isNaN(phoneNumberId)) {
+      return res.status(400).json({ message: "Invalid phone number ID" });
+    }
+
+    // First get the business phone number to get its metaPhoneNumberId
+    const businessPhoneNumber = await prisma.businessPhoneNumber.findFirst({
+      where: { metaPhoneNumberId: id },
+      select: { metaPhoneNumberId: true,id:true }
     });
 
-    res.status(200).json({ message: "Business phone number deleted successfully" });
+    if (!businessPhoneNumber) {
+      return res.status(404).json({ message: "Business phone number not found" });
+    }
+
+    // Use a transaction to ensure all deletions are atomic
+    await prisma.$transaction(async (tx) => {
+      // 1. Delete all related webhooks
+      await tx.webhook.deleteMany({
+        where: { businessPhoneNumberId: businessPhoneNumber.id }
+      });
+
+      // 2. Delete default action settings
+      await tx.defaultActionSettings.deleteMany({
+        where: { businessPhoneNumberId: businessPhoneNumber.id }
+      });
+
+      // 3. Delete notification settings
+      await tx.notificationSetting.deleteMany({
+        where: { businessPhoneNumberId: businessPhoneNumber.id }
+      });
+
+      // 4. Handle conversations and their related data
+      const conversations = await tx.conversation.findMany({
+        where: { businessPhoneNumberId: businessPhoneNumber.id },
+        select: { id: true }
+      });
+
+      const conversationIds = conversations.map(conv => conv.id);
+
+      if (conversationIds.length > 0) {
+        // Delete variables related to conversations
+        await tx.variable.deleteMany({
+          where: {
+            conversationId: {
+              in: conversationIds
+            }
+          }
+        });
+
+        // Delete chat status history related to conversations
+        await tx.chatStatusHistory.deleteMany({
+          where: {
+            conversationId: {
+              in: conversationIds
+            }
+          }
+        });
+
+        // Delete messages related to conversations
+        await tx.message.deleteMany({
+          where: {
+            conversationId: {
+              in: conversationIds
+            }
+          }
+        });
+      }
+
+      // Finally delete the conversations themselves
+      await tx.conversation.deleteMany({
+        where: { businessPhoneNumberId: businessPhoneNumber.id }
+      });
+
+      // 5. Delete all rules
+      await tx.rule.deleteMany({
+        where: { businessPhoneNumberId: businessPhoneNumber.id }
+      });
+
+      // 6. Handle reply materials and their related data
+      const replyMaterials = await tx.replyMaterial.findMany({
+        where: { businessPhoneNumberId: businessPhoneNumber.id },
+        select: { id: true }
+      });
+
+      const replyMaterialIds = replyMaterials.map(rm => rm.id);
+
+      if (replyMaterialIds.length > 0) {
+        // Delete keyword reply material relations
+        await tx.keywordReplyMaterial.deleteMany({
+          where: {
+            replyMaterialId: {
+              in: replyMaterialIds
+            }
+          }
+        });
+      }
+
+      // Delete the reply materials themselves
+      await tx.replyMaterial.deleteMany({
+        where: { businessPhoneNumberId: businessPhoneNumber.id }
+      });
+
+      // 7. Finally delete the business phone number itself
+      await tx.businessPhoneNumber.delete({
+        where: { id: businessPhoneNumber.id }
+      });
+    });
+
+    // Update user's selected phone number and WABA ID if they match the deleted one
+    if (dbUser.selectedPhoneNumberId === businessPhoneNumber.metaPhoneNumberId) {
+      await prisma.user.update({
+        where: { id: dbUser.id },
+        data: { 
+          selectedPhoneNumberId: null,
+          selectedWabaId: null 
+        },
+      });
+    }
+
+    res.status(200).json({ message: "Business phone number and all related data deleted successfully" });
   } catch (error) {
     console.error("Error deleting business phone number:", error);
-    res.status(500).json({ message: "Failed to delete business phone number" });
+    res.status(500).json({ message: "Failed to delete business phone number and related data" });
   }
 };
 

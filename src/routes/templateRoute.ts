@@ -10,7 +10,8 @@ import {
   deleteBroadcast,
   getTemplatesLibrary,
   updateBroadcast,
-  getAllApprovedTemplates
+  getAllApprovedTemplates,
+  syncTemplatesController
 } from "../controllers/templateController";
 import multer from "multer";
 
@@ -18,6 +19,7 @@ const upload = multer({ dest: "uploads/" });
 const router: Router = Router();
 
 router.get("/", getAllTemplates);
+router.get("/sync", syncTemplatesController);
 router.get("/approved", getAllApprovedTemplates);
 router.get("/library", getTemplatesLibrary);
 router.post("/", upload.single("file"),createTemplate);
@@ -28,5 +30,6 @@ router.delete("/brodcast/:id", deleteBroadcast);
 router.get("/brodcast/:id/stats", getBroadcastStats);
 router.get("/:templateName", getTemplateByName);
 router.delete("/:templateName", deleteTemplate);
+
 
 export default router;
