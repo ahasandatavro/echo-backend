@@ -76,6 +76,7 @@ model User {
   isOnline              Boolean             @default(false)
   lastActive            DateTime?
   rules                 Rule[]
+  payments              Payment[]
 
   // ✅ New relations for RoutingMaterial assignments
   receivedMaterials    RoutingMaterial[]     @relation("RoutingMaterialUsers") // For Notification type
@@ -600,4 +601,19 @@ enum MaterialType {
   Notification
   AssignUser
   AssignTeam
+}
+
+model Payment {
+  id            Int      @id @default(autoincrement())
+  userId        Int
+  user          User     @relation(fields: [userId], references: [id])
+  orderId       String   @unique
+  paymentId     String?  @unique
+  amount        Int
+  currency      String   @default("INR")
+  status        String   @default("PENDING") // PENDING, SUCCESS, FAILED
+  packageName   String
+  signature     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
