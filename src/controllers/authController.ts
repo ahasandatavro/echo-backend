@@ -52,6 +52,7 @@ export const registerUser = async (req: Request, res: Response) => {
   }
 };
 
+
 export const verifyEmail = async (req: Request, res: Response) => {
   const { token } = req.body;
 
@@ -352,10 +353,10 @@ export const getAccessToken = async (
   } catch (error: any) {
     console.error(
       "Error fetching access token:",
-      error.response?.data || error.message
+      error.response?.data?.error?.message || error.message
     );
     if (!res.headersSent) {
-      return res.status(500).json({ error: "Failed to fetch access token" });
+      return res.status(500).json({ error: error.response?.data?.error?.message || "Failed to fetch access token" });
     }
     return res; // Ensure a valid Response is returned
   }
