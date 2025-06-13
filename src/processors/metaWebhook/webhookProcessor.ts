@@ -1259,7 +1259,7 @@ export const sendMessage = async (
             link: message.message.url,
             caption: message.message.name || "",
           };
-          messageBody = `Image: ${message.message.name} (${message.message.url})`;
+          messageBody = `Image: ${message.message.url}`;
           break;
         case "audio":
           payload.type = "audio";
@@ -1272,7 +1272,7 @@ export const sendMessage = async (
             link: message.message.url,
             caption: message.message.name || "",
           };
-          messageBody = `Video: ${message.message.name} (${message.message.url})`;
+          messageBody = `Video:${message.message.url}`;
           break;
         case "document":
           payload.type = "document";
@@ -1280,7 +1280,7 @@ export const sendMessage = async (
             link: message.message.url,
             caption: message.message.name || "",
           };
-          messageBody = `Document: ${message.message.name} (${message.message.url})`;
+          messageBody = `Document:${message.message.url}`;
           break;
           case "sticker":
             payload.type = "sticker";
@@ -1650,7 +1650,11 @@ export const storeMessage = async ({
         console.log("✅ New conversation created:", conversation);
       }
     }
-
+    let attachmentUrl;
+if (text?.startsWith("Image:")||text?.startsWith("Audio:")||text?.startsWith("Video:")||text?.startsWith("Document:")||text?.startsWith("Sticker:"))   {
+  const parts = text.split(/:(.+)/); // Split at the first colon only
+  attachmentUrl = parts[1]?.trim(); 
+}
     // Create a new message attached to the conversation and contact
     const savedMessage = await prisma.message.create({
       data: {
@@ -1665,6 +1669,7 @@ export const storeMessage = async ({
         status,
         time: new Date(),
         templateId: templateDetails?.id || null,
+        attachment: attachmentUrl || null,
       },
     });
     io.emit("newMessage", {
