@@ -37,7 +37,7 @@ export const getAllContacts = async (req: Request, res: Response) => {
     }
 
     // Step 1: Find businessPhoneNumberId from BusinessPhoneNumber table
-    console.log('🔍 Looking up business phone number...');
+    //console.log('🔍 Looking up business phone number...');
     const businessPhone = await prisma.businessPhoneNumber.findFirst({
       where: { metaPhoneNumberId: selectedPhoneNumberId },
       select: { id: true }, // We only need the businessPhoneNumberId

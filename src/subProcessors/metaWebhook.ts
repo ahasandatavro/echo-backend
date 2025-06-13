@@ -609,7 +609,7 @@ if (messageAssignedEmails.length > 0) {
   const agent = await prisma.user.findFirst({
     where: { selectedPhoneNumberId: phoneNumberId },
   });
-
+console.log("agent?.email",agent?.email);
   if (!agent) {
     console.warn("No agent found for phone number ID:", phoneNumberId);
     return;
@@ -632,7 +632,7 @@ if (activeRules.length > 0) {
 
   //notification to the creator of the agent
   const creatorId = agent.createdById ?? agent.id;
-
+console.log("creatorId",creatorId);
   // 📢 Find all users created by the same creator (including the agent himself)
   const notifyUsers = await prisma.user.findMany({
     where: {

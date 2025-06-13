@@ -204,6 +204,24 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
                   }
                 });
                 console.log(`Assigned user ID ${routingMaterial.assignedUserId} to contact ${recipient}`);
+                const contactRecord = await prisma.contact.findUnique({
+                  where: { phoneNumber: recipient },
+                  select: { id: true }
+                });
+                if (!contactRecord) {
+                  throw new Error(`Contact with phoneNumber ${recipient} not found.`);
+                }
+                await prisma.chatStatusHistory.create({
+                  data: {
+                    contactId: contactRecord?.id||0,
+                    newStatus: "Assigned",
+                    type: "assignmentChanged",
+                    note: `Assigned to agent ${routingMaterial.assignedUser.email}`, 
+                    assignedToUserId: routingMaterial.assignedUserId,
+                    changedById:  null,
+                    changedAt: new Date(),
+                  }
+                });
               }
               break;
               
@@ -228,6 +246,23 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
                       }
                     });
                     console.log(`Assigned team ID ${routingMaterial.teamId} to contact ${recipient}`);
+                    const contactRecord = await prisma.contact.findUnique({
+                      where: { phoneNumber: recipient },
+                      select: { id: true }
+                    });
+                    if (!contactRecord) { 
+                      throw new Error(`Contact with phoneNumber ${recipient} not found.`);
+                    }
+                    await prisma.chatStatusHistory.create({
+                      data: {
+                        contactId: contactRecord?.id||0,
+                        newStatus: "Assigned",
+                        type: "assignmentChanged",
+                        note: `Assigned to Team: ${routingMaterial.team.name}`,
+                        changedById: null,
+                        changedAt: new Date(),
+                      }
+                    });
                   }
                 } else {
                   // Create contact with team assignment
