@@ -9,10 +9,16 @@ const prisma = new PrismaClient();
 
 export const getDefaultActionSettings = async (req: Request, res: Response) => {
   const { businessPhoneNumberId } = req.params;
-
+  const bp=await prisma.businessPhoneNumber.findFirst({
+    where: { metaPhoneNumberId: businessPhoneNumberId},
+    select: { id: true },
+  });
+  if (!bp){
+    return res.status(400).json({ message: "Business PhoneNumber not found" });
+  }
   try {
     const settings = await prisma.defaultActionSettings.findUnique({
-      where: { businessPhoneNumberId: Number(businessPhoneNumberId) },
+      where: { businessPhoneNumberId: bp?.id },
     });
 
     if (!settings) {
