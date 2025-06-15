@@ -1,5 +1,6 @@
 import { htmlToText } from "html-to-text";
 import { prisma } from "../models/prismaClient";
+import { s3 } from "../config/s3Config";
 /**
  * Preprocesses HTML to replace specific tags (e.g., <strong>) with WhatsApp-compatible markdown.
  *
@@ -16,6 +17,7 @@ export const preprocessHtmlForWhatsApp = (html: string): string => {
     .replace(/<a[^>]*href="([^"]+)"[^>]*>(.*?)<\/a>/g, "$2 ($1)") // Links
     .replace(/<s>(.*?)<\/s>/g, "~$1~") // Strikethrough
     .replace(/<del>(.*?)<\/del>/g, "~$1~") // Strikethrough
+    .replace(/<[^>]*>?/gm, '').trim()
 };
 
 /**
@@ -35,13 +37,31 @@ export const convertHtmlToWhatsAppText = (html: string): string => {
 };
 
 
+export const uploadFileToDigitalOceanHelper = async (file: Express.Multer.File): Promise<string> => {
+  const fileKey = `${Date.now()}-${file.originalname}`;
+  const uploadParams = {
+    Bucket: process.env.DO_SPACES_BUCKET || "",
+    Key: fileKey,
+    Body: file.buffer,
+    ACL: "public-read",
+    ContentType: file.mimetype,
+  };
+
+  try {
+    const result = await s3.upload(uploadParams).promise();
+    return result.Location;
+  } catch (error) {
+    console.error("Error uploading to DigitalOcean Spaces:", error);
+    throw new Error("File upload failed");
+  }
+};
 
 export const bump = async (
   chatbotId: number,
   field: "triggered" | "stepsFinished" | "finished",
   by = 1
 ) => {
-  // 1) log what you’re about to do
+  // 1) log what you're about to do
   //console.log(`[bump] called → chatbotId=${chatbotId} field=${field} by=${by}`);
 
   try {
@@ -57,7 +77,7 @@ export const bump = async (
   } catch (err) {
     // 4) make sure you actually see the error
     console.error(`[bump] failed → chatbotId=${chatbotId} field=${field}`, err);
-    // optionally re-throw if you want the outer code’s catch to see it:
+    // optionally re-throw if you want the outer code's catch to see it:
    // throw err;
   }
 };
