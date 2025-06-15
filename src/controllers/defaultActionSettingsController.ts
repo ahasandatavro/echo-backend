@@ -99,8 +99,15 @@ export const createOrUpdateDefaultActionSettings = async (req: Request, res: Res
 
   try {
     // ✅ Mapping checkboxes to Prisma fields
+    const bp=await prisma.businessPhoneNumber.findFirst({
+      where: { metaPhoneNumberId: businessPhoneNumberId},
+      select: { id: true },
+    });
+    if (!bp){
+      return res.status(400).json({ message: "Business PhoneNumber not found" });
+    }
     const updateData = {
-      businessPhoneNumberId: Number(businessPhoneNumberId),
+      businessPhoneNumberId: bp?.id,
       workingHours,
 
       // ✅ Map checkbox flags to Prisma fields
@@ -130,13 +137,13 @@ export const createOrUpdateDefaultActionSettings = async (req: Request, res: Res
 
     // ✅ Check if settings already exist
     const existingSettings = await prisma.defaultActionSettings.findUnique({
-      where: { businessPhoneNumberId: Number(businessPhoneNumberId) },
+      where: { businessPhoneNumberId: bp?.id },
     });
 
     if (existingSettings) {
       // ✅ Update existing settings
       const updatedSettings = await prisma.defaultActionSettings.update({
-        where: { businessPhoneNumberId: Number(businessPhoneNumberId) },
+        where: { businessPhoneNumberId: bp?.id},
         data: updateData,
       });
 
