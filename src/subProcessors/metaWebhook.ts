@@ -1191,21 +1191,6 @@ else chatbotId = text ? await findChatbotIdByKeyword(text) : null;
       }
     });
    
-    const defaultActionSettings = await prisma.defaultActionSettings.findUnique({
-      where: {
-        businessPhoneNumberId: businessPhoneNumber?.id,
-      },
-    });
-    if (
-      defaultActionSettings?.outsideWorkingHoursEnabled &&
-      defaultActionSettings.workingHours
-    ) {
-      const workingHours = defaultActionSettings.workingHours as WorkingHours;
-  
-      if (!isWithinWorkingHours(workingHours)) {
-        return await handleFallbackMaterial(defaultActionSettings, recipient, agentPhoneNumberId);
-      }
-    }
  // inside working hours fallback
  if (businessPhoneNumber?.fallbackEnabled && businessPhoneNumber.fallbackMessage) {
   const {

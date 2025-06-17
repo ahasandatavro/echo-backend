@@ -143,7 +143,7 @@ model BusinessPhoneNumber {
   businessAccountId     Int
   businessAccount       BusinessAccount        @relation(fields: [businessAccountId], references: [id])
   phoneNumber           String?
-  metaPhoneNumberId     String
+  metaPhoneNumberId     String                 @unique
   displayName           String?
   connectionStatus      String?
   subscription          String?
@@ -151,12 +151,13 @@ model BusinessPhoneNumber {
   defaultActionSettings DefaultActionSettings?
   webhooks              Webhook[]
   notificationSetting   NotificationSetting?
- fallbackEnabled       Boolean                @default(false)
- fallbackMessage       String?
- fallbackTriggerCount  Int                    @default(3)
- fallbackHitCount      Int                    @default(0)
- rules                 Rule[]
- replyMaterials        ReplyMaterial[]
+  fallbackEnabled       Boolean                @default(false)
+  fallbackMessage       String?
+  fallbackTriggerCount  Int                    @default(3)
+  fallbackHitCount      Int                    @default(0)
+  rules                 Rule[]
+  replyMaterials        ReplyMaterial[]
+  roundRobinState       RoundRobinState?
 }
 
 model NotificationSetting {
@@ -616,4 +617,11 @@ model Payment {
   signature     String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+
+model RoundRobinState {
+  id                String   @id @default(cuid())
+  phoneNumberId     String   @unique
+  lastAssignedIndex Int
+  businessPhoneNumber BusinessPhoneNumber @relation(fields: [phoneNumberId], references: [metaPhoneNumberId])
 }

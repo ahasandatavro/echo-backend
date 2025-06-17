@@ -95,7 +95,16 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
     }) as KeywordWithRelations | null;
 
     if (!keyword) {
-      return false;
+      if(defaultActionSettings?.fallbackMessageEnabled){
+        const type = defaultActionSettings.fallbackMessageMaterialType;
+        const id = defaultActionSettings.fallbackMessageMaterialId;
+  
+        if (type && id) {
+          const sent = await sendDefaultMaterial(type, id, recipient, 1, agentPhoneNumberId);
+          if (sent) return true;
+        }
+      }
+      else return false;
 
     }
     
@@ -124,7 +133,7 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
     }
 
     // 2. Process templates if associated
-    if (keyword.keywordTemplates && keyword.keywordTemplates.length > 0) {
+    if (keyword?.keywordTemplates && keyword.keywordTemplates.length > 0) {
       for (const keywordTemplate of keyword.keywordTemplates) {
         if (keywordTemplate.template) {
           console.log(`Sending template "${keywordTemplate.template.name}" for keyword "${keyword.value}"`);
@@ -145,7 +154,7 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
     }
 
     // 3. Process reply materials if associated
-    if (keyword.replyMaterials && keyword.replyMaterials.length > 0) {
+    if (keyword?.replyMaterials && keyword.replyMaterials.length > 0) {
       for (const keywordReplyMaterial of keyword.replyMaterials) {
         const replyMaterial = keywordReplyMaterial.replyMaterial;
         if (replyMaterial) {
@@ -182,7 +191,7 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
     }
 
     // 4. Process routing materials if associated
-    if (keyword.routingMaterials && keyword.routingMaterials.length > 0) {
+    if (keyword?.routingMaterials && keyword.routingMaterials.length > 0) {
       for (const keywordRoutingMaterial of keyword.routingMaterials) {
         const routingMaterial = keywordRoutingMaterial.routingMaterial;
         
@@ -316,15 +325,41 @@ const checkAndSendDefaultMaterial = async (
     const workingHours = defaultActionSettings.workingHours as WorkingHours;
 
     if (!isWithinWorkingHours(workingHours)) {
-      const type = defaultActionSettings.outsideWorkingHoursMaterialType;
-      const id = defaultActionSettings.outsideWorkingHoursMaterialId;
+      let dbUser = await prisma.user.findFirst({ where: { selectedPhoneNumberId: agentPhoneNumberId } });
+      const keyword = await prisma.keyword.findFirst({
+        where: {
+          value: {
+            equals: text,
+            mode: "insensitive",
+          },
+          userId: dbUser?.id
+        }
+      });
+  if(keyword){
+    if(defaultActionSettings?.keywordMatchReplyEnabled){
+      const type = defaultActionSettings.welcomeMessageMaterialType;
+      const id = defaultActionSettings.welcomeMessageMaterialId;
 
       if (type && id) {
-        const sent = await sendDefaultMaterial(type, id, recipient,1,agentPhoneNumberId);
+        const sent = await sendDefaultMaterial(type, id, recipient, 1, agentPhoneNumberId);
         if (sent) return true;
       }
     }
   }
+      if ( !keyword) {
+        const type = defaultActionSettings.outsideWorkingHoursMaterialType;
+        const id = defaultActionSettings.outsideWorkingHoursMaterialId;
+  
+        if (type && id) {
+          const sent = await sendDefaultMaterial(type, id, recipient, 1, agentPhoneNumberId);
+          if (sent) return true;
+        }
+      }
+    }else{
+      return false;
+    }
+    }
+  
 
   // Check for no agents online
   if (defaultActionSettings?.noAgentOnlineEnabled && agentPhoneNumberId) {
@@ -351,9 +386,6 @@ const checkAndSendDefaultMaterial = async (
       }
     }
   }
-
-  // Check for welcome message
-  if (defaultActionSettings?.welcomeMessageEnabled && agentPhoneNumberId) {
     // Only send if this is the first message (no conversation exists for this recipient and agentPhoneNumberId)
     const existingConversation = await prisma.conversation.findFirst({
       where: {
@@ -380,7 +412,7 @@ const checkAndSendDefaultMaterial = async (
       }
     });
 
-    if ( !keyword) {
+    if ( !keyword && defaultActionSettings?.welcomeMessageEnabled) {
       const type = defaultActionSettings.welcomeMessageMaterialType;
       const id = defaultActionSettings.welcomeMessageMaterialId;
 
@@ -389,10 +421,80 @@ const checkAndSendDefaultMaterial = async (
         if (sent) return true;
       }
     }
+    if (defaultActionSettings?.roundRobinAssignmentEnabled && agentPhoneNumberId) {
+      const agents = await prisma.user.findMany({
+        where: {
+          selectedPhoneNumberId: agentPhoneNumberId,
+        },
+        orderBy: {
+          id: 'asc', // To keep consistent ordering
+        },
+      });
+    
+      const contact = await prisma.contact.findFirst({
+        where: {
+          phoneNumber: recipient,
+        },
+      });
+    
+      // If contact exists and not already assigned
+      if (contact && !contact.userId && agents.length > 0) {
+        // Get or create round robin tracker (could be a separate table or a key-value config table)
+        const rrState = await prisma.roundRobinState.findFirst({
+          where: {
+            phoneNumberId: agentPhoneNumberId,
+          },
+        });
+    
+        let nextIndex = 0;
+    
+        if (rrState) {
+          nextIndex = (rrState.lastAssignedIndex + 1) % agents.length;
+    
+          await prisma.roundRobinState.update({
+            where: { phoneNumberId: agentPhoneNumberId },
+            data: {
+              lastAssignedIndex: nextIndex,
+            },
+          });
+        } else {
+          // Create tracker if doesn't exist
+          await prisma.roundRobinState.create({
+            data: {
+              phoneNumberId: agentPhoneNumberId,
+              lastAssignedIndex: nextIndex,
+            },
+          });
+        }
+    
+        // Assign the selected agent to this contact
+        const assignedAgent = agents[nextIndex];
+        await prisma.contact.update({
+          where: {
+            id: contact.id,
+          },
+          data: {
+            userId: assignedAgent.id,
+          },
+        });
+        await prisma.chatStatusHistory.create({
+          data: {
+            contactId: contact.id,
+            newStatus: "Assigned",
+            type: "assignmentChanged",
+            note: `Assigned to agent ${assignedAgent?.email}`,
+            assignedToUserId: assignedAgent?.id,
+            changedById:  null,
+            changedAt: new Date(),
+          }
+        })
+      }
+    }
+    
   }else{
     return false;
   }
-  }
+  
 
   return false;
 };
