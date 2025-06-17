@@ -38,7 +38,7 @@ export const getDefaultActionSettings = async (req: Request, res: Response) => {
 
     // ✅ Format response properly
     const responsePayload = {
-      businessPhoneNumberId: settings.businessPhoneNumberId,
+      businessPhoneNumberId: businessPhoneNumberId,
       workingHours: formattedWorkingHours, // Ensure working hours are always structured properly
 
       // ✅ Checkbox states mapped correctly
@@ -79,6 +79,13 @@ export const getDefaultActionSettings = async (req: Request, res: Response) => {
           ? {
               materialId: settings.noResponseAfter24hMaterialId.toString(),
               materialType: settings.noResponseAfter24hMaterialType,
+            }
+          : null,
+
+        cb8: settings.welcomeMessageMaterialId
+          ? {
+              materialId: settings.welcomeMessageMaterialId.toString(),
+              materialType: settings.welcomeMessageMaterialType,
             }
           : null,
       },
@@ -139,6 +146,12 @@ export const createOrUpdateDefaultActionSettings = async (req: Request, res: Res
 
       noResponseAfter24hMaterialId: Number(selectedMaterials?.cb4?.materialId) || null,
       noResponseAfter24hMaterialType: selectedMaterials?.cb4?.materialType || null,
+
+      welcomeMessageMaterialId: Number(selectedMaterials?.cb8?.materialId) || null,
+      welcomeMessageMaterialType: selectedMaterials?.cb8?.materialType || null,
+
+      waitingMessageMaterialId: Number(selectedMaterials?.cb9?.materialId) || null,
+      waitingMessageMaterialType: selectedMaterials?.cb9?.materialType || null,
     };
 
     // ✅ Check if settings already exist
@@ -152,6 +165,8 @@ export const createOrUpdateDefaultActionSettings = async (req: Request, res: Res
         where: { businessPhoneNumberId: bp?.id},
         data: updateData,
       });
+
+
 
       return res.status(200).json(updatedSettings);
     } else {

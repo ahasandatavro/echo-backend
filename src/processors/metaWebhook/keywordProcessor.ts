@@ -57,7 +57,7 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
     },
   });
   // Use the new helper function
-  const defaultHandled = await checkAndSendDefaultMaterial(defaultActionSettings, recipient, agentPhoneNumberId);
+  const defaultHandled = await checkAndSendDefaultMaterial(defaultActionSettings, recipient, agentPhoneNumberId,text);
   if (defaultHandled) return true;
   try {
     // Find keyword with all possible related entities
@@ -305,8 +305,10 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
 const checkAndSendDefaultMaterial = async (
   defaultActionSettings: any,
   recipient: string,
-  agentPhoneNumberId: string | undefined
+  agentPhoneNumberId: string | undefined,
+  text: string
 ): Promise<boolean> => {
+  // Check for outside working hours
   if (
     defaultActionSettings?.outsideWorkingHoursEnabled &&
     defaultActionSettings.workingHours
@@ -323,6 +325,75 @@ const checkAndSendDefaultMaterial = async (
       }
     }
   }
+
+  // Check for no agents online
+  if (defaultActionSettings?.noAgentOnlineEnabled && agentPhoneNumberId) {
+    // Find all agents with matching selectedPhoneNumberId
+    const agents = await prisma.user.findMany({
+      where: {
+        selectedPhoneNumberId: agentPhoneNumberId,
+      },
+      select: {
+        isOnline: true
+      }
+    });
+
+    // Check if any agent is online
+    const hasOnlineAgent = agents.some(agent => agent.isOnline);
+
+    if (!hasOnlineAgent) {
+      const type = defaultActionSettings.noAgentOnlineMaterialType;
+      const id = defaultActionSettings.noAgentOnlineMaterialId;
+
+      if (type && id) {
+        const sent = await sendDefaultMaterial(type, id, recipient, 1, agentPhoneNumberId);
+        if (sent) return true;
+      }
+    }
+  }
+
+  // Check for welcome message
+  if (defaultActionSettings?.welcomeMessageEnabled && agentPhoneNumberId) {
+    // Only send if this is the first message (no conversation exists for this recipient and agentPhoneNumberId)
+    const existingConversation = await prisma.conversation.findFirst({
+      where: {
+        recipient,
+        businessPhoneNumberId: defaultActionSettings.businessPhoneNumberId,
+      },
+    });
+//find the messages length for this conversation. If lesst than two then send the welcome message else do nothing
+    const messages = await prisma.message.findMany({
+      where: {
+        conversationId: existingConversation?.id,
+      },
+    });
+    if (messages.length < 10) {  
+    // Check for keyword match (same logic as processKeyword)
+    let dbUser = await prisma.user.findFirst({ where: { selectedPhoneNumberId: agentPhoneNumberId } });
+    const keyword = await prisma.keyword.findFirst({
+      where: {
+        value: {
+          equals: text,
+          mode: "insensitive",
+        },
+        userId: dbUser?.id
+      }
+    });
+
+    if ( !keyword) {
+      const type = defaultActionSettings.welcomeMessageMaterialType;
+      const id = defaultActionSettings.welcomeMessageMaterialId;
+
+      if (type && id) {
+        const sent = await sendDefaultMaterial(type, id, recipient, 1, agentPhoneNumberId);
+        if (sent) return true;
+      }
+    }
+  }else{
+    return false;
+  }
+  }
+
   return false;
 };
 
