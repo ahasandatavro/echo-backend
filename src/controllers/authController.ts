@@ -119,6 +119,12 @@ export const loginUser = async (req: Request, res: Response) => {
 
     const { accessToken, refreshToken } = generateTokens(user.id, user.role, rememberMe);
 
+    // Fetch active package subscription
+    const activePackage = await prisma.packageSubscription.findFirst({
+      where: { userId: user.id, isActive: true },
+      orderBy: { endDate: 'desc' }
+    });
+
     // Set tokens in HTTP-only cookies
     setTokenCookies(res, accessToken, refreshToken, rememberMe);
 
@@ -137,6 +143,12 @@ export const loginUser = async (req: Request, res: Response) => {
         website2: user.website2,
         tags: user.tags,
         attributes: user.attributes,
+        package: activePackage ? {
+          packageName: activePackage.packageName,
+          startDate: activePackage.startDate,
+          endDate: activePackage.endDate,
+          isActive: activePackage.isActive
+        } : null
       },
     });
   } catch (error: unknown) {
@@ -470,10 +482,39 @@ export const refreshToken = async (req: Request, res: Response) => {
 
     const { accessToken, refreshToken: newRefreshToken } = generateTokens(user.id, user.role, decoded.rememberMe);
 
+    // Fetch active package subscription
+    const activePackage = await prisma.packageSubscription.findFirst({
+      where: { userId: user.id, isActive: true },
+      orderBy: { endDate: 'desc' }
+    });
+
     // Set new tokens in HTTP-only cookies
     setTokenCookies(res, accessToken, newRefreshToken, decoded.rememberMe);
 
-    res.status(200).json({ message: 'Tokens refreshed successfully' });
+    res.status(200).json({
+      message: 'Tokens refreshed successfully',
+      user: {
+        email: user.email,
+        role: user.role,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        image: user.image,
+        phoneNumber: user.phoneNumber,
+        businessAddress: user.businessAddress,
+        businessDescription: user.businessDescription,
+        businessIndustry: user.businessIndustry,
+        website1: user.website1,
+        website2: user.website2,
+        tags: user.tags,
+        attributes: user.attributes,
+        package: activePackage ? {
+          packageName: activePackage.packageName,
+          startDate: activePackage.startDate,
+          endDate: activePackage.endDate,
+          isActive: activePackage.isActive
+        } : null
+      }
+    });
   } catch (error) {
     return res.status(401).json({ message: 'Invalid refresh token' });
   }
