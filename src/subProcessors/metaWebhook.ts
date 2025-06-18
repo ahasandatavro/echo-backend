@@ -539,6 +539,11 @@ export const processMessageUpdate = async (value: any, io: any) => {
   let finalContact = contact;
 
 if (!finalContact) {
+  const botUser= await prisma.user.findFirst({
+    where: {
+      email: "bot",
+    },
+  });
   finalContact = await prisma.contact.create({
     data: {
       phoneNumber: sender,
@@ -546,7 +551,8 @@ if (!finalContact) {
       source: "WhatsApp", // or you can dynamically set this
       subscribed: true,
       sendSMS:true,
-      createdById: dbUser?.id
+      createdById: dbUser?.id,
+      userId: botUser?.id
     },
     include: {
       user: true,
@@ -555,6 +561,17 @@ if (!finalContact) {
       },
     },
   });
+  await prisma.chatStatusHistory.create({
+    data: {
+      contactId: finalContact.id,
+      newStatus: "Assigned",
+      type: "assignmentChanged",
+      note: `Assigned to bot`,
+      assignedToUserId: botUser?.id,
+      changedById:  null,
+      changedAt: new Date(),
+    }
+  })
 }
 if (!finalContact) return;
 

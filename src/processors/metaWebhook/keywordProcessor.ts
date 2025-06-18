@@ -317,12 +317,13 @@ const checkAndSendDefaultMaterial = async (
   agentPhoneNumberId: string | undefined,
   text: string
 ): Promise<boolean> => {
+  const workingHours = defaultActionSettings.workingHours as WorkingHours;
   // Check for outside working hours
   if (
     defaultActionSettings?.outsideWorkingHoursEnabled &&
     defaultActionSettings.workingHours
   ) {
-    const workingHours = defaultActionSettings.workingHours as WorkingHours;
+  
 
     if (!isWithinWorkingHours(workingHours)) {
       let dbUser = await prisma.user.findFirst({ where: { selectedPhoneNumberId: agentPhoneNumberId } });
@@ -336,9 +337,9 @@ const checkAndSendDefaultMaterial = async (
         }
       });
   if(keyword){
-    if(defaultActionSettings?.keywordMatchReplyEnabled){
-      const type = defaultActionSettings.welcomeMessageMaterialType;
-      const id = defaultActionSettings.welcomeMessageMaterialId;
+    if(defaultActionSettings?.noKeywordMatchReplyEnabled){
+      const type = defaultActionSettings.outsideWorkingHoursMaterialType;
+      const id = defaultActionSettings.outsideWorkingHoursMaterialId;
 
       if (type && id) {
         const sent = await sendDefaultMaterial(type, id, recipient, 1, agentPhoneNumberId);
@@ -362,7 +363,7 @@ const checkAndSendDefaultMaterial = async (
   
 
   // Check for no agents online
-  if (defaultActionSettings?.noAgentOnlineEnabled && agentPhoneNumberId) {
+  if (isWithinWorkingHours(workingHours) && defaultActionSettings?.noAgentOnlineEnabled && agentPhoneNumberId) {
     // Find all agents with matching selectedPhoneNumberId
     const agents = await prisma.user.findMany({
       where: {
@@ -393,13 +394,88 @@ const checkAndSendDefaultMaterial = async (
         businessPhoneNumberId: defaultActionSettings.businessPhoneNumberId,
       },
     });
+        
+  const contact = await prisma.contact.findFirst({
+    where: {
+      phoneNumber: recipient,
+    },
+    include: {
+      assignedTeams: true
+    }
+  });
+const contactTeamIds=contact?.assignedTeams.map((team)=>team.id);
+const agents = await prisma.user.findMany({
+  where: {
+    teams: {
+      some: {
+        id: { in: contactTeamIds }
+      }
+    }
+  },
+  distinct: ['id']
+});
+  if (defaultActionSettings?.roundRobinAssignmentEnabled && agentPhoneNumberId) {
+    const botUser=await prisma.user.findFirst({where:{email:"bot"}});
+    // If contact exists and not already assigned
+    if (contact && contactTeamIds && contactTeamIds.length > 0 && agents.length > 0 && contact.userId==botUser?.id) {
+      // Get or create round robin tracker (could be a separate table or a key-value config table)
+      const rrState = await prisma.roundRobinState.findFirst({
+        where: {
+          phoneNumberId: agentPhoneNumberId,
+        },
+      });
+  
+      let nextIndex = 0;
+  
+      if (rrState) {
+        nextIndex = (rrState.lastAssignedIndex + 1) % agents.length;
+  
+        await prisma.roundRobinState.update({
+          where: { phoneNumberId: agentPhoneNumberId },
+          data: {
+            lastAssignedIndex: nextIndex,
+          },
+        });
+      } else {
+        // Create tracker if doesn't exist
+        await prisma.roundRobinState.create({
+          data: {
+            phoneNumberId: agentPhoneNumberId,
+            lastAssignedIndex: nextIndex,
+          },
+        });
+      }
+  
+      // Assign the selected agent to this contact
+      const assignedAgent = agents[nextIndex];
+      await prisma.contact.update({
+        where: {
+          id: contact.id,
+        },
+        data: {
+          userId: assignedAgent.id,
+        },
+      });
+      await prisma.chatStatusHistory.create({
+        data: {
+          contactId: contact.id,
+          newStatus: "Assigned",
+          type: "assignmentChanged",
+          note: `Assigned to agent ${assignedAgent?.email}`,
+          assignedToUserId: assignedAgent?.id,
+          changedById:  null,
+          changedAt: new Date(),
+        }
+      })
+    }
+  }
 //find the messages length for this conversation. If lesst than two then send the welcome message else do nothing
     const messages = await prisma.message.findMany({
       where: {
         conversationId: existingConversation?.id,
       },
     });
-    if (messages.length < 10) {  
+    if (messages.length < 2) {  
     // Check for keyword match (same logic as processKeyword)
     let dbUser = await prisma.user.findFirst({ where: { selectedPhoneNumberId: agentPhoneNumberId } });
     const keyword = await prisma.keyword.findFirst({
@@ -421,80 +497,12 @@ const checkAndSendDefaultMaterial = async (
         if (sent) return true;
       }
     }
-    if (defaultActionSettings?.roundRobinAssignmentEnabled && agentPhoneNumberId) {
-      const agents = await prisma.user.findMany({
-        where: {
-          selectedPhoneNumberId: agentPhoneNumberId,
-        },
-        orderBy: {
-          id: 'asc', // To keep consistent ordering
-        },
-      });
-    
-      const contact = await prisma.contact.findFirst({
-        where: {
-          phoneNumber: recipient,
-        },
-      });
-    
-      // If contact exists and not already assigned
-      if (contact && !contact.userId && agents.length > 0) {
-        // Get or create round robin tracker (could be a separate table or a key-value config table)
-        const rrState = await prisma.roundRobinState.findFirst({
-          where: {
-            phoneNumberId: agentPhoneNumberId,
-          },
-        });
-    
-        let nextIndex = 0;
-    
-        if (rrState) {
-          nextIndex = (rrState.lastAssignedIndex + 1) % agents.length;
-    
-          await prisma.roundRobinState.update({
-            where: { phoneNumberId: agentPhoneNumberId },
-            data: {
-              lastAssignedIndex: nextIndex,
-            },
-          });
-        } else {
-          // Create tracker if doesn't exist
-          await prisma.roundRobinState.create({
-            data: {
-              phoneNumberId: agentPhoneNumberId,
-              lastAssignedIndex: nextIndex,
-            },
-          });
-        }
-    
-        // Assign the selected agent to this contact
-        const assignedAgent = agents[nextIndex];
-        await prisma.contact.update({
-          where: {
-            id: contact.id,
-          },
-          data: {
-            userId: assignedAgent.id,
-          },
-        });
-        await prisma.chatStatusHistory.create({
-          data: {
-            contactId: contact.id,
-            newStatus: "Assigned",
-            type: "assignmentChanged",
-            note: `Assigned to agent ${assignedAgent?.email}`,
-            assignedToUserId: assignedAgent?.id,
-            changedById:  null,
-            changedAt: new Date(),
-          }
-        })
-      }
-    }
+
     
   }else{
     return false;
   }
-  
+
 
   return false;
 };
