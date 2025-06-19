@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { razorpayService } from '../services/razorpay.service';
+import { validatePackagePricing } from '../utils/packageUtils';
 
 export const paymentController = {
   async createOrder(req: Request, res: Response) {
@@ -15,9 +16,20 @@ export const paymentController = {
         return res.status(400).json({ error: 'Package duration must be either monthly or yearly' });
       }
 
+      // Validate package pricing against configured packages
+      const validation = validatePackagePricing(packageName, amount, packageDuration);
+      
+      if (!validation.isValid) {
+        return res.status(400).json({ 
+          error: validation.error,
+          expectedAmount: validation.expectedAmount
+        });
+      }
+
       const order = await razorpayService.createOrder(amount, user.userId, packageName, packageDuration, currency);
       res.json(order);
     } catch (error) {
+      console.error('Error creating order:', error);
       res.status(500).json({ error: 'Error creating order' });
     }
   },
@@ -39,6 +51,7 @@ export const paymentController = {
         res.status(400).json({ status: 'error', message: 'Payment verification failed' });
       }
     } catch (error) {
+      console.error('Error verifying payment:', error);
       res.status(500).json({ error: 'Error verifying payment' });
     }
   }
