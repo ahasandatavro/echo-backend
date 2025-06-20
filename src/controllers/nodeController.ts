@@ -434,14 +434,6 @@ export const updateChatFlow = async (req: Request, res: Response) => {
   if (isNaN(chatIdNumber)) {
     return res.status(400).json({ error: 'Invalid chatId parameter. Must be a number.' });
   }
-//save chatbot name in chatbot table if there's chatbot name in req.body
-  const { nodes, edges, chatBotName } = req.body;
-  if(chatBotName){
-    await prisma.chatbot.update({
-      where: { id: chatIdNumber },
-      data: { name: chatBotName },
-    });
-  }
 
   try {
     // Validate if the chatbot exists
@@ -451,6 +443,22 @@ export const updateChatFlow = async (req: Request, res: Response) => {
 
     if (!chatbot) {
       return res.status(404).json({ error: 'Chatbot not found' });
+    }
+
+    // Check if this is a library chatbot (no ownerId)
+    if (!chatbot.ownerId) {
+      return res.status(403).json({ 
+        error: 'Library chatbots cannot be modified. Please create a copy of this chatbot to make changes.' 
+      });
+    }
+
+    //save chatbot name in chatbot table if there's chatbot name in req.body
+    const { nodes, edges, chatBotName } = req.body;
+    if(chatBotName){
+      await prisma.chatbot.update({
+        where: { id: chatIdNumber },
+        data: { name: chatBotName },
+      });
     }
 
     // Use a transaction to update nodes and edges atomically
