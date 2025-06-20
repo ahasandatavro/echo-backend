@@ -77,6 +77,7 @@ model User {
   lastActive            DateTime?
   rules                 Rule[]
   payments              Payment[]
+  packageSubscriptions  PackageSubscription[] // New relation
 
   // ✅ New relations for RoutingMaterial assignments
   receivedMaterials    RoutingMaterial[]     @relation("RoutingMaterialUsers") // For Notification type
@@ -613,10 +614,28 @@ model Payment {
   amount        Int
   currency      String   @default("INR")
   status        String   @default("PENDING") // PENDING, SUCCESS, FAILED
-  packageName   String
+  paymentType   String   @default("upgrade-package") // New field for payment type
+  metadata      Json     // New field to store packageName and packageDuration
   signature     String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  packageSubscription PackageSubscription? // New relation
+}
+
+model PackageSubscription {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  user        User     @relation(fields: [userId], references: [id])
+  paymentId   Int      @unique
+  payment     Payment  @relation(fields: [paymentId], references: [id])
+  packageName String
+  startDate   DateTime @default(now())
+  endDate     DateTime
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
 }
 
 model RoundRobinState {

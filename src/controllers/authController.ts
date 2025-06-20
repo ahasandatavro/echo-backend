@@ -21,22 +21,60 @@ export const registerUser = async (req: Request, res: Response) => {
     const hashedPassword = await bcrypt.hash(password, 10);
     const verificationToken = generateVerificationToken();
 
-    const newUser = await prisma.user.create({
-      data: {
-        email,
-        password: hashedPassword,
-        firstName,
-        lastName,
-        phoneNumber,
-        role: role,
-        emailVerified: false,
-        verificationToken,
-      },
+    // Create free payment and package subscription in a single transaction
+    const startDate = new Date();
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + 7); // 7 days from now
+
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Create user
+      const newUser = await tx.user.create({
+        data: {
+          email,
+          password: hashedPassword,
+          firstName,
+          lastName,
+          phoneNumber,
+          role: role,
+          emailVerified: false,
+          verificationToken,
+        },
+      });
+
+      // 2. Create free payment record
+      const payment = await tx.payment.create({
+        data: {
+          userId: newUser.id,
+          orderId: `free_${Date.now()}_${newUser.id}`,
+          amount: 0,
+          currency: 'INR',
+          paymentType: 'free-signup',
+          metadata: {
+            packageName: 'Free',
+            packageDuration: '7days'
+          },
+          status: 'SUCCESS'
+        }
+      });
+
+      // 3. Create free package subscription using the payment ID
+      const packageSubscription = await tx.packageSubscription.create({
+        data: {
+          userId: newUser.id,
+          paymentId: payment.id,
+          packageName: 'Free',
+          startDate,
+          endDate,
+          isActive: true
+        }
+      });
+
+      return { newUser, payment, packageSubscription };
     });
 
     // Send welcome email with verification link
     try {
-      await sendWelcomeEmail(email, firstName, verificationToken);
+      await sendWelcomeEmail(result.newUser.email, result.newUser.firstName || 'User', verificationToken);
     } catch (emailError) {
       console.error('Failed to send welcome email:', emailError);
       // Don't fail the registration if email fails
@@ -44,6 +82,7 @@ export const registerUser = async (req: Request, res: Response) => {
 
     res.status(201).send("User Created successfully. Please check your email to verify your account.");
   } catch (error: unknown) {
+    console.log(error);
     if (error instanceof Error) {
       res.status(500).send("An unknown error occurred.");
     } else {
@@ -119,6 +158,12 @@ export const loginUser = async (req: Request, res: Response) => {
 
     const { accessToken, refreshToken } = generateTokens(user.id, user.role, rememberMe);
 
+    // Fetch active package subscription
+    const activePackage = await prisma.packageSubscription.findFirst({
+      where: { userId: user.id, isActive: true },
+      orderBy: { endDate: 'desc' }
+    });
+
     // Set tokens in HTTP-only cookies
     setTokenCookies(res, accessToken, refreshToken, rememberMe);
 
@@ -137,6 +182,12 @@ export const loginUser = async (req: Request, res: Response) => {
         website2: user.website2,
         tags: user.tags,
         attributes: user.attributes,
+        package: activePackage ? {
+          packageName: activePackage.packageName,
+          startDate: activePackage.startDate,
+          endDate: activePackage.endDate,
+          isActive: activePackage.isActive
+        } : null
       },
     });
   } catch (error: unknown) {
@@ -470,10 +521,39 @@ export const refreshToken = async (req: Request, res: Response) => {
 
     const { accessToken, refreshToken: newRefreshToken } = generateTokens(user.id, user.role, decoded.rememberMe);
 
+    // Fetch active package subscription
+    const activePackage = await prisma.packageSubscription.findFirst({
+      where: { userId: user.id, isActive: true },
+      orderBy: { endDate: 'desc' }
+    });
+
     // Set new tokens in HTTP-only cookies
     setTokenCookies(res, accessToken, newRefreshToken, decoded.rememberMe);
 
-    res.status(200).json({ message: 'Tokens refreshed successfully' });
+    res.status(200).json({
+      message: 'Tokens refreshed successfully',
+      user: {
+        email: user.email,
+        role: user.role,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        image: user.image,
+        phoneNumber: user.phoneNumber,
+        businessAddress: user.businessAddress,
+        businessDescription: user.businessDescription,
+        businessIndustry: user.businessIndustry,
+        website1: user.website1,
+        website2: user.website2,
+        tags: user.tags,
+        attributes: user.attributes,
+        package: activePackage ? {
+          packageName: activePackage.packageName,
+          startDate: activePackage.startDate,
+          endDate: activePackage.endDate,
+          isActive: activePackage.isActive
+        } : null
+      }
+    });
   } catch (error) {
     return res.status(401).json({ message: 'Invalid refresh token' });
   }
@@ -481,7 +561,7 @@ export const refreshToken = async (req: Request, res: Response) => {
 
 export const logout = (req: Request, res: Response) => {
   const isLocalhost = process.env.NODE_ENV !== 'production';
-  
+
   const cookieOptions = {
     httpOnly: true,
     secure: !isLocalhost,

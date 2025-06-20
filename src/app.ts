@@ -26,8 +26,9 @@ import whatsAppRoute from "./routes/whatsAppRoute";
 import ruleRoutes from "./routes/ruleRoute";
 import businessPhoneNumberRoutes from "./routes/businessPhoneNumberRoute";
 import paymentRoutes from "./routes/payment.routes";
+import packageRoutes from "./routes/packageRoute";
 import { Server } from "socket.io";
-import { authenticateJWT } from "./middlewares/authMiddleware"
+import { authenticateJWT, authenticateJWTWithoutSubscription } from "./middlewares/authMiddleware"
 import passport from "passport";
 import multer from "multer";
 import { s3 } from "./config/s3Config";
@@ -312,7 +313,8 @@ app.use("/whatsApp", authenticateJWT,whatsAppRoute);
 app.use("/rules", authenticateJWT, ruleRoutes);
 app.use("/hubspot",hubspotRoutes);
 app.use("/apiV1",authenticateJWT,apiV1Route);
-app.use("/payments", authenticateJWT, paymentRoutes);
+app.use("/payments", authenticateJWTWithoutSubscription, paymentRoutes);
+app.use("/packages", authenticateJWTWithoutSubscription, packageRoutes);
 app.post("/upload",upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
