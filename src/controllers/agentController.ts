@@ -2,6 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import { Request, Response } from "express";
 import bcrypt from 'bcrypt';
 import { sendWelcomeEmail, generateVerificationToken } from "../services/emailService";
+import { getAgentLimits } from "../utils/packageUtils";
 import crypto from 'crypto';
 const prisma = new PrismaClient();
 
@@ -9,8 +10,46 @@ const prisma = new PrismaClient();
 export const createAgent = async (req: Request, res: Response) => {
     try {
         const { email, firstName, lastName, contactEmail, phoneNumber } = req.body;
-        const reqUser:any=req.user;
+        const reqUser: any = req.user;
+        const userPackage = reqUser.activeSubscription.packageName;
         const userId = reqUser.userId; // Assuming middleware extracts logged-in user's ID
+
+        // Check package restrictions
+        if (!userPackage) {
+            return res.status(403).json({ 
+                error: "No package found. Please upgrade your plan to create agents." 
+            });
+        }
+
+        // Get agent limits from environment variables
+        const agentLimits = getAgentLimits();
+        const maxAgents = agentLimits[userPackage];
+        
+        if (maxAgents === undefined) {
+            return res.status(403).json({ 
+                error: `Invalid package: ${userPackage}. Please contact support.` 
+            });
+        }
+
+        if (maxAgents === 0) {
+            return res.status(403).json({ 
+                error: "Free plan users cannot create agents. Please upgrade to Growth, Pro, or Business plan." 
+            });
+        }
+
+        // Count existing agents for this user
+        const existingAgentsCount = await prisma.user.count({
+            where: {
+                createdById: userId,
+                agent: true
+            }
+        });
+
+        if (existingAgentsCount >= maxAgents) {
+            return res.status(403).json({ 
+                error: `You have reached the maximum number of agents (${maxAgents}) for your ${userPackage} plan. Please upgrade your plan to create more agents.` 
+            });
+        }
 
         // Get the creator (User creating the Agent)
         const creator = await prisma.user.findUnique({

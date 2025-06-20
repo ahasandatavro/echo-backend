@@ -3,6 +3,50 @@ import { Request, Response } from 'express';
 import { prisma } from '../models/prismaClient';
 import {s3} from '../config/s3Config'
 
+// Function to get chatbot limits from environment variables
+const getChatbotLimits = () => {
+  try {
+    const configString = process.env.CHATBOT_LIMITS_CONFIG || '{"Free": 0, "Growth": 3, "Pro": 10, "Business": 100}';
+    return JSON.parse(configString);
+  } catch (error) {
+    console.error('Error parsing CHATBOT_LIMITS_CONFIG:', error);
+    // Return default limits if parsing fails
+    return {
+      'Free': 0,
+      'Growth': 3,
+      'Pro': 10,
+      'Business': 100
+    };
+  }
+};
+
+// Function to check if user can create more chatbots
+const checkChatbotCreationLimit = async (userId: number, packageName: string) => {
+  const chatbotLimits = getChatbotLimits();
+  const maxChatbots = chatbotLimits[packageName];
+
+  if (maxChatbots === undefined) {
+    throw new Error(`Invalid package: ${packageName}. Please contact support.`);
+  }
+
+  if (maxChatbots === 0) {
+    throw new Error("Free plan users cannot create chatbots. Please upgrade to Growth, Pro, or Business plan.");
+  }
+
+  // Count existing chatbots for this user
+  const existingChatbotsCount = await prisma.chatbot.count({
+    where: {
+      ownerId: userId
+    }
+  });
+
+  if (existingChatbotsCount >= maxChatbots) {
+    throw new Error(`You have reached the maximum limit of ${maxChatbots} chatbots for your ${packageName} plan. Please upgrade your plan to create more chatbots.`);
+  }
+
+  return true;
+};
+
 export const createNode = async (req: Request, res: Response) => {
 //   const { chatId, nodeId, data } = req.body;
 //   try {
@@ -19,7 +63,23 @@ export const createNode = async (req: Request, res: Response) => {
 // }
 
 };
+export const getChatbotLibrary = async (req: Request, res: Response) => {
+  try {
 
+
+    const chatbots = await  prisma.chatbot.findMany({
+      where:   {ownerId: null}
+    })
+
+    res.status(200).json({
+      chatbots
+    });
+  } catch (error) {
+    console.error('Error fetching chatbots:', error);
+    res.status(500).json({ message: 'Failed to fetch chatbots' });
+  }
+
+}
 export const getNode = async (req: Request, res: Response) => {
 //   const { chatId, id } = req.query;
 //   try {
@@ -144,6 +204,25 @@ export const createChatFlow = async (req: Request, res: Response) => {
     const dbUser=await prisma.user.findFirst({
       where: { id: user.userId },
     })
+
+    // Check user's package subscription and chatbot creation limits
+    const userPackage = user.activeSubscription?.packageName;
+    
+    if (!userPackage) {
+      return res.status(403).json({ 
+        error: "No active subscription found. Please upgrade your plan to create chatbots." 
+      });
+    }
+
+    // Check if user can create more chatbots based on their package
+    try {
+      await checkChatbotCreationLimit(dbUser.id, userPackage);
+    } catch (limitError) {
+      return res.status(403).json({ 
+        error: limitError instanceof Error ? limitError.message : "Failed to check chatbot limits" 
+      });
+    }
+
     // Check for existing chatbot names and append a unique suffix if necessary
     let uniqueChatBotName = chatBotName;
     let suffix = 1;

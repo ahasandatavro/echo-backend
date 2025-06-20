@@ -119,7 +119,8 @@ export const authenticateJWT = async (req: Request, res: Response, next: NextFun
             code: 'SUBSCRIPTION_EXPIRED'
           });
         }
-
+        // @ts-ignore: We are adding a custom property `user` to the `Request` object
+        req.user.activeSubscription = activeSubscription;
         return next();
       }
     } catch (error) {
@@ -162,7 +163,8 @@ export const authenticateJWT = async (req: Request, res: Response, next: NextFun
         code: 'SUBSCRIPTION_EXPIRED'
       });
     }
-
+    // @ts-ignore: We are adding a custom property `user` to the `Request` object
+    req.user.activeSubscription = activeSubscription;
     next();
   } catch (error) {
     // Access token is invalid or expired
@@ -213,7 +215,8 @@ export const authenticateJWT = async (req: Request, res: Response, next: NextFun
           code: 'SUBSCRIPTION_EXPIRED'
         });
       }
-
+      // @ts-ignore: We are adding a custom property `user` to the `Request` object
+      req.user.activeSubscription = activeSubscription;
       next();
     } catch (refreshError) {
       return res.status(401).send({message: 'Access denied. Invalid refresh token.', code: 'REFRESH_TOKEN_INVALID'});

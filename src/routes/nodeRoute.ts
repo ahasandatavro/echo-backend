@@ -3,7 +3,7 @@ import { deleteNodeByChatId, createChatFlow,
     getNodesByChatId,
     getNodesByChatName,
     updateNode,
-    deleteNode, getPaginatedChatbots, updateChatFlow} from '../controllers/nodeController';
+    deleteNode, getPaginatedChatbots, updateChatFlow, getChatbotLibrary} from '../controllers/nodeController';
 import { validateRequest } from '../middlewares/errorHandler';
 import { nodeValidation } from '../utils/joiSchemas';
 import { authorizeRole } from '../middlewares/roleAuthorization';
@@ -14,6 +14,7 @@ router.put('/:id', authorizeRole(['BOTCREATOR', 'SUPERADMIN']), updateNode); // 
 router.delete('/node/:id', authorizeRole(['SUPERADMIN']), deleteNode);
 
 router.get('/chatbots', getPaginatedChatbots);
+router.get('/chatbot/library', getChatbotLibrary);
 router.put('/chatflow/:chatId', updateChatFlow); // Update chat flow
 router.delete('/chatbot/:chat_id', deleteNodeByChatId);
 router.post('/chatflow', createChatFlow); // Create full flow

@@ -109,4 +109,32 @@ function getDefaultPackages(): PackagePricing[] {
       canPurchase: true
     }
   ];
+}
+
+// Get agent limits from environment variables
+export function getAgentLimits(): { [key: string]: number } {
+  const agentLimitsConfig = process.env.AGENT_LIMITS_CONFIG;
+  
+  if (agentLimitsConfig) {
+    try {
+      return JSON.parse(agentLimitsConfig);
+    } catch (error) {
+      console.error('Error parsing AGENT_LIMITS_CONFIG:', error);
+      // Fallback to default configuration
+      return getDefaultAgentLimits();
+    }
+  } else {
+    // Use default configuration if no environment variable is set
+    return getDefaultAgentLimits();
+  }
+}
+
+// Default agent limits configuration
+function getDefaultAgentLimits(): { [key: string]: number } {
+  return {
+    'Free': 0,
+    'Growth': 3,
+    'Pro': 3,
+    'Business': 5
+  };
 } 
