@@ -16,21 +16,34 @@ interface UserResponse {
   role: string;
   team: string; // Comma-separated team names
 }
-// Get all users with pagination
+
 export const getUsers = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { page = "1", limit = "5" } = req.query;
+    const { page = "1", limit = "5", search = "" } = req.query;
     const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
-    const user:any=req.user;
-    const dbUser=await prisma.user.findFirst({
+    const user: any = req.user;
+    const dbUser = await prisma.user.findFirst({
       where: { id: user.userId },
       select: { selectedPhoneNumberId: true },
-    })
+    });
     const selectedPhoneNumberId = dbUser?.selectedPhoneNumberId;
+
+    // Build where object
+    const where: any = {};
+    if (selectedPhoneNumberId) {
+      where.selectedPhoneNumberId = selectedPhoneNumberId;
+    }
+    if (search) {
+      where.OR = [
+        { firstName: { contains: search as string, mode: "insensitive" } },
+        { lastName: { contains: search as string, mode: "insensitive" } },
+        { email: { contains: search as string, mode: "insensitive" } },
+        { phoneNumber: { contains: search as string, mode: "insensitive" } },
+      ];
+    }
+
     const users = await prisma.user.findMany({
-      where: {
-        selectedPhoneNumberId: selectedPhoneNumberId || undefined,
-      },
+      where,
       skip,
       take: parseInt(limit as string),
       include: {
@@ -41,26 +54,26 @@ export const getUsers = async (req: Request, res: Response): Promise<void> => {
         },
       },
     });
-    
+
     const formattedUsers: UserResponse[] = users.map((user) => ({
-        id: user.id,
-        firstName: user.firstName || "",
-        lastName: user.lastName || "",
-        email: user.email || "",
-        phoneNumber: user.phoneNumber|| "",
-        role: user.role|| "USER",
-        team: user.teams.map((team) => team.name).join(", "), // Convert teams to comma-separated string
-        isOnline: user.isOnline,                 // ✅ include this
-        lastActive: user.lastActive || null,
-      }));
-  
-      const totalRows = await prisma.user.count();
-      res.json({ data: formattedUsers, totalRows });
+      id: user.id,
+      firstName: user.firstName || "",
+      lastName: user.lastName || "",
+      email: user.email || "",
+      phoneNumber: user.phoneNumber || "",
+      role: user.role || "USER",
+      team: user.teams.map((team) => team.name).join(", "),
+      isOnline: user.isOnline,
+      lastActive: user.lastActive || null,
+    }));
+
+    const totalRows = await prisma.user.count({ where });
+
+    res.json({ data: formattedUsers, totalRows });
   } catch (error) {
     res.status(500).json({ error: "Error fetching users" });
   }
 };
-
 // Get a single user by ID
 export const getUserById = async (req: Request, res: Response): Promise<void> => {
   try {

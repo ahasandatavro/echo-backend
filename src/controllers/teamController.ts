@@ -6,10 +6,31 @@ const prisma = new PrismaClient();
 // Get all teams
 export const getTeams = async (req: Request, res: Response): Promise<void> => {
   try {
+    const { page = "1", limit = "5", search = "" } = req.query;
+    const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
+
+    // Build where object for search
+    const where: any = {};
+    if (search) {
+      where.name = { contains: search as string, mode: "insensitive" };
+    }
+
     const teams = await prisma.team.findMany({
-      include: { users: true },
+      where,
+      skip,
+      take: parseInt(limit as string),
+      select: {
+        id: true,
+        name: true,
+        defaultTeam: true,
+        size: true,
+        users: { select: { id: true, firstName: true, lastName: true, email: true, phoneNumber: true, role: true } }
+      }
     });
-    res.json(teams);
+
+    const totalRows = await prisma.team.count({ where });
+
+    res.json({ data: teams, totalRows });
   } catch (error) {
     res.status(500).json({ error: "Error fetching teams" });
   }
