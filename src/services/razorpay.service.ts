@@ -55,6 +55,35 @@ class RazorpayService {
       const isValid = expectedSignature === signature;
 
       if (isValid) {
+        // Fetch payment details from Razorpay to get card information
+        let lastFourDigits: string | null = null;
+        let cardType: string | null = null;
+
+        try {
+          const paymentDetails = await this.razorpay.payments.fetch(paymentId);
+          
+          // Extract card information from payment method
+          if (paymentDetails.method === 'card' && paymentDetails.card) {
+            lastFourDigits = paymentDetails.card.last4;
+            cardType = paymentDetails.card.network?.toLowerCase() || null;
+          } else if (paymentDetails.method === 'upi' && paymentDetails.vpa) {
+            // For UPI, we can store the VPA (Virtual Payment Address)
+            lastFourDigits = paymentDetails.vpa.slice(-4);
+            cardType = 'upi';
+          } else if (paymentDetails.method === 'netbanking' && paymentDetails.bank) {
+            // For netbanking, we can store bank code
+            lastFourDigits = paymentDetails.bank.toString().slice(-4);
+            cardType = 'netbanking';
+          } else if (paymentDetails.method === 'wallet' && paymentDetails.wallet) {
+            // For wallet payments
+            lastFourDigits = paymentDetails.wallet.slice(-4);
+            cardType = 'wallet';
+          }
+        } catch (error) {
+          console.error('Error fetching payment details from Razorpay:', error);
+          // Continue with payment verification even if we can't fetch card details
+        }
+
         // Get payment details to create package subscription
         const payment = await prisma.payment.findUnique({
           where: { orderId },
@@ -72,13 +101,15 @@ class RazorpayService {
           endDate.setMonth(endDate.getMonth() + (metadata.packageDuration === 'yearly' ? 12 : 1));
 
           await prisma.$transaction([
-            // Update payment status
+            // Update payment status with card information
             prisma.payment.update({
               where: { orderId },
               data: {
                 paymentId,
                 signature,
-                status: 'SUCCESS'
+                status: 'SUCCESS',
+                lastFourDigits,
+                cardType
               }
             }),
             // Deactivate previous subscriptions
@@ -119,6 +150,73 @@ class RazorpayService {
       return isValid;
     } catch (error) {
       throw new Error(`Error verifying payment: ${error}`);
+    }
+  }
+
+  async getPaymentDetails(orderId: string) {
+    try {
+      const payment = await prisma.payment.findUnique({
+        where: { orderId },
+        select: {
+          id: true,
+          orderId: true,
+          paymentId: true,
+          amount: true,
+          currency: true,
+          status: true,
+          lastFourDigits: true,
+          cardType: true,
+          createdAt: true
+        }
+      });
+
+      if (!payment) {
+        throw new Error('Payment not found');
+      }
+
+      return payment;
+    } catch (error) {
+      throw new Error(`Error fetching payment details: ${error}`);
+    }
+  }
+
+  async getPaymentHistory(userId: number, skip: number, limit: number) {
+    try {
+      const payments = await prisma.payment.findMany({
+        where: { userId },
+        select: {
+          id: true,
+          orderId: true,
+          paymentId: true,
+          amount: true,
+          currency: true,
+          status: true,
+          paymentType: true,
+          lastFourDigits: true,
+          cardType: true,
+          createdAt: true,
+          metadata: true
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit
+      });
+
+      return payments;
+    } catch (error) {
+      throw new Error(`Error fetching payment history: ${error}`);
+    }
+  }
+
+  async getPaymentCount(userId: number) {
+    try {
+      const count = await prisma.payment.count({
+        where: { userId }
+      });
+
+      return count;
+    } catch (error) {
+      throw new Error(`Error counting payments: ${error}`);
     }
   }
 }

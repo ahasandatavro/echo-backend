@@ -618,6 +618,8 @@ model Payment {
   paymentType   String   @default("upgrade-package") // New field for payment type
   metadata      Json     // New field to store packageName and packageDuration
   signature     String?
+  lastFourDigits String? // Last four digits of the card/account
+  cardType      String?  // Type of card/account (e.g., "visa", "mastercard", "upi", "netbanking")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   packageSubscription PackageSubscription? // New relation

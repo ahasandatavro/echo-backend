@@ -14,6 +14,25 @@ export const getBillingInformation = async (req: Request, res: Response): Promis
       where: { userId },
     });
 
+    // Fetch the latest successful payment for the user
+    const latestPayment = await prisma.payment.findFirst({
+      where: { 
+        userId, 
+        status: 'SUCCESS' 
+      },
+      orderBy: { 
+        createdAt: 'desc' 
+      },
+      select: {
+        lastFourDigits: true,
+        cardType: true,
+        createdAt: true,
+        amount: true,
+        currency: true,
+        paymentType: true
+      }
+    });
+
     if (!billingInfo) {
       res.status(404).json({ error: "Billing information not found" });
       return;
@@ -22,6 +41,7 @@ export const getBillingInformation = async (req: Request, res: Response): Promis
     res.json({
       success: true,
       data: billingInfo,
+      latestPayment: latestPayment || null
     });
   } catch (error) {
     console.error("Error fetching billing information:", error);
