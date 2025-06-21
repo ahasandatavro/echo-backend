@@ -6,62 +6,80 @@ import {s3} from '../config/s3Config'
 // Function to get chatbot limits from environment variables
 const getChatbotLimits = () => {
   try {
-    const configString = process.env.CHATBOT_LIMITS_CONFIG || '{"Free": 0, "Growth": 3, "Pro": 10, "Business": 100}';
-    return JSON.parse(configString);
+    const config = process.env.CHATBOT_LIMITS_CONFIG;
+    if (!config) {
+      throw new Error('CHATBOT_LIMITS_CONFIG not found in environment variables');
+    }
+    return JSON.parse(config);
   } catch (error) {
     console.error('Error parsing CHATBOT_LIMITS_CONFIG:', error);
     // Return default limits if parsing fails
-    return {
-      'Free': 0,
-      'Growth': 3,
-      'Pro': 10,
-      'Business': 100
-    };
+    return { "Free": 0, "Growth": 3, "Pro": 10, "Business": 100 };
+  }
+};
+
+const getNodeLimits = () => {
+  try {
+    const config = process.env.NODES_LIMITS_CONFIG;
+    if (!config) {
+      throw new Error('NODES_LIMITS_CONFIG not found in environment variables');
+    }
+    return JSON.parse(config);
+  } catch (error) {
+    console.error('Error parsing NODES_LIMITS_CONFIG:', error);
+    // Return default limits if parsing fails
+    return { "Free": 5, "Growth": 50, "Pro": 80, "Business": 100 };
   }
 };
 
 // Function to check if user can create more chatbots
 const checkChatbotCreationLimit = async (userId: number, packageName: string) => {
-  const chatbotLimits = getChatbotLimits();
-  const maxChatbots = chatbotLimits[packageName];
+  const limits = getChatbotLimits();
+  const limit = limits[packageName];
 
-  if (maxChatbots === undefined) {
-    throw new Error(`Invalid package: ${packageName}. Please contact support.`);
+  if (limit === undefined) {
+    throw new Error(`Unknown package: ${packageName}`);
   }
 
-  if (maxChatbots === 0) {
-    throw new Error("Free plan users cannot create chatbots. Please upgrade to Growth, Pro, or Business plan.");
-  }
-
-  // Count existing chatbots for this user
-  const existingChatbotsCount = await prisma.chatbot.count({
-    where: {
-      ownerId: userId
-    }
+  const userChatbotCount = await prisma.chatbot.count({
+    where: { ownerId: userId },
   });
 
-  if (existingChatbotsCount >= maxChatbots) {
-    throw new Error(`You have reached the maximum limit of ${maxChatbots} chatbots for your ${packageName} plan. Please upgrade your plan to create more chatbots.`);
+  if (userChatbotCount >= limit) {
+    const nextPackage = packageName === "Free" ? "Growth" : 
+                       packageName === "Growth" ? "Pro" : 
+                       packageName === "Pro" ? "Business" : "Enterprise";
+    throw new Error(`${packageName} plan allows maximum ${limit} chatbots. Please upgrade to ${nextPackage} plan for more chatbots.`);
   }
 
   return true;
 };
 
-export const createNode = async (req: Request, res: Response) => {
-//   const { chatId, nodeId, data } = req.body;
-//   try {
-//     const node = await prisma.node.create({
-//       data: { chatId, nodeId, data },
-//     });
-//     res.status(201).json(node);
-//   } catch (error: unknown) {
-//     if (error instanceof Error) {
-//         res.status(500).send(error.message); // Safely access the message property
-//     } else {
-//         res.status(500).send('An unknown error occurred.');
-//     }
-// }
+const checkNodeLengthLimit = (nodeCount: number, packageName: string) => {
+  const limits = getNodeLimits();
+  const limit = limits[packageName];
 
+  if (limit === undefined) {
+    throw new Error(`Unknown package: ${packageName}`);
+  }
+
+  if (nodeCount > limit) {
+    const nextPackage = packageName === "Free" ? "Growth" : 
+                       packageName === "Growth" ? "Pro" : 
+                       packageName === "Pro" ? "Business" : "Enterprise";
+    
+    return {
+      error: `${packageName} plan allows maximum ${limit} nodes per chatbot. Please upgrade to ${nextPackage} plan for more nodes.`,
+      currentNodes: nodeCount,
+      maxAllowed: limit,
+      package: packageName
+    };
+  }
+  
+  return null; // No error
+};
+
+export const createNode = async (req: Request, res: Response) => {
 };
 export const getChatbotLibrary = async (req: Request, res: Response) => {
   try {
@@ -81,19 +99,6 @@ export const getChatbotLibrary = async (req: Request, res: Response) => {
 
 }
 export const getNode = async (req: Request, res: Response) => {
-//   const { chatId, id } = req.query;
-//   try {
-//     const nodes = await prisma.node.findMany({
-//       where: chatId ? { chatId: String(chatId) } : { id: Number(id) },
-//     });
-//     res.status(200).json(nodes);
-//   } catch (error: unknown) {
-//     if (error instanceof Error) {
-//         res.status(500).send(error.message); // Safely access the message property
-//     } else {
-//         res.status(500).send('An unknown error occurred.');
-//     }
-// }
 
 };
 
@@ -212,6 +217,14 @@ export const createChatFlow = async (req: Request, res: Response) => {
       return res.status(403).json({ 
         error: "No active subscription found. Please upgrade your plan to create chatbots." 
       });
+    }
+
+    // Check node length limits based on package
+    const nodeCount = nodes?.length || 0;
+    
+    const nodeLimitError = checkNodeLengthLimit(nodeCount, userPackage);
+    if (nodeLimitError) {
+      return res.status(403).json(nodeLimitError);
     }
 
     // Check if user can create more chatbots based on their package
@@ -452,8 +465,36 @@ export const updateChatFlow = async (req: Request, res: Response) => {
       });
     }
 
+    // Get user information for package validation
+    const user: any = req.user;
+    const dbUser = await prisma.user.findFirst({
+      where: { id: user.userId },
+    });
+
+    if (!dbUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Check user's package subscription
+    const userPackage = user.activeSubscription?.packageName;
+    
+    if (!userPackage) {
+      return res.status(403).json({ 
+        error: "No active subscription found. Please upgrade your plan to update chatbots." 
+      });
+    }
+
     //save chatbot name in chatbot table if there's chatbot name in req.body
     const { nodes, edges, chatBotName } = req.body;
+
+    // Check node length limits based on package
+    const nodeCount = nodes?.length || 0;
+    
+    const nodeLimitError = checkNodeLengthLimit(nodeCount, userPackage);
+    if (nodeLimitError) {
+      return res.status(403).json(nodeLimitError);
+    }
+
     if(chatBotName){
       await prisma.chatbot.update({
         where: { id: chatIdNumber },
