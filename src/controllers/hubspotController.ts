@@ -6,6 +6,61 @@ import * as dotenv from 'dotenv';
 dotenv.config();
 const prisma = new PrismaClient();
 
+// Function to get HubSpot access configuration from environment variables
+const getHubSpotAccessConfig = () => {
+  try {
+    const config = process.env.HUBSPOT_ACCESS_CONFIG;
+    if (!config) {
+      throw new Error('HUBSPOT_ACCESS_CONFIG not found in environment variables');
+    }
+    return JSON.parse(config);
+  } catch (error) {
+    console.error('Error parsing HUBSPOT_ACCESS_CONFIG:', error);
+    // Return default access configuration if parsing fails
+    return { "Free": false, "Growth": true, "Pro": true, "Business": true };
+  }
+};
+
+// Function to check HubSpot access based on user package
+const checkHubSpotAccess = (packageName: string) => {
+  if (!packageName) {
+    return {
+      hasAccess: false,
+      error: "No active subscription found. Please upgrade your plan to access HubSpot integration."
+    };
+  }
+
+  const accessConfig = getHubSpotAccessConfig();
+  const hasAccess = accessConfig[packageName];
+
+  if (hasAccess === undefined) {
+    return {
+      hasAccess: false,
+      error: `Unknown package: ${packageName}. Please contact support for assistance.`,
+      currentPackage: packageName
+    };
+  }
+
+  if (!hasAccess) {
+    // Get packages that have access for upgrade suggestions
+    const availablePackages = Object.entries(accessConfig)
+      .filter(([_, hasAccess]) => hasAccess)
+      .map(([packageName, _]) => packageName);
+
+    return {
+      hasAccess: false,
+      error: `${packageName} plan does not include HubSpot integration. Please upgrade to ${availablePackages.join(', ')} plan to access this feature.`,
+      currentPackage: packageName,
+      requiredPackages: availablePackages
+    };
+  }
+
+  return {
+    hasAccess: true,
+    package: packageName
+  };
+};
+
 // Helper functions
 const getUserWithHubspotIntegration = async () => {
   const integration = await prisma.hubspotIntegration.findFirst({
@@ -110,12 +165,39 @@ const getContactByEmailHelper = async (email: string, accessToken: string) => {
 // Controller functions
 export const initiateOAuth = async (req: Request, res: Response) => {
   try {
-    console.log('Initiating HubSpot OAuth flow...');
     let userId;
     if (req.user) {
       const reqUser = req.user as any;
       userId = reqUser.userId;
     }
+
+    // Get user information and check package access
+    const user: any = req.user;
+    const dbUser = await prisma.user.findFirst({
+      where: { id: user.userId },
+    });
+
+    if (!dbUser) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'User not found' 
+      });
+    }
+
+    // Check user's package subscription
+    const userPackage = user.activeSubscription?.packageName;
+    
+    // Check HubSpot access based on package
+    const accessCheck = checkHubSpotAccess(userPackage);
+    if (!accessCheck.hasAccess) {
+      return res.status(403).json({
+        success: false,
+        message: accessCheck.error,
+        currentPackage: accessCheck.currentPackage,
+        requiredPackages: accessCheck.requiredPackages
+      });
+    }
+
     const clientId = process.env.HUBSPOT_CLIENT_ID;
     if (!clientId) {
       console.error('HUBSPOT_CLIENT_ID is not defined in environment variables');
@@ -419,10 +501,37 @@ export const createContact = async (req: Request, res: Response) => {
     if (!contactData.email) {
       return res.status(400).json({ success: false, message: 'Email is required' });
     }
+
+    // Check user's package subscription for HubSpot access
+    const user: any = req.user;
+    const dbUser = await prisma.user.findFirst({
+      where: { id: user.userId },
+    });
+
+    if (!dbUser) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'User not found' 
+      });
+    }
+
+    // Check user's package subscription
+    const userPackage = user.activeSubscription?.packageName;
     
-    const user = await getUserWithHubspotIntegration();
+    // Check HubSpot access based on package
+    const accessCheck = checkHubSpotAccess(userPackage);
+    if (!accessCheck.hasAccess) {
+      return res.status(403).json({
+        success: false,
+        message: accessCheck.error,
+        currentPackage: accessCheck.currentPackage,
+        requiredPackages: accessCheck.requiredPackages
+      });
+    }
     
-    if (!user || !user.accessToken) {
+    const hubspotUser = await getUserWithHubspotIntegration();
+    
+    if (!hubspotUser || !hubspotUser.accessToken) {
       return res.status(401).json({ 
         success: false, 
         message: 'HubSpot integration not configured'
@@ -430,15 +539,15 @@ export const createContact = async (req: Request, res: Response) => {
     }
     
     // Check if we need to refresh the token
-    if (user.accessTokenExpiresAt && user.accessTokenExpiresAt < Math.floor(Date.now() / 1000)) {
+    if (hubspotUser.accessTokenExpiresAt && hubspotUser.accessTokenExpiresAt < Math.floor(Date.now() / 1000)) {
       try {
-        await refreshHubspotToken(user.id, user.refreshToken);
+        await refreshHubspotToken(hubspotUser.id, hubspotUser.refreshToken);
         // Get the user with the refreshed token
         const refreshedUser = await prisma.user.findUnique({
-          where: { id: user.id }
+          where: { id: hubspotUser.id }
         });
         if (refreshedUser) {
-          user.accessToken = refreshedUser.accessToken;
+          hubspotUser.accessToken = refreshedUser.accessToken;
         }
       } catch (refreshError) {
         return res.status(401).json({ 
@@ -449,7 +558,7 @@ export const createContact = async (req: Request, res: Response) => {
     }
     
     // Check if contact exists
-    const existingContact = await getContactByEmailHelper(contactData.email, user?.accessToken||"");
+    const existingContact = await getContactByEmailHelper(contactData.email, hubspotUser?.accessToken||"");
     
     let response;
     const properties: Record<string, string> = {};
@@ -467,7 +576,7 @@ export const createContact = async (req: Request, res: Response) => {
         { properties },
         {
           headers: {
-            Authorization: `Bearer ${user.accessToken}`,
+            Authorization: `Bearer ${hubspotUser.accessToken}`,
             'Content-Type': 'application/json'
           }
         }
@@ -479,7 +588,7 @@ export const createContact = async (req: Request, res: Response) => {
         { properties },
         {
           headers: {
-            Authorization: `Bearer ${user.accessToken}`,
+            Authorization: `Bearer ${hubspotUser.accessToken}`,
             'Content-Type': 'application/json'
           }
         }
@@ -508,10 +617,37 @@ export const getContactByEmail = async (req: Request, res: Response) => {
     if (!email) {
       return res.status(400).json({ success: false, message: 'Email is required' });
     }
+
+    // Check user's package subscription for HubSpot access
+    const user: any = req.user;
+    const dbUser = await prisma.user.findFirst({
+      where: { id: user.userId },
+    });
+
+    if (!dbUser) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'User not found' 
+      });
+    }
+
+    // Check user's package subscription
+    const userPackage = user.activeSubscription?.packageName;
     
-    const user = await getUserWithHubspotIntegration();
+    // Check HubSpot access based on package
+    const accessCheck = checkHubSpotAccess(userPackage);
+    if (!accessCheck.hasAccess) {
+      return res.status(403).json({
+        success: false,
+        message: accessCheck.error,
+        currentPackage: accessCheck.currentPackage,
+        requiredPackages: accessCheck.requiredPackages
+      });
+    }
     
-    if (!user || !user.accessToken) {
+    const hubspotUser = await getUserWithHubspotIntegration();
+    
+    if (!hubspotUser || !hubspotUser.accessToken) {
       return res.status(401).json({ 
         success: false, 
         message: 'HubSpot integration not configured'
@@ -519,15 +655,15 @@ export const getContactByEmail = async (req: Request, res: Response) => {
     }
     
     // Check if we need to refresh the token
-    if (user.accessTokenExpiresAt && user.accessTokenExpiresAt < Math.floor(Date.now() / 1000)) {
+    if (hubspotUser.accessTokenExpiresAt && hubspotUser.accessTokenExpiresAt < Math.floor(Date.now() / 1000)) {
       try {
-        await refreshHubspotToken(user.id, user.refreshToken);
+        await refreshHubspotToken(hubspotUser.id, hubspotUser.refreshToken);
         // Get the user with the refreshed token
         const refreshedUser = await prisma.user.findUnique({
-          where: { id: user.id }
+          where: { id: hubspotUser.id }
         });
         if (refreshedUser) {
-          user.accessToken = refreshedUser.accessToken;
+          hubspotUser.accessToken = refreshedUser.accessToken;
         }
       } catch (refreshError) {
         return res.status(401).json({ 
@@ -537,7 +673,7 @@ export const getContactByEmail = async (req: Request, res: Response) => {
       }
     }
     
-    const contact = await getContactByEmailHelper(email, user?.accessToken||"");
+    const contact = await getContactByEmailHelper(email, hubspotUser?.accessToken||"");
     
     if (!contact) {
       return res.status(404).json({ success: false, message: 'Contact not found' });
