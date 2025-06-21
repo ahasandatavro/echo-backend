@@ -87,6 +87,7 @@ model User {
   notificationSettings NotificationSetting[]
   contactsCreated   Contact[] @relation("ContactCreatedBy")
   metaBusinessToken   String?
+  billingInformation  BillingInformation?
 }
 
 model BusinessAccount {
@@ -617,6 +618,8 @@ model Payment {
   paymentType   String   @default("upgrade-package") // New field for payment type
   metadata      Json     // New field to store packageName and packageDuration
   signature     String?
+  lastFourDigits String? // Last four digits of the card/account
+  cardType      String?  // Type of card/account (e.g., "visa", "mastercard", "upi", "netbanking")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   packageSubscription PackageSubscription? // New relation
@@ -643,4 +646,20 @@ model RoundRobinState {
   phoneNumberId     String   @unique
   lastAssignedIndex Int
   businessPhoneNumber BusinessPhoneNumber @relation(fields: [phoneNumberId], references: [metaPhoneNumberId])
+}
+
+model BillingInformation {
+  id          Int      @id @default(autoincrement())
+  userId      Int      @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email       String
+  firstName   String
+  lastName    String
+  company     String?
+  countryCode String
+  mobileNumber String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
 }
