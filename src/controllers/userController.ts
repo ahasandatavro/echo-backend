@@ -541,8 +541,8 @@ export const getTags = async (req: Request, res: Response) => {
     const totalRows = filtered.length;
     const startIndex = (page - 1) * rowsPerPage;
     const endIndex = startIndex + rowsPerPage;
-    //const pageData = filtered.slice(startIndex, endIndex);
-    const pageData = allTags;
+    const pageData = filtered.slice(startIndex, endIndex);
+
 
     return res.json({
       data: pageData,
@@ -742,9 +742,9 @@ export const getAllAttributes = async (req: Request, res: Response) => {
 
     if (!user) return res.status(404).json({ error: "User not found" });
 
-    // const search = (req.query.search as string) || "";
-    // const page = parseInt(req.query.page as string, 10) || 1;
-    // const rowsPerPage = parseInt(req.query.rowsPerPage as string, 10) || 5;
+    const search = (req.query.search as string) || "";
+    const page = parseInt(req.query.page as string, 10) || 1;
+    const rowsPerPage = parseInt(req.query.rowsPerPage as string, 10) || 5;
 
     const userAttrs: string[] = Array.isArray(user.attributes)
       ? user.attributes
@@ -779,17 +779,22 @@ export const getAllAttributes = async (req: Request, res: Response) => {
 
     const allAttrs = Array.from(new Set([...userAttrs, ...Array.from(contactAttrs)]));
 
-    // const filtered = allAttrs.filter((attr) =>
-    //   attr.toLowerCase().includes(search.toLowerCase())
-    // );
+    // Filter by search
+    const filtered = allAttrs.filter((attr) =>
+      attr.toLowerCase().includes(search.toLowerCase())
+    );
 
-    // const totalRows = filtered.length;
-    // const startIndex = (page - 1) * rowsPerPage;
-    // const endIndex = startIndex + rowsPerPage;
-    // const pageData = filtered.slice(startIndex, endIndex);
+    // Pagination
+    const totalRows = filtered.length;
+    const startIndex = (page - 1) * rowsPerPage;
+    const endIndex = startIndex + rowsPerPage;
+    const pageData = filtered.slice(startIndex, endIndex);
 
     return res.json({
-      data: allAttrs,
+      data: pageData,
+      totalRows,
+      currentPage: page,
+      rowsPerPage,
     });
   } catch (error: any) {
     console.error("Error getting attributes:", error);
