@@ -2,6 +2,7 @@
 // controllers/keywordController.ts
 import { Request, Response } from 'express';
 import { prisma } from '../models/prismaClient';
+import { checkKeywordLimit } from '../utils/packageUtils';
 
 // Create a new Keyword
 
@@ -17,7 +18,7 @@ export const createKeyword = async (req: Request, res: Response) => {
     let keyword;
 
     if (id) {
-      // ✅ Update existing keyword
+      // ✅ Update existing keyword - no limit check needed for updates
       keyword = await prisma.keyword.update({
         where: { id: Number(id) },
         data: {
@@ -61,6 +62,18 @@ export const createKeyword = async (req: Request, res: Response) => {
 
       res.status(200).json({ message: "Keyword updated successfully", keyword });
     } else {
+      // ✅ Check keyword limit before creating new keyword
+      const limitCheck = await checkKeywordLimit(req.user.userId, 1);
+      if (!limitCheck.allowed) {
+        return res.status(403).json({ 
+          error: "Keyword limit exceeded",
+          message: limitCheck.message,
+          currentCount: limitCheck.currentCount,
+          maxAllowed: limitCheck.maxAllowed,
+          packageName: limitCheck.packageName
+        });
+      }
+
       // ✅ Create new keyword
       keyword = await prisma.keyword.create({
         data: {

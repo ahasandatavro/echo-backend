@@ -159,6 +159,14 @@ export interface WebhookLimitResult {
   message?: string;
 }
 
+export interface KeywordLimitResult {
+  allowed: boolean;
+  currentCount: number;
+  maxAllowed: number;
+  packageName: string;
+  message?: string;
+}
+
 export const getContactLimitForPackage = (packageName: string): number => {
   const contactLimitsConfig = process.env.CONTACT_LIMITS_CONFIG;
   
@@ -195,6 +203,24 @@ export const getWebhookLimitForPackage = (packageName: string): number => {
   }
 };
 
+export const getKeywordLimitForPackage = (packageName: string): number => {
+  const keywordLimitsConfig = process.env.KEYWORD_LIMITS_CONFIG;
+  
+  if (keywordLimitsConfig) {
+    try {
+      const limits = JSON.parse(keywordLimitsConfig);
+      return limits[packageName] || getDefaultKeywordLimit(packageName);
+    } catch (error) {
+      console.error('Error parsing KEYWORD_LIMITS_CONFIG:', error);
+      // Fallback to default configuration
+      return getDefaultKeywordLimit(packageName);
+    }
+  } else {
+    // Use default configuration if no environment variable is set
+    return getDefaultKeywordLimit(packageName);
+  }
+};
+
 // Default contact limits configuration
 function getDefaultContactLimit(packageName: string): number {
   switch (packageName.toLowerCase()) {
@@ -224,6 +250,22 @@ function getDefaultWebhookLimit(packageName: string): number {
       return 100; // Max 100 webhooks for business
     default:
       return 0; // Default to no webhooks
+  }
+}
+
+// Default keyword limits configuration
+function getDefaultKeywordLimit(packageName: string): number {
+  switch (packageName.toLowerCase()) {
+    case 'free':
+      return 0; // No keywords for free
+    case 'growth':
+      return 100; // Max 100 keywords for growth
+    case 'pro':
+      return 500; // Max 500 keywords for pro
+    case 'business':
+      return 1000; // Max 1000 keywords for business
+    default:
+      return 0; // Default to no keywords
   }
 }
 
@@ -366,6 +408,78 @@ export const checkWebhookLimit = async (userId: number, businessPhoneNumberId: n
       maxAllowed: 0,
       packageName: 'Error',
       message: 'Error checking webhook limits. Please try again.'
+    };
+  }
+};
+
+export const checkKeywordLimit = async (userId: number, newKeywordsCount: number = 1): Promise<KeywordLimitResult> => {
+  try {
+    // Get user's active subscription
+    const activeSubscription = await prisma.packageSubscription.findFirst({
+      where: {
+        userId,
+        isActive: true,
+        startDate: {
+          lte: new Date()
+        },
+        endDate: {
+          gte: new Date()
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    if (!activeSubscription) {
+      return {
+        allowed: false,
+        currentCount: 0,
+        maxAllowed: 0,
+        packageName: 'No Subscription',
+        message: 'No active subscription found. Please upgrade your package to create keywords.'
+      };
+    }
+
+    const packageName = activeSubscription.packageName;
+    const maxAllowed = getKeywordLimitForPackage(packageName);
+
+    // If maxAllowed is 0, no keywords allowed
+    if (maxAllowed === 0) {
+      return {
+        allowed: false,
+        currentCount: 0,
+        maxAllowed: 0,
+        packageName,
+        message: `Keyword creation is not available in your ${packageName} package. Please upgrade to Growth, Pro, or Business package to create keywords.`
+      };
+    }
+
+    // Count existing keywords for this user
+    const currentCount = await prisma.keyword.count({
+      where: {
+        userId
+      }
+    });
+
+    const totalAfterAddition = currentCount + newKeywordsCount;
+    const allowed = totalAfterAddition <= maxAllowed;
+
+    return {
+      allowed,
+      currentCount,
+      maxAllowed,
+      packageName,
+      message: allowed ? undefined : `Keyword limit exceeded. You have ${currentCount} keywords and your ${packageName} package allows maximum ${maxAllowed} keywords. Please upgrade to Business package for more keywords.`
+    };
+  } catch (error) {
+    console.error('Error checking keyword limit:', error);
+    return {
+      allowed: false,
+      currentCount: 0,
+      maxAllowed: 0,
+      packageName: 'Error',
+      message: 'Error checking keyword limits. Please try again.'
     };
   }
 }; 

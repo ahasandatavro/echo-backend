@@ -11,17 +11,17 @@ import { authenticateJWT } from '../middlewares/authMiddleware';
 const router = express.Router();
 
 // Route to create a new webhook
-router.post('/', authenticateJWT, createWebhook);
+router.post('/', createWebhook);
 
-router.get('/', authenticateJWT, getWebhooks);
+router.get('/',  getWebhooks);
 
 // Get a specific webhook by ID
-router.get('/:id', authenticateJWT, getWebhookById);
+router.get('/:id', getWebhookById);
 
 // Update a webhook
-router.put('/:id', authenticateJWT, updateWebhook);
+router.put('/:id',  updateWebhook);
 
 // Delete a webhook
-router.delete('/:id', authenticateJWT, deleteWebhook);
+router.delete('/:id',  deleteWebhook);
 
 export default router;
