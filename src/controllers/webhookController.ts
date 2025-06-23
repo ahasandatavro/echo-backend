@@ -1,6 +1,7 @@
 // controllers/webhookController.js
 import { prisma } from '../models/prismaClient';
 import { Request, Response } from "express";
+import { checkWebhookLimit } from '../utils/packageUtils';
 
 // Helper function to fetch user and phone number details
 const getUserAndPhoneNumberDetails = async (userId: string) => {
@@ -25,13 +26,29 @@ export const createWebhook = async (req: Request, res: Response) => {
   // Fetch the user and phone number details using the helper function
   const { user, phoneNumberDetails } = await getUserAndPhoneNumberDetails(userId);
 
+  if (!phoneNumberDetails) {
+    return res.status(400).json({ message: "No business phone number found for this user" });
+  }
+
+  // Check webhook limit before creating
+  const limitCheck = await checkWebhookLimit(userId, phoneNumberDetails.id, 1);
+  if (!limitCheck.allowed) {
+    return res.status(403).json({ 
+      error: "Webhook limit exceeded",
+      message: limitCheck.message,
+      currentCount: limitCheck.currentCount,
+      maxAllowed: limitCheck.maxAllowed,
+      packageName: limitCheck.packageName
+    });
+  }
+
   try {
     const webhook = await prisma.webhook.create({
       data: {
         url,
         status,
         eventTypes,
-        businessPhoneNumberId: phoneNumberDetails?.id || 0,
+        businessPhoneNumberId: phoneNumberDetails.id,
       },
     });
     return res.status(201).json({message:"Webhook created successfully"});

@@ -6,21 +6,22 @@ import {
     getWebhookById,
     updateWebhook,
     deleteWebhook, } from '../controllers/webhookController';
+import { authenticateJWT } from '../middlewares/authMiddleware';
 
 const router = express.Router();
 
 // Route to create a new webhook
-router.post('/', createWebhook);
+router.post('/', authenticateJWT, createWebhook);
 
-router.get('/', getWebhooks);
+router.get('/', authenticateJWT, getWebhooks);
 
 // Get a specific webhook by ID
-router.get('/:id', getWebhookById);
+router.get('/:id', authenticateJWT, getWebhookById);
 
 // Update a webhook
-router.put('/:id', updateWebhook);
+router.put('/:id', authenticateJWT, updateWebhook);
 
 // Delete a webhook
-router.delete('/:id', deleteWebhook);
+router.delete('/:id', authenticateJWT, deleteWebhook);
 
 export default router;

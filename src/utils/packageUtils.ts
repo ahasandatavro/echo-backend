@@ -151,6 +151,14 @@ export interface ContactLimitResult {
   message?: string;
 }
 
+export interface WebhookLimitResult {
+  allowed: boolean;
+  currentCount: number;
+  maxAllowed: number;
+  packageName: string;
+  message?: string;
+}
+
 export const getContactLimitForPackage = (packageName: string): number => {
   const contactLimitsConfig = process.env.CONTACT_LIMITS_CONFIG;
   
@@ -169,6 +177,24 @@ export const getContactLimitForPackage = (packageName: string): number => {
   }
 };
 
+export const getWebhookLimitForPackage = (packageName: string): number => {
+  const webhookLimitsConfig = process.env.WEBHOOK_LIMITS_CONFIG;
+  
+  if (webhookLimitsConfig) {
+    try {
+      const limits = JSON.parse(webhookLimitsConfig);
+      return limits[packageName] || getDefaultWebhookLimit(packageName);
+    } catch (error) {
+      console.error('Error parsing WEBHOOK_LIMITS_CONFIG:', error);
+      // Fallback to default configuration
+      return getDefaultWebhookLimit(packageName);
+    }
+  } else {
+    // Use default configuration if no environment variable is set
+    return getDefaultWebhookLimit(packageName);
+  }
+};
+
 // Default contact limits configuration
 function getDefaultContactLimit(packageName: string): number {
   switch (packageName.toLowerCase()) {
@@ -182,6 +208,22 @@ function getDefaultContactLimit(packageName: string): number {
       return 999999; // No limit for business
     default:
       return 10; // Default to free limit
+  }
+}
+
+// Default webhook limits configuration
+function getDefaultWebhookLimit(packageName: string): number {
+  switch (packageName.toLowerCase()) {
+    case 'free':
+      return 0; // No webhooks for free
+    case 'growth':
+      return 0; // No webhooks for growth
+    case 'pro':
+      return 10; // Max 10 webhooks for pro
+    case 'business':
+      return 100; // Max 100 webhooks for business
+    default:
+      return 0; // Default to no webhooks
   }
 }
 
@@ -252,6 +294,78 @@ export const checkContactLimit = async (userId: number, newContactsCount: number
       maxAllowed: 0,
       packageName: 'Error',
       message: 'Error checking contact limits. Please try again.'
+    };
+  }
+};
+
+export const checkWebhookLimit = async (userId: number, businessPhoneNumberId: number, newWebhooksCount: number = 1): Promise<WebhookLimitResult> => {
+  try {
+    // Get user's active subscription
+    const activeSubscription = await prisma.packageSubscription.findFirst({
+      where: {
+        userId,
+        isActive: true,
+        startDate: {
+          lte: new Date()
+        },
+        endDate: {
+          gte: new Date()
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    if (!activeSubscription) {
+      return {
+        allowed: false,
+        currentCount: 0,
+        maxAllowed: 0,
+        packageName: 'No Subscription',
+        message: 'No active subscription found. Please upgrade your package to create webhooks.'
+      };
+    }
+
+    const packageName = activeSubscription.packageName;
+    const maxAllowed = getWebhookLimitForPackage(packageName);
+
+    // If maxAllowed is 0, no webhooks allowed
+    if (maxAllowed === 0) {
+      return {
+        allowed: false,
+        currentCount: 0,
+        maxAllowed: 0,
+        packageName,
+        message: `Webhook creation is not available in your ${packageName} package. Please upgrade to Pro or Business package to create webhooks.`
+      };
+    }
+
+    // Count existing webhooks for this business phone number
+    const currentCount = await prisma.webhook.count({
+      where: {
+        businessPhoneNumberId
+      }
+    });
+
+    const totalAfterAddition = currentCount + newWebhooksCount;
+    const allowed = totalAfterAddition <= maxAllowed;
+
+    return {
+      allowed,
+      currentCount,
+      maxAllowed,
+      packageName,
+      message: allowed ? undefined : `Webhook limit exceeded. You have ${currentCount} webhooks and your ${packageName} package allows maximum ${maxAllowed} webhooks. Please upgrade to Business package for more webhooks.`
+    };
+  } catch (error) {
+    console.error('Error checking webhook limit:', error);
+    return {
+      allowed: false,
+      currentCount: 0,
+      maxAllowed: 0,
+      packageName: 'Error',
+      message: 'Error checking webhook limits. Please try again.'
     };
   }
 }; 
