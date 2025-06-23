@@ -15,6 +15,7 @@ import axios from "axios";
 import { parse } from 'csv-parse/sync';
 import path from 'path';
 import { ProcessRulesForAttributes } from "../processors/contactProcessor/contactProcessor";
+import { checkContactLimit } from "../utils/packageUtils";
 
 export const getAllContacts = async (req: Request, res: Response) => {
   //console.log('🔄 Starting getAllContacts function');
@@ -223,6 +224,18 @@ export const createContact = async (req: Request, res: Response) => {
       }
     }
 
+    // Check contact limit before creating
+    const limitCheck = await checkContactLimit(contactUserId, 1);
+    if (!limitCheck.allowed) {
+      return res.status(403).json({ 
+        error: "Contact limit exceeded",
+        message: limitCheck.message,
+        currentCount: limitCheck.currentCount,
+        maxAllowed: limitCheck.maxAllowed,
+        packageName: limitCheck.packageName
+      });
+    }
+
     const parsedAttributes = attributes ? 
       (typeof attributes === 'string' ? JSON.parse(attributes) : attributes) : 
       {};
@@ -236,6 +249,7 @@ export const createContact = async (req: Request, res: Response) => {
         userId: contactUserId ? parseInt(contactUserId) : undefined,
         tags: tags || [],
         attributes: parsedAttributes,
+        createdById: contactUserId ? parseInt(contactUserId) : undefined,
       },
     });
 
@@ -451,6 +465,14 @@ export const uploadContacts = async (req: Request, res: Response) => {
   const contacts: any[] = [];
 
   try {
+    // Get the current user's ID
+    const reqUser: any = req.user;
+    const userId = reqUser?.userId;
+
+    if (!userId) {
+      return res.status(400).json({ error: "User not authenticated" });
+    }
+
     // Read and parse CSV file
     fs.createReadStream(filePath)
       .pipe(csvParser())
@@ -466,6 +488,19 @@ export const uploadContacts = async (req: Request, res: Response) => {
       })
       .on("end", async () => {
         try {
+          // Check contact limit before processing
+          const limitCheck = await checkContactLimit(userId, contacts.length);
+          if (!limitCheck.allowed) {
+            return res.status(403).json({ 
+              error: "Contact limit exceeded",
+              message: limitCheck.message,
+              currentCount: limitCheck.currentCount,
+              maxAllowed: limitCheck.maxAllowed,
+              packageName: limitCheck.packageName,
+              contactsInFile: contacts.length
+            });
+          }
+
           // Insert contacts into database (avoid duplicates)
           for (const contact of contacts) {
             await prisma.contact.upsert({
@@ -1194,6 +1229,27 @@ export const uploadCSV = async (req: Request, res: Response) => {
       return res.status(400).json({ error: "CSV file is empty" });
     }
 
+    // Get the current user's ID
+    const reqUser: any = req.user;
+    const userId = reqUser?.userId;
+
+    if (!userId) {
+      return res.status(400).json({ error: "User not authenticated" });
+    }
+
+    // Check contact limit before processing
+    const limitCheck = await checkContactLimit(userId, records.length);
+    if (!limitCheck.allowed) {
+      return res.status(403).json({ 
+        error: "Contact limit exceeded",
+        message: limitCheck.message,
+        currentCount: limitCheck.currentCount,
+        maxAllowed: limitCheck.maxAllowed,
+        packageName: limitCheck.packageName,
+        recordsInFile: records.length
+      });
+    }
+
     // Get column headers from first record
     const columns = Object.keys(records[0]);
     
@@ -1241,12 +1297,55 @@ export const importContacts = async (req: Request, res: Response) => {
     const reqUser: any = req.user;
     const defaultUserId = reqUser?.userId;
 
+    if (!defaultUserId) {
+      return res.status(400).json({ error: "User not authenticated" });
+    }
+
     // Read the stored records from temp file
     const rawData = fs.readFileSync(tempFilePath, 'utf8');
     const records = JSON.parse(rawData);
 
     if (!records || !Array.isArray(records) || records.length === 0) {
       return res.status(400).json({ error: "No valid records found" });
+    }
+
+    // Count how many new contacts will be created (excluding updates)
+    let newContactsCount = 0;
+    for (const record of records) {
+      const contactData: any = {};
+      
+      // Map fields according to user's selection
+      Object.entries(mappedColumns).forEach(([targetField, sourceField]) => {
+        if (sourceField && record[sourceField] !== undefined) {
+          if (targetField === 'phoneNumber') {
+            contactData[targetField] = record[sourceField];
+          }
+        }
+      });
+
+      // Check if contact already exists
+      if (contactData.phoneNumber) {
+        const existingContact = await prisma.contact.findFirst({
+          where: { phoneNumber: contactData.phoneNumber }
+        });
+        
+        if (!existingContact) {
+          newContactsCount++;
+        }
+      }
+    }
+
+    // Check contact limit for new contacts
+    const limitCheck = await checkContactLimit(defaultUserId, newContactsCount);
+    if (!limitCheck.allowed) {
+      return res.status(403).json({ 
+        error: "Contact limit exceeded",
+        message: limitCheck.message,
+        currentCount: limitCheck.currentCount,
+        maxAllowed: limitCheck.maxAllowed,
+        packageName: limitCheck.packageName,
+        newContactsToCreate: newContactsCount
+      });
     }
 
     // Process records in batches

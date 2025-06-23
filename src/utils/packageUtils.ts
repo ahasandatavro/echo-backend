@@ -1,3 +1,7 @@
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
+
 interface PackagePricing {
   name: string;
   price: {
@@ -137,4 +141,117 @@ function getDefaultAgentLimits(): { [key: string]: number } {
     'Pro': 3,
     'Business': 5
   };
-} 
+}
+
+export interface ContactLimitResult {
+  allowed: boolean;
+  currentCount: number;
+  maxAllowed: number;
+  packageName: string;
+  message?: string;
+}
+
+export const getContactLimitForPackage = (packageName: string): number => {
+  const contactLimitsConfig = process.env.CONTACT_LIMITS_CONFIG;
+  
+  if (contactLimitsConfig) {
+    try {
+      const limits = JSON.parse(contactLimitsConfig);
+      return limits[packageName] || parseInt(process.env.FREE_CONTACT_LIMIT || '10');
+    } catch (error) {
+      console.error('Error parsing CONTACT_LIMITS_CONFIG:', error);
+      // Fallback to default configuration
+      return getDefaultContactLimit(packageName);
+    }
+  } else {
+    // Use default configuration if no environment variable is set
+    return getDefaultContactLimit(packageName);
+  }
+};
+
+// Default contact limits configuration
+function getDefaultContactLimit(packageName: string): number {
+  switch (packageName.toLowerCase()) {
+    case 'free':
+      return 10;
+    case 'growth':
+      return 10;
+    case 'pro':
+      return 10;
+    case 'business':
+      return 999999; // No limit for business
+    default:
+      return 10; // Default to free limit
+  }
+}
+
+export const checkContactLimit = async (userId: number, newContactsCount: number = 1): Promise<ContactLimitResult> => {
+  try {
+    // Get user's active subscription
+    const activeSubscription = await prisma.packageSubscription.findFirst({
+      where: {
+        userId,
+        isActive: true,
+        startDate: {
+          lte: new Date()
+        },
+        endDate: {
+          gte: new Date()
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    if (!activeSubscription) {
+      return {
+        allowed: false,
+        currentCount: 0,
+        maxAllowed: 0,
+        packageName: 'No Subscription',
+        message: 'No active subscription found. Please upgrade your package to create contacts.'
+      };
+    }
+
+    const packageName = activeSubscription.packageName;
+    const maxAllowed = getContactLimitForPackage(packageName);
+
+    // If it's business package, no limit
+    if (packageName.toLowerCase() === 'business') {
+      return {
+        allowed: true,
+        currentCount: 0,
+        maxAllowed,
+        packageName
+      };
+    }
+
+    // Count existing contacts for this user
+    const currentCount = await prisma.contact.count({
+      where: {
+        createdById: userId
+      }
+    });
+
+    const totalAfterAddition = currentCount + newContactsCount;
+    const allowed = totalAfterAddition <= maxAllowed;
+
+    return {
+      allowed,
+      currentCount,
+      maxAllowed,
+      packageName,
+      message: allowed ? undefined : `Contact limit exceeded. You have ${currentCount} contacts and your ${packageName} package allows maximum ${maxAllowed} contacts. Please upgrade to Business package for unlimited contacts.`
+    };
+  } catch (error) {
+    console.error('Error checking contact limit:', error);
+    return {
+      allowed: false,
+      currentCount: 0,
+      maxAllowed: 0,
+      packageName: 'Error',
+      message: 'Error checking contact limits. Please try again.'
+    };
+  }
+}; 
