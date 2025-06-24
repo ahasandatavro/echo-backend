@@ -518,6 +518,10 @@ export const processMessageUpdate = async (value: any, io: any) => {
   const dbUser = await prisma.user.findFirst({
     where: { selectedPhoneNumberId: phoneNumberId },
   });
+  const packageSubscription=await prisma.packageSubscription.findFirst({
+    where: { userId: dbUser?.id, isActive: true },
+  });
+
   const message = value?.messages?.[0];
   const senderName=value?.contacts?.[0]?.profile?.name;
   const sender = message?.from;
@@ -525,6 +529,8 @@ export const processMessageUpdate = async (value: any, io: any) => {
     //console.warn("Sender is undefined. Cannot query contact.");
     return;
   }
+
+
   const contact = await prisma.contact.findUnique({
     where: { phoneNumber: sender },
     include: {
@@ -561,6 +567,7 @@ if (!finalContact) {
       },
     },
   });
+
   await prisma.chatStatusHistory.create({
     data: {
       contactId: finalContact.id,
@@ -574,7 +581,17 @@ if (!finalContact) {
   })
 }
 if (!finalContact) return;
-
+if(packageSubscription){
+  if (packageSubscription.packageName==="Free"){
+    const messageLength=await prisma.message.count({
+      where: {
+        contactId: finalContact?.id,
+      },
+    });
+    if(messageLength>=parseInt(process.env.FREE_PACKAGE_MESSAGE_LIMIT||"100") || sender!==dbUser?.phoneNumber){ 
+   return;}
+  }
+ }
 let notifyEmails: Set<string> = new Set();
 
 if (finalContact.user?.email) {
