@@ -24,8 +24,8 @@ import {
 } from "../controllers/userController"
 import multer from "multer";
 import { authenticateJWT } from "../middlewares/authMiddleware";
-
-const upload = multer({ dest: "uploads/" });
+//use memory storage
+const upload = multer({ storage: multer.memoryStorage() });
 const router = express.Router();
 
 router.get("/", getUsers);
@@ -49,7 +49,7 @@ router.get("/api-key", getOrGenerateApiKey);
 router.post("/api-key/rotate", rotateApiKey);
 
 router.get("/:id", getUserById);
-router.put("/:id", updateUser);
+router.put("/:id",upload.single("file"), updateUser);
 router.delete("/:id", deleteUser);
 
 export default router;

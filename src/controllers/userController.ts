@@ -6,6 +6,7 @@ import fs from "fs";
 import FormData from "form-data";
 import { json } from "body-parser";
 import jwt from "jsonwebtoken";
+import { uploadFileToDigitalOceanHelper } from "../helpers";
 const prisma = new PrismaClient();
 interface UserResponse {
   id: number;
@@ -91,6 +92,8 @@ export const getUserById = async (req: Request, res: Response): Promise<void> =>
       email: user.email || "",
       phoneNumber: user.phoneNumber|| "",
       role: user.role|| "USER", 
+      image: user.image || "",
+      createdAt: user.createdAt,
     };
     res.json(formattedUser);
   } catch (error) {
@@ -134,6 +137,7 @@ export const getUserByEmail = async (req: Request, res: Response): Promise<void>
       website2: user.website2 || "",
       phone_number: phoneNumberRecord?.phoneNumber,
       role: user.role || "USER",
+
     };
 
     // If selectedPhoneNumberId exists, fetch WhatsApp business profile from Facebook Graph API
@@ -155,7 +159,7 @@ export const getUserByEmail = async (req: Request, res: Response): Promise<void>
           formattedUser.businessAddress = fbData.address || formattedUser.businessAddress;
           formattedUser.businessDescription = fbData.description || formattedUser.businessDescription;
           formattedUser.email = fbData.email || formattedUser.email;
-          formattedUser.image = fbData.profile_picture_url || formattedUser.image;
+          formattedUser.image = fbData.profile_picture_url;
           if (fbData.websites && Array.isArray(fbData.websites)) {
             formattedUser.website1 = fbData.websites[0] || formattedUser.website1;
             formattedUser.website2 = fbData.websites[1] || formattedUser.website2;
@@ -172,6 +176,8 @@ export const getUserByEmail = async (req: Request, res: Response): Promise<void>
     res.status(500).json({ error: "Error fetching user" });
   }
 };
+
+
 
 export const updateUserByEmail = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -359,15 +365,54 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
 };
 
 // Update user by ID
+
+
 export const updateUser = async (req: Request, res: Response): Promise<void> => {
   try {
     const { firstName, lastName, phoneNumber, role } = req.body;
+    
+    // role can be optional, if not found don't update it. keep the existing role
+    const roleToUpdate = role ? role : undefined;
+    
+    let fileUrl = null;
+    
+    // Handle file upload if present
+    if (req.file) {
+      const file = req.file;
+      try{
+        
+        fileUrl = await uploadFileToDigitalOceanHelper(file);
+      }
+      catch(error){
+        console.error("Error uploading file to DigitalOcean:", error);
+      }
+    }
+    
+    // Prepare update data
+    const updateData: any = {
+      firstName,
+      lastName,
+      phoneNumber,
+    };
+    
+    // Only add role if it's provided
+    if (roleToUpdate !== undefined) {
+      updateData.role = roleToUpdate;
+    }
+    
+    // Only add image if file was uploaded
+    if (fileUrl) {
+      updateData.image = fileUrl;
+    }
+    
     const updatedUser = await prisma.user.update({
       where: { id: parseInt(req.params.id) },
-      data: { firstName, lastName, phoneNumber, role },
+      data: updateData,
     });
+    
     res.json(updatedUser);
   } catch (error) {
+    console.error("Error updating user:", error);
     res.status(500).json({ error: "Error updating user" });
   }
 };
