@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { PrismaClient } from "@prisma/client";
+import { checkFeatureAccess } from '../utils/packageUtils';
 
 const prisma = new PrismaClient();
 
@@ -111,6 +112,21 @@ export const createOrUpdateDefaultActionSettings = async (req: Request, res: Res
   } = req.body;
 
   try {
+    // ✅ Check if user is authenticated
+    if (!req.user || !(req.user as any).userId) {
+      return res.status(401).json({ error: "Unauthorized. User not found." });
+    }
+
+    // ✅ Check package access - only Business package can create/update default action settings
+    const accessCheck = await checkFeatureAccess((req.user as any).userId, 'defaultActionSettings');
+    if (!accessCheck.allowed) {
+      return res.status(403).json({ 
+        error: "Package access denied",
+        message: accessCheck.message,
+        packageName: accessCheck.packageName
+      });
+    }
+
     // ✅ Mapping checkboxes to Prisma fields
     const bp=await prisma.businessPhoneNumber.findFirst({
       where: { metaPhoneNumberId: businessPhoneNumberId},

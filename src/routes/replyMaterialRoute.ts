@@ -3,6 +3,7 @@ import multer from 'multer';
 import axios from 'axios';
 import FormData from 'form-data';
 import { PrismaClient, MaterialType } from '@prisma/client';
+import { checkFeatureAccess } from '../utils/packageUtils';
 
 const prisma = new PrismaClient();
 const router = express.Router();
@@ -100,6 +101,21 @@ router.get('/:id', async (req: Request, res: Response) => {
 // Use multer middleware to accept an optional file (field name "file")
 router.post('/', upload.single('file'), async (req: Request, res: Response) => {
   try {
+    // ✅ Check if user is authenticated
+    if (!req.user || !(req.user as any).userId) {
+      return res.status(401).json({ error: "Unauthorized. User not found." });
+    }
+
+    // ✅ Check package access - only Pro and Business packages can create reply materials
+    const accessCheck = await checkFeatureAccess((req.user as any).userId, 'replyMaterials');
+    if (!accessCheck.allowed) {
+      return res.status(403).json({ 
+        error: "Package access denied",
+        message: accessCheck.message,
+        packageName: accessCheck.packageName
+      });
+    }
+
     // Expected fields in req.body: type, (name and content for TEXT type)
     const { type } = req.body;
     let content = req.body.content || null;
@@ -138,6 +154,21 @@ router.post('/', upload.single('file'), async (req: Request, res: Response) => {
 // Also use multer in case a new file is provided
 router.put('/:id', upload.single('file'), async (req: Request, res: Response) => {
   try {
+    // ✅ Check if user is authenticated
+    if (!req.user || !(req.user as any).userId) {
+      return res.status(401).json({ error: "Unauthorized. User not found." });
+    }
+
+    // ✅ Check package access - only Pro and Business packages can update reply materials
+    const accessCheck = await checkFeatureAccess((req.user as any).userId, 'replyMaterials');
+    if (!accessCheck.allowed) {
+      return res.status(403).json({ 
+        error: "Package access denied",
+        message: accessCheck.message,
+        packageName: accessCheck.packageName
+      });
+    }
+
     const id = parseInt(req.params.id);
     let { type, content } = req.body;
     let name = req.body.name || '';

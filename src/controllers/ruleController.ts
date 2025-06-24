@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { PrismaClient, Prisma } from "@prisma/client";
+import { checkFeatureAccess } from "../utils/packageUtils";
 
 const prisma = new PrismaClient();
 
@@ -62,6 +63,17 @@ export const createRule = async (req: Request, res: Response) => {
   try {
     const reqUser: any = req.user;
     const userId = reqUser.userId;
+
+    // ✅ Check package access - only Pro and Business packages can create rules
+    const accessCheck = await checkFeatureAccess(userId, 'rules');
+    if (!accessCheck.allowed) {
+      return res.status(403).json({ 
+        error: "Package access denied",
+        message: accessCheck.message,
+        packageName: accessCheck.packageName
+      });
+    }
+
     const dbUser = await prisma.user.findUnique({
       where: { id: userId },
     });
@@ -113,6 +125,17 @@ export const updateRule = async (req: Request, res: Response) => {
   try {
     const reqUser: any = req.user;
     const userId = reqUser.userId;
+
+    // ✅ Check package access - only Pro and Business packages can update rules
+    const accessCheck = await checkFeatureAccess(userId, 'rules');
+    if (!accessCheck.allowed) {
+      return res.status(403).json({ 
+        error: "Package access denied",
+        message: accessCheck.message,
+        packageName: accessCheck.packageName
+      });
+    }
+
     const dbUser = await prisma.user.findUnique({
       where: { id: userId },
     });

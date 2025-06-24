@@ -482,4 +482,158 @@ export const checkKeywordLimit = async (userId: number, newKeywordsCount: number
       message: 'Error checking keyword limits. Please try again.'
     };
   }
+};
+
+export interface PackageAccessResult {
+  allowed: boolean;
+  packageName: string;
+  message?: string;
+}
+
+export const checkPackageAccess = async (userId: number, requiredPackage: string = 'Business'): Promise<PackageAccessResult> => {
+  try {
+    // Get user's active subscription
+    const activeSubscription = await prisma.packageSubscription.findFirst({
+      where: {
+        userId,
+        isActive: true,
+        startDate: {
+          lte: new Date()
+        },
+        endDate: {
+          gte: new Date()
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    if (!activeSubscription) {
+      return {
+        allowed: false,
+        packageName: 'No Subscription',
+        message: 'No active subscription found. Please upgrade your package to access this feature.'
+      };
+    }
+
+    const packageName = activeSubscription.packageName;
+    
+    // Define package hierarchy (higher index = more features)
+    const packageHierarchy = ['Free', 'Growth', 'Pro', 'Business'];
+    const userPackageIndex = packageHierarchy.indexOf(packageName);
+    const requiredPackageIndex = packageHierarchy.indexOf(requiredPackage);
+
+    const allowed = userPackageIndex >= requiredPackageIndex;
+
+    return {
+      allowed,
+      packageName,
+      message: allowed ? undefined : `This feature is only available for ${requiredPackage} package and above. Your current package is ${packageName}. Please upgrade to ${requiredPackage} package to access this feature.`
+    };
+  } catch (error) {
+    console.error('Error checking package access:', error);
+    return {
+      allowed: false,
+      packageName: 'Error',
+      message: 'Error checking package access. Please try again.'
+    };
+  }
+};
+
+export const checkFeatureAccess = async (userId: number, featureName: string): Promise<PackageAccessResult> => {
+  try {
+    // Get user's active subscription
+    const activeSubscription = await prisma.packageSubscription.findFirst({
+      where: {
+        userId,
+        isActive: true,
+        startDate: {
+          lte: new Date()
+        },
+        endDate: {
+          gte: new Date()
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    if (!activeSubscription) {
+      return {
+        allowed: false,
+        packageName: 'No Subscription',
+        message: 'No active subscription found. Please upgrade your package to access this feature.'
+      };
+    }
+
+    const packageName = activeSubscription.packageName;
+    
+    // Get feature access configuration from environment
+    const featureAccessConfig = process.env.FEATURE_ACCESS_CONFIG;
+    let requiredPackages: string[] = [];
+    
+    if (featureAccessConfig) {
+      try {
+        const config = JSON.parse(featureAccessConfig);
+        requiredPackages = config[featureName] || ['Business']; // Default to Business if not configured
+      } catch (error) {
+        console.error('Error parsing FEATURE_ACCESS_CONFIG:', error);
+        requiredPackages = ['Business']; // Default fallback
+      }
+    } else {
+      // Fallback to individual feature configs
+      const individualConfig = process.env[`${featureName.toUpperCase()}_REQUIRED_PACKAGES`];
+      if (individualConfig) {
+        try {
+          requiredPackages = JSON.parse(individualConfig);
+        } catch (error) {
+          console.error(`Error parsing ${featureName.toUpperCase()}_REQUIRED_PACKAGES:`, error);
+          requiredPackages = ['Business']; // Default fallback
+        }
+      } else {
+        requiredPackages = ['Business']; // Default fallback
+      }
+    }
+
+    // Define package hierarchy (higher index = more features)
+    const packageHierarchy = ['Free', 'Growth', 'Pro', 'Business'];
+    const userPackageIndex = packageHierarchy.indexOf(packageName);
+    
+    // Check if user's package is directly in the required packages list
+    if (requiredPackages.includes(packageName)) {
+      return {
+        allowed: true,
+        packageName,
+        message: undefined
+      };
+    }
+    
+    // Check if user's package is higher than any of the required packages
+    const hasHigherPackage = requiredPackages.some(reqPackage => {
+      const reqPackageIndex = packageHierarchy.indexOf(reqPackage);
+      return userPackageIndex > reqPackageIndex;
+    });
+
+    // Find the minimum required package for better error messages
+    const minRequiredPackage = requiredPackages.reduce((min, current) => {
+      const minIndex = packageHierarchy.indexOf(min);
+      const currentIndex = packageHierarchy.indexOf(current);
+      return currentIndex < minIndex ? current : min;
+    }, 'Business');
+
+    return {
+      allowed: hasHigherPackage,
+      packageName,
+      message: hasHigherPackage ? undefined : `This feature is only available for ${minRequiredPackage} package and above. Your current package is ${packageName}. Please upgrade to ${minRequiredPackage} package to access this feature.`
+    };
+  } catch (error) {
+    console.error('Error checking feature access:', error);
+    return {
+      allowed: false,
+      packageName: 'Error',
+      message: 'Error checking feature access. Please try again.'
+    };
+  }
 }; 

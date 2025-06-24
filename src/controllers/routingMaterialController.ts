@@ -1,11 +1,29 @@
 import { Request, Response } from "express";
 import { PrismaClient } from "@prisma/client";
+import { checkFeatureAccess } from "../utils/packageUtils";
 
 const prisma = new PrismaClient();
 
 // ✅ Create Routing Material
 export const createRoutingMaterial = async (req: Request, res: Response): Promise<void> => {
     try {
+        // ✅ Check if user is authenticated
+        if (!req.user || !(req.user as any).userId) {
+            res.status(401).json({ error: "Unauthorized. User not found." });
+            return;
+        }
+
+        // ✅ Check package access - only Pro and Business packages can create routing materials
+        const accessCheck = await checkFeatureAccess((req.user as any).userId, 'routingMaterials');
+        if (!accessCheck.allowed) {
+            res.status(403).json({ 
+                error: "Package access denied",
+                message: accessCheck.message,
+                packageName: accessCheck.packageName
+            });
+            return;
+        }
+
         const { type, materialName, assignedUserId, teamId, userIds } = req.body;
 
         const newRoutingMaterial = await prisma.routingMaterial.create({
@@ -79,6 +97,23 @@ export const getRoutingMaterialById = async (req: Request, res: Response): Promi
 // ✅ Update Routing Material
 export const updateRoutingMaterial = async (req: Request, res: Response): Promise<void> => {
     try {
+        // ✅ Check if user is authenticated
+        if (!req.user || !(req.user as any).userId) {
+            res.status(401).json({ error: "Unauthorized. User not found." });
+            return;
+        }
+
+        // ✅ Check package access - only Pro and Business packages can update routing materials
+        const accessCheck = await checkFeatureAccess((req.user as any).userId, 'routingMaterials');
+        if (!accessCheck.allowed) {
+            res.status(403).json({ 
+                error: "Package access denied",
+                message: accessCheck.message,
+                packageName: accessCheck.packageName
+            });
+            return;
+        }
+
         const { id } = req.params;
         const { type, materialName, assignedUserId, teamId, userIds } = req.body;
 
