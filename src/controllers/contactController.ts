@@ -15,7 +15,7 @@ import axios from "axios";
 import { parse } from 'csv-parse/sync';
 import path from 'path';
 import { ProcessRulesForAttributes } from "../processors/contactProcessor/contactProcessor";
-import { checkContactLimit } from "../utils/packageUtils";
+import { checkContactLimit, checkChatAssignmentAccess } from "../utils/packageUtils";
 
 export const getAllContacts = async (req: Request, res: Response) => {
   //console.log('🔄 Starting getAllContacts function');
@@ -861,6 +861,15 @@ export const updateChatStatusAndAssignment = async (req: Request, res: Response)
   });
 
   try {
+    // Check chat assignment access before proceeding
+    const accessCheck = await checkChatAssignmentAccess(dbUser.id);
+    if (!accessCheck.allowed) {
+      return res.status(403).json({ 
+        error: "Chat assignment access denied for your package",
+        details: accessCheck
+      });
+    }
+
     const contact = await prisma.contact.findUnique({
       where: { id: parseInt(id) },
       include: { assignedTeams: true },
@@ -956,7 +965,14 @@ export const updateChatStatusAndAssignment = async (req: Request, res: Response)
       changedAt: new Date(),
     });
 
-    res.json({ success: true, saved });
+    res.json({ 
+      success: true, 
+      saved,
+      packageInfo: {
+        packageName: accessCheck.packageName,
+        message: "Chat assignment completed successfully"
+      }
+    });
   } catch (error) {
     console.error("Error updating chat status:", error);
     res.status(500).json({ error: "Failed to update chat status" });

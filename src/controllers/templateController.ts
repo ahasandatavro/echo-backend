@@ -8,6 +8,7 @@ import { prisma } from "../models/prismaClient";
 import { brodcastTemplate } from "../processors/template/templateProcessor";
 import { uploadFileToDigitalOcean } from "../routes/replyMaterialRoute";
 import { syncTemplates as syncTemplatesService } from "../services/templateService";
+import { checkBroadcastAccess, checkTemplateLimit } from "../utils/packageUtils";
 
 interface ButtonData {
   id?: number;
@@ -211,6 +212,16 @@ function extractHeaderVariableNumbers(text:string) {
 export const createTemplate = async (req: Request, res: Response) => {
   try {
     const user: any = req.user;
+    
+    // Check template creation limit based on package
+    const limitCheck = await checkTemplateLimit(user.userId, 1);
+    if (!limitCheck.allowed) {
+      return res.status(403).json({
+        error: "Template creation limit exceeded for your package",
+        details: limitCheck.message || "You have reached your template creation limit"
+      });
+    }
+
     const dbUser = await prisma.user.findFirst({
       where: { id: user.userId },
       select: { selectedWabaId: true },
@@ -520,8 +531,19 @@ export const deleteTemplate = async (req: Request, res: Response) => {
 
 export const createBroadcast = async (req: Request, res: Response) => {
   try {
-    const { broadcastName, templateName, userId, contacts, chatbotId, scheduledDateTime } = req.body;
     const user: any = req.user;
+    
+    // Check broadcast access based on package
+    const accessCheck = await checkBroadcastAccess(user.userId);
+    if (!accessCheck.allowed) {
+      return res.status(403).json({
+        success: false,
+        message: accessCheck.message || "Access denied for broadcast features"
+      });
+    }
+
+    const { broadcastName, templateName, userId, contacts, chatbotId, scheduledDateTime } = req.body;
+
     const dbUser = await prisma.user.findFirst({
       where: { id: user.userId },
       select: { id: true, selectedPhoneNumberId: true },
@@ -614,6 +636,17 @@ export const createBroadcast = async (req: Request, res: Response) => {
 
 export const updateBroadcast = async (req: Request, res: Response) => {
   try {
+    const user: any = req.user;
+    
+    // Check broadcast access based on package
+    const accessCheck = await checkBroadcastAccess(user.userId);
+    if (!accessCheck.allowed) {
+      return res.status(403).json({
+        success: false,
+        message: accessCheck.message || "Access denied for broadcast features"
+      });
+    }
+
     const { broadcastId } = req.params;
     const { scheduledDateTime } = req.body;
   

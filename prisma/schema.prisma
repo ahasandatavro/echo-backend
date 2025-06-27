@@ -88,6 +88,7 @@ model User {
   contactsCreated   Contact[] @relation("ContactCreatedBy")
   metaBusinessToken   String?
   billingInformation  BillingInformation?
+  media               Media[]
 }
 
 model BusinessAccount {
@@ -160,6 +161,7 @@ model BusinessPhoneNumber {
   rules                 Rule[]
   replyMaterials        ReplyMaterial[]
   roundRobinState       RoundRobinState?
+  media                 Media[]
 }
 
 model NotificationSetting {
@@ -662,4 +664,21 @@ model BillingInformation {
   updatedAt   DateTime @updatedAt
 
   @@index([userId])
+}
+
+model Media {
+  id                    Int                 @id @default(autoincrement())
+  url                   String
+  fileName              String?
+  fileType              String?
+  fileSize              Int?
+  mimeType              String?
+  userId                Int
+  businessPhoneNumberId Int?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  
+  // Relations
+  user                  User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessPhoneNumber   BusinessPhoneNumber? @relation(fields: [businessPhoneNumberId], references: [id], onDelete: SetNull)
 }

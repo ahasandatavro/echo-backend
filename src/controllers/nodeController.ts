@@ -211,8 +211,10 @@ export const createChatFlow = async (req: Request, res: Response) => {
     })
 
     // Check user's package subscription and chatbot creation limits
-    const userPackage = user.activeSubscription?.packageName;
-    
+    const dbUserPackage = await prisma.packageSubscription.findFirst({
+      where: { userId: dbUser?.id, isActive: true },
+    });
+    const userPackage=dbUserPackage?.packageName;
     if (!userPackage) {
       return res.status(403).json({ 
         error: "No active subscription found. Please upgrade your plan to create chatbots." 
@@ -254,7 +256,7 @@ export const createChatFlow = async (req: Request, res: Response) => {
         ownerId: dbUser?.id
       },
     });
-
+  
     // Create nodes
     const createdNodes = await prisma.$transaction(
       nodes.map((node: any) =>

@@ -15,7 +15,9 @@ import {
 } from "../controllers/templateController";
 import multer from "multer";
 
-const upload = multer({ dest: "uploads/" });
+const storage = multer.memoryStorage(); // ⬅️ Enables buffer access
+const upload = multer({ storage });
+//const upload = multer({ dest: "uploads/" });
 const router: Router = Router();
 
 router.get("/", getAllTemplates);

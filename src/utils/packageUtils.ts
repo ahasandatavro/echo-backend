@@ -167,6 +167,28 @@ export interface KeywordLimitResult {
   message?: string;
 }
 
+export interface TemplateLimitResult {
+  allowed: boolean;
+  currentCount: number;
+  maxAllowed: number;
+  packageName: string;
+  message?: string;
+}
+
+export interface MediaUploadLimitResult {
+  allowed: boolean;
+  currentCount: number;
+  maxAllowed: number;
+  packageName: string;
+  message?: string;
+}
+
+export interface ChatAssignmentLimitResult {
+  allowed: boolean;
+  packageName: string;
+  message?: string;
+}
+
 export const getContactLimitForPackage = (packageName: string): number => {
   const contactLimitsConfig = process.env.CONTACT_LIMITS_CONFIG;
   
@@ -484,6 +506,266 @@ export const checkKeywordLimit = async (userId: number, newKeywordsCount: number
   }
 };
 
+export const getTemplateLimitForPackage = (packageName: string): number => {
+  const templateLimitsConfig = process.env.TEMPLATE_LIMITS_CONFIG;
+  
+  if (templateLimitsConfig) {
+    try {
+      const limits = JSON.parse(templateLimitsConfig);
+      return limits[packageName] || getDefaultTemplateLimit(packageName);
+    } catch (error) {
+      console.error('Error parsing TEMPLATE_LIMITS_CONFIG:', error);
+      // Fallback to default configuration
+      return getDefaultTemplateLimit(packageName);
+    }
+  } else {
+    // Use default configuration if no environment variable is set
+    return getDefaultTemplateLimit(packageName);
+  }
+};
+
+function getDefaultTemplateLimit(packageName: string): number {
+  switch (packageName) {
+    case 'Free':
+      return 1;
+    case 'Growth':
+      return 100;
+    case 'Pro':
+      return 500;
+    case 'Business':
+      return 1000;
+    default:
+      return 1; // Default to Free limit
+  }
+}
+
+export const checkTemplateLimit = async (userId: number, newTemplatesCount: number = 1): Promise<TemplateLimitResult> => {
+  try {
+    // Get user's active subscription
+    const activeSubscription = await prisma.packageSubscription.findFirst({
+      where: {
+        userId,
+        isActive: true,
+        startDate: {
+          lte: new Date()
+        },
+        endDate: {
+          gte: new Date()
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    if (!activeSubscription) {
+      return {
+        allowed: false,
+        currentCount: 0,
+        maxAllowed: 0,
+        packageName: 'No Subscription',
+        message: 'No active subscription found. Please upgrade your package to create templates.'
+      };
+    }
+
+    const packageName = activeSubscription.packageName;
+    const maxAllowed = getTemplateLimitForPackage(packageName);
+
+    // Count existing templates for this user
+    const currentCount = await prisma.template.count({
+      where: { userId }
+    });
+
+    const allowed = currentCount + newTemplatesCount <= maxAllowed;
+
+    return {
+      allowed,
+      currentCount,
+      maxAllowed,
+      packageName,
+      message: allowed ? undefined : `Template limit exceeded. You have ${currentCount} templates and your ${packageName} package allows maximum ${maxAllowed} templates. Please upgrade your package to create more templates.`
+    };
+  } catch (error) {
+    console.error('Error checking template limit:', error);
+    return {
+      allowed: false,
+      currentCount: 0,
+      maxAllowed: 0,
+      packageName: 'Error',
+      message: 'Error checking template limit. Please try again.'
+    };
+  }
+};
+
+// Media Upload Limits
+export const getMediaUploadLimitForPackage = (packageName: string): number => {
+  const mediaUploadLimitsConfig = process.env.MEDIA_UPLOAD_LIMITS_CONFIG;
+  
+  if (mediaUploadLimitsConfig) {
+    try {
+      const limits = JSON.parse(mediaUploadLimitsConfig);
+      return limits[packageName] || parseInt(process.env.FREE_MEDIA_UPLOAD_LIMIT || '2');
+    } catch (error) {
+      console.error('Error parsing MEDIA_UPLOAD_LIMITS_CONFIG:', error);
+      // Fallback to default configuration
+      return getDefaultMediaUploadLimit(packageName);
+    }
+  } else {
+    // Use default configuration if no environment variable is set
+    return getDefaultMediaUploadLimit(packageName);
+  }
+};
+
+function getDefaultMediaUploadLimit(packageName: string): number {
+  switch (packageName) {
+    case 'Free':
+      return 2;
+    case 'Growth':
+      return 100;
+    case 'Pro':
+      return 500;
+    case 'Business':
+      return 1000;
+    default:
+      return 2; // Default to Free limit
+  }
+}
+
+export const checkMediaUploadLimit = async (userId: number, newMediaCount: number = 1): Promise<MediaUploadLimitResult> => {
+  try {
+    // Get user's active subscription
+    const activeSubscription = await prisma.packageSubscription.findFirst({
+      where: {
+        userId,
+        isActive: true,
+        startDate: {
+          lte: new Date()
+        },
+        endDate: {
+          gte: new Date()
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    if (!activeSubscription) {
+      return {
+        allowed: false,
+        currentCount: 0,
+        maxAllowed: 0,
+        packageName: 'No Subscription',
+        message: 'No active subscription found. Please upgrade your package to upload media files.'
+      };
+    }
+
+    const packageName = activeSubscription.packageName;
+    const maxAllowed = getMediaUploadLimitForPackage(packageName);
+
+    // Count existing media files for this user
+    const currentCount = await prisma.media.count({
+      where: { userId }
+    });
+
+    const allowed = currentCount + newMediaCount <= maxAllowed;
+
+    return {
+      allowed,
+      currentCount,
+      maxAllowed,
+      packageName,
+      message: allowed ? undefined : `Media upload limit exceeded. You have ${currentCount} media files and your ${packageName} package allows maximum ${maxAllowed} media files. Please upgrade your package to upload more media files.`
+    };
+  } catch (error) {
+    console.error('Error checking media upload limit:', error);
+    return {
+      allowed: false,
+      currentCount: 0,
+      maxAllowed: 0,
+      packageName: 'Error',
+      message: 'Error checking media upload limit. Please try again.'
+    };
+  }
+};
+
+// Chat Assignment Limits
+export const getChatAssignmentAccessForPackage = (packageName: string): boolean => {
+  const chatAssignmentConfig = process.env.CHAT_ASSIGNMENT_ACCESS_CONFIG;
+  
+  if (chatAssignmentConfig) {
+    try {
+      const config = JSON.parse(chatAssignmentConfig);
+      return config[packageName] || false;
+    } catch (error) {
+      console.error('Error parsing CHAT_ASSIGNMENT_ACCESS_CONFIG:', error);
+      // Fallback to default configuration
+      return getDefaultChatAssignmentAccess(packageName);
+    }
+  } else {
+    // Use default configuration if no environment variable is set
+    return getDefaultChatAssignmentAccess(packageName);
+  }
+};
+
+function getDefaultChatAssignmentAccess(packageName: string): boolean {
+  switch (packageName) {
+    case 'Free':
+      return false; // Block proceeding further
+    case 'Growth':
+    case 'Pro':
+    case 'Business':
+      return true; // Let proceed
+    default:
+      return false; // Default to blocked
+  }
+}
+
+export const checkChatAssignmentAccess = async (userId: number): Promise<ChatAssignmentLimitResult> => {
+  try {
+    // Get user's active subscription
+    const activeSubscription = await prisma.packageSubscription.findFirst({
+      where: {
+        userId,
+        isActive: true,
+        startDate: {
+          lte: new Date()
+        },
+        endDate: {
+          gte: new Date()
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    if (!activeSubscription) {
+      return {
+        allowed: false,
+        packageName: 'No Subscription',
+        message: 'No active subscription found. Please upgrade your package to access chat assignment features.'
+      };
+    }
+
+    const packageName = activeSubscription.packageName;
+    const allowed = getChatAssignmentAccessForPackage(packageName);
+
+    return {
+      allowed,
+      packageName,
+      message: allowed ? undefined : `Chat assignment features are not available in your ${packageName} package. Please upgrade to Growth, Pro, or Business package to access chat assignment features.`
+    };
+  } catch (error) {
+    console.error('Error checking chat assignment access:', error);
+    return {
+      allowed: false,
+      packageName: 'Error',
+      message: 'Error checking chat assignment access. Please try again.'
+    };
+  }
+};
+
 export interface PackageAccessResult {
   allowed: boolean;
   packageName: string;
@@ -634,6 +916,78 @@ export const checkFeatureAccess = async (userId: number, featureName: string): P
       allowed: false,
       packageName: 'Error',
       message: 'Error checking feature access. Please try again.'
+    };
+  }
+};
+
+export const checkBroadcastAccess = async (userId: number): Promise<PackageAccessResult> => {
+  try {
+    // Get user's active subscription
+    const activeSubscription = await prisma.packageSubscription.findFirst({
+      where: {
+        userId,
+        isActive: true,
+        startDate: {
+          lte: new Date()
+        },
+        endDate: {
+          gte: new Date()
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    if (!activeSubscription) {
+      return {
+        allowed: false,
+        packageName: 'No Subscription',
+        message: 'No active subscription found. Please upgrade your package to access broadcast features.'
+      };
+    }
+
+    const packageName = activeSubscription.packageName;
+    
+    // Get broadcast access configuration from environment
+    const broadcastAccessConfig = process.env.BROADCAST_ACCESS_CONFIG;
+    let restrictedPackages: string[] = [];
+    
+    if (broadcastAccessConfig) {
+      try {
+        const config = JSON.parse(broadcastAccessConfig);
+        restrictedPackages = config.restrictedPackages || ['Free', 'Pro']; // Default restricted packages
+      } catch (error) {
+        console.error('Error parsing BROADCAST_ACCESS_CONFIG:', error);
+        restrictedPackages = ['Free', 'Pro']; // Default fallback
+      }
+    } else {
+      // Fallback to default restricted packages
+      restrictedPackages = ['Free', 'Pro'];
+    }
+
+    // Check if user's package is in the restricted list
+    const isRestricted = restrictedPackages.includes(packageName);
+    
+    if (isRestricted) {
+      return {
+        allowed: false,
+        packageName,
+        message: `Broadcast features are not available in your ${packageName} package. Please upgrade to Growth or Business package to access broadcast features.`
+      };
+    }
+
+    return {
+      allowed: true,
+      packageName,
+      message: undefined
+    };
+  } catch (error) {
+    console.error('Error checking broadcast access:', error);
+    return {
+      allowed: false,
+      packageName: 'Error',
+      message: 'Error checking broadcast access. Please try again.'
     };
   }
 }; 

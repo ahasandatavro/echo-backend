@@ -40,6 +40,7 @@ import notificationSettingsRoutes from "./routes/notificationSettingsRoute";
 import agenda, { initializeAgenda } from "./config/agenda";
 import apiV1Route from "./routes/apiV1Route";
 import billingRoutes from "./routes/billingRoute";
+import uploadMediaRoutes from "./routes/uploadMediaRoute";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -317,6 +318,7 @@ app.use("/apiV1",authenticateJWT,apiV1Route);
 app.use("/payments", authenticateJWTWithoutSubscription, paymentRoutes);
 app.use("/packages", authenticateJWTWithoutSubscription, packageRoutes);
 app.use("/billing", authenticateJWT, billingRoutes);
+app.use("/uploadMedia", authenticateJWT, uploadMediaRoutes);
 app.post("/upload",upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
