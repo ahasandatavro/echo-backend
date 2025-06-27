@@ -94,6 +94,14 @@ export const getAllTemplates = async (req: Request, res: Response) => {
   }
 };
 
+export const getBroadcastById = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const broadcast = await prisma.broadcast.findUnique({
+    where: { id: parseInt(id) },
+    include: { recipients: { include: { contact: { select: { phoneNumber: true } } } } },
+  });
+  res.status(200).json(broadcast);
+};
 export const getAllApprovedTemplates = async (req: Request, res: Response) => {
   try {
     const user: any = req.user;
@@ -863,11 +871,13 @@ export const getBroadcasts = async (
         lte: new Date(endDate as string),
       };
     }
+    //send contact phoneNumber for those who have broadcasted
+
 
     const [broadcasts, total] = await prisma.$transaction([
       prisma.broadcast.findMany({
         where,
-        include: { recipients: true },
+        include: { recipients: { include: { contact: { select: { phoneNumber: true } } } } },
         skip: offset,
         take: limitNum,
         orderBy: { createdAt: 'desc' },
@@ -876,7 +886,7 @@ export const getBroadcasts = async (
         where,
       }),
     ]);
-
+   
     res.status(200).json({
       broadcasts,
       total,

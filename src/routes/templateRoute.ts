@@ -11,7 +11,8 @@ import {
   getTemplatesLibrary,
   updateBroadcast,
   getAllApprovedTemplates,
-  syncTemplatesController
+  syncTemplatesController,
+  getBroadcastById
 } from "../controllers/templateController";
 import multer from "multer";
 
@@ -27,6 +28,7 @@ router.get("/library", getTemplatesLibrary);
 router.post("/", upload.single("file"),createTemplate);
 router.get('/brodcast', getBroadcasts);
 router.post("/brodcast", createBroadcast);
+router.get("/brodcast/:id", getBroadcastById);
 router.put("/brodcast/:id", updateBroadcast);
 router.delete("/brodcast/:id", deleteBroadcast);
 router.get("/brodcast/:id/stats", getBroadcastStats);

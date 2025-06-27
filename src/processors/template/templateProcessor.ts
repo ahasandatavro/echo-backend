@@ -189,7 +189,7 @@ export const brodcastTemplate = async (
       }));
       sendComponents.push({
         type: "body",
-        parameters: params
+       // parameters: params
       });
     }
 
