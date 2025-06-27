@@ -150,7 +150,15 @@ export const updateExpiredConversations = async () => {
 
 export const createNewConversation = async (req: Request, res: Response) => {
   const { contactId, phoneNumber, templateName } = req.body;
-
+ const reqUser:any = req.user;
+ const dbUser = await prisma.user.findUnique({
+  where: { id: reqUser.userId },
+  select: { selectedPhoneNumberId: true },
+ });
+ const selectedPhoneNumberId = dbUser?.selectedPhoneNumberId;
+if(!selectedPhoneNumberId){
+  return res.status(400).json({ message: "No phone number selected for this user." });
+}
   if (!templateName || (!contactId && !phoneNumber)) {
     return res.status(400).json({ message: "Either contactId or phoneNumber and templateName are required" });
   }
@@ -188,19 +196,19 @@ export const createNewConversation = async (req: Request, res: Response) => {
         data: {
           phoneNumber: phoneNumber || "", // fallback empty string if no number
           source: "WhatsApp",
+          createdById: reqUser.userId,
         },
       });
     }
 
     // Send the template
-    await sendTemplate(contact.phoneNumber, templateName, 0, {});
+    await sendTemplate(contact.phoneNumber, templateName, null, {},selectedPhoneNumberId);
 
     // Create conversation
     const conversation = await prisma.conversation.create({
       data: {
         recipient: contact.phoneNumber,
         contactId: contact.id,
-        chatbotId: 1, // optionally dynamic
         businessPhoneNumberId: 5, // optionally dynamic
       },
     });

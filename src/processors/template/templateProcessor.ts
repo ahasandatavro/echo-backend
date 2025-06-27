@@ -206,31 +206,28 @@ export const brodcastTemplate = async (
 
           sendComponents.push({
             type: "button",
-            sub_type: "url",
+            sub_type: "URL",
             index: buttonIndex.toString(),
-            parameters: params
+            //parameters: params
           });
         }
 
         if (btn.type === "PHONE_NUMBER" && btn.phone_number) {
           sendComponents.push({
             type: "button",
-            sub_type: "phone_number",
+            sub_type: "VOICE_CALL",
             index: buttonIndex.toString(),
-            parameters: [
-              { type: "phone_number" as const, phone_number: btn.phone_number }
-            ]
           });
         }
 
         if (btn.type === "QUICK_REPLY") {
           sendComponents.push({
             type: "button",
-            sub_type: "quick_reply",
+            sub_type: "QUICK_REPLY",
             index: buttonIndex.toString(),
-            parameters: [
-              { type: "text" as const, text: btn.text }
-            ]
+            // parameters: [
+            //   { type: "text" as const, text: btn.text }
+            // ]
           });
         }
       });

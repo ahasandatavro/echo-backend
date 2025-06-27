@@ -1310,7 +1310,7 @@ export const sendMessage = async (
 export const sendTemplate = async (
   recipient: string,
   selectedTemplate: string,
-  chatbotId: number,
+  chatbotId: number | null,
   templateDetails: any,
   agentPhoneNumberId?: string
 ) => {
@@ -1604,7 +1604,7 @@ export const storeMessage = async ({
   templateDetails
 }: {
   recipient: string;
-  chatbotId?: number;
+  chatbotId?: number | null;
   messageType: string;
   text?: string;
   status?: MessageStatus;

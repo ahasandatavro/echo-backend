@@ -417,10 +417,10 @@ export const createTemplate = async (req: Request, res: Response) => {
           "Meta API call failed, saving template as DRAFT:",
           err.message
         );
-        return res.status(500).json({
-          error: "err.response?.data.error.message",
-          details: err.response?.data.error.message || err.message,
-        });
+        // return res.status(500).json({
+        //   error: "err.response?.data.error.message",
+        //   details: err.response?.data.error.message || err.message,
+        // });
         saveAsDraft = true;
       }
     }

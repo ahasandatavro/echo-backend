@@ -23,6 +23,25 @@ export const createBusinessPhoneNumber = async (req: Request, res: Response) => 
   }
 };
 
+export const getBusinessPhoneNumberDetails = async (req: Request, res: Response) => {
+  const user: any = req.user;
+  const dbUser = await prisma.user.findUnique({
+    where: { id: user.userId },
+    select: { selectedPhoneNumberId: true },
+  });
+  if (!dbUser?.selectedPhoneNumberId) {
+    return res.status(400).json({ message: "No phone number selected for this user." });
+  }
+  const phoneNumber = await prisma.businessPhoneNumber.findUnique({
+    where: { metaPhoneNumberId: dbUser.selectedPhoneNumberId },
+    select: { phoneNumber: true, displayName: true, connectionStatus: true, subscription: true, updatedAt: true },
+  });
+  if (!phoneNumber) {
+    return res.status(400).json({ message: "No phone number found for this user." });
+  }
+  res.status(200).json(phoneNumber);
+}
+
 export const getBusinessPhoneNumbers = async (req: Request, res: Response) => {
   try {
     const { businessAccountId } = req.query;

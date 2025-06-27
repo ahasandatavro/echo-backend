@@ -291,6 +291,7 @@ model BroadcastRecipient {
   contactId   Int
   status      BroadcastStatus @default(SENT)
   createdAt   DateTime        @default(now())
+  errorMessage String?
 }
 
 enum BroadcastStatus {

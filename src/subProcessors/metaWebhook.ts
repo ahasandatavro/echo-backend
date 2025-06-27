@@ -346,6 +346,12 @@ export const handleChatbotTrigger=async(text:string, recipient:string, phoneNumb
 export async function processBroadcastStatus(statuses: any[]): Promise<void> {
   for (const statusObj of statuses) {
     const phoneNumber = statusObj.recipient_id; // e.g. "1234567890"
+    const dbContact = await prisma.contact.findFirst({
+      where: { phoneNumber },
+    });
+    if (!dbContact) {
+      continue;
+    }
     const newStatus = statusObj.status;         // e.g. "delivered", "read", "failed"
     // If you included "biz_opaque_callback_data" in the message
     const broadcastIdString = statusObj.biz_opaque_callback_data; 
@@ -373,13 +379,18 @@ export async function processBroadcastStatus(statuses: any[]): Promise<void> {
     
     if (broadcastId && phoneNumber) {
       // Update the BroadcastRecipient record matching broadcastId and phoneNumber
+      await prisma.broadcast.update({
+        where: { id: broadcastId },
+        data: { status: updatedStatus },
+      });
       await prisma.broadcastRecipient.updateMany({
         where: {
           broadcastId,
-          contact: { phoneNumber }, // Using nested condition on the related Contact
+          contactId: dbContact.id,
         },
         data: {
           status: updatedStatus,
+          errorMessage: statusObj.errors?.[0]?.message,
         },
       });
     }

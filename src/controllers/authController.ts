@@ -161,7 +161,8 @@ export const loginUser = async (req: Request, res: Response) => {
     // Fetch active package subscription
     const activePackage = await prisma.packageSubscription.findFirst({
       where: { userId: user.id, isActive: true },
-      orderBy: { endDate: 'desc' }
+      orderBy: { endDate: 'desc' },
+      include: { payment: true }
     });
 
     // Set tokens in HTTP-only cookies
@@ -186,7 +187,8 @@ export const loginUser = async (req: Request, res: Response) => {
           packageName: activePackage.packageName,
           startDate: activePackage.startDate,
           endDate: activePackage.endDate,
-          isActive: activePackage.isActive
+          isActive: activePackage.isActive,
+          price:activePackage.payment.amount
         } : null
       },
     });

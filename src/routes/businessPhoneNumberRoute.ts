@@ -7,12 +7,14 @@ import {
   deleteBusinessPhoneNumber,
   updateFallbackSettings,
   getFallbackSettings,
+  getBusinessPhoneNumberDetails,
 } from "../controllers/businessPhoneNumberController";
 
 const router = express.Router();
 
 router.post("/", createBusinessPhoneNumber);
 router.get("/", getBusinessPhoneNumbers);
+router.get("/details", getBusinessPhoneNumberDetails);
 router.get("/:id", getBusinessPhoneNumber);
 router.put("/:id", updateBusinessPhoneNumber);
 router.delete("/:id", deleteBusinessPhoneNumber);
