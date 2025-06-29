@@ -317,7 +317,7 @@ app.use("/hubspot",hubspotRoutes);
 app.use("/apiV1",authenticateJWT,apiV1Route);
 app.use("/payments", authenticateJWTWithoutSubscription, paymentRoutes);
 app.use("/packages", authenticateJWTWithoutSubscription, packageRoutes);
-app.use("/billing", authenticateJWT, billingRoutes);
+app.use("/billing", authenticateJWTWithoutSubscription, billingRoutes);
 app.use("/uploadMedia", authenticateJWT, uploadMediaRoutes);
 app.post("/upload",upload.single("file"), async (req, res) => {
   try {
