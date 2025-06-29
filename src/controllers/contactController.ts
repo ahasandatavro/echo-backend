@@ -8,7 +8,7 @@ import {
   sendMessage,
   sendTemplate,
 } from "../processors/metaWebhook/webhookProcessor";
-import { handleChatbotTrigger } from "../subProcessors/metaWebhook";
+import { handleChatbotTrigger, checkRulesForNodeAction } from "../subProcessors/metaWebhook";
 const prisma = new PrismaClient();
 import FormData from "form-data";
 import axios from "axios";
@@ -16,6 +16,35 @@ import { parse } from 'csv-parse/sync';
 import path from 'path';
 import { ProcessRulesForAttributes } from "../processors/contactProcessor/contactProcessor";
 import { checkContactLimit, checkChatAssignmentAccess } from "../utils/packageUtils";
+
+// Helper function to get user's phone number ID
+const getUserPhoneNumberId = async (userId: number): Promise<string | undefined> => {
+  const dbUser = await prisma.user.findFirst({
+    where: { id: userId },
+    select: { selectedPhoneNumberId: true },
+  });
+  return dbUser?.selectedPhoneNumberId;
+};
+
+// Helper function to check if attributes have changed
+const hasAttributeChanges = (oldAttributes: any, newAttributes: any): boolean => {
+  if (!oldAttributes && newAttributes) return true; // New attributes added
+  if (oldAttributes && !newAttributes) return true; // All attributes removed
+  if (!oldAttributes && !newAttributes) return false; // No attributes in both
+  
+  const oldKeys = Object.keys(oldAttributes || {});
+  const newKeys = Object.keys(newAttributes || {});
+  
+  // Check if any keys were added or removed
+  if (oldKeys.length !== newKeys.length) return true;
+  
+  // Check if any values changed
+  for (const key of newKeys) {
+    if (oldAttributes[key] !== newAttributes[key]) return true;
+  }
+  
+  return false;
+};
 
 export const getAllContacts = async (req: Request, res: Response) => {
   //console.log('🔄 Starting getAllContacts function');
@@ -253,6 +282,14 @@ export const createContact = async (req: Request, res: Response) => {
       },
     });
 
+    // Check if attributes were added and trigger rules
+    if (Object.keys(parsedAttributes).length > 0) {
+      const phoneNumberId = await getUserPhoneNumberId(contactUserId);
+      if (phoneNumberId) {
+        await checkRulesForNodeAction(phoneNumber, "attributeAdded", phoneNumberId, contactUserId);
+      }
+    }
+
     // If we have a userId, update the user's tags and attributes
     if (contactUserId) {
       const user = await prisma.user.findUnique({
@@ -318,6 +355,7 @@ export const updateContact = async (req: Request, res: Response) => {
         subscribed: true,
         sendSMS: true,
         userId: true,
+        phoneNumber: true,
       },
     });
 
@@ -348,12 +386,20 @@ export const updateContact = async (req: Request, res: Response) => {
         parsedAttributes = typeof attributes === 'string' 
           ? JSON.parse(attributes) 
           : attributes;
-          await ProcessRulesForAttributes(existingContact.attributes, parsedAttributes, bp);
+         // await ProcessRulesForAttributes(existingContact.attributes, parsedAttributes, bp);
       } catch (error) {
         console.error("Error parsing attributes:", error);
         return res.status(400).json({ error: "Invalid attributes format" });
       }
     }
+
+    // Check if attributes have changed
+    const attributesChanged = hasAttributeChanges(existingContact.attributes, parsedAttributes);
+
+    // Check if new attributes are added
+    const existingKeys = Object.keys(existingContact.attributes || {});
+    const newKeys = Object.keys(parsedAttributes || {});
+    const newAttributesAdded = newKeys.some(key => !existingKeys.includes(key));
 
     // If userId has changed, need to update both old and new users
     if (existingContact.userId !== contactUserId && existingContact.userId) {
@@ -406,6 +452,20 @@ export const updateContact = async (req: Request, res: Response) => {
         attributes: parsedAttributes,
       },
     });
+
+    // Check if attributes changed and trigger rules
+    if (attributesChanged) {
+      const phoneNumberId = await getUserPhoneNumberId(contactUserId);
+      if (phoneNumberId) {
+        if (newAttributesAdded) {
+          // If new attributes are added, trigger attributeAdded rule
+          await checkRulesForNodeAction(existingContact.phoneNumber, "attributeAdded", phoneNumberId, contactUserId);
+        } else {
+          // If only existing attributes are modified, trigger attributeChanged rule
+          await checkRulesForNodeAction(existingContact.phoneNumber, "attributeChanged", phoneNumberId, contactUserId);
+        }
+      }
+    }
 
     res.status(200).json(updatedContact);
   } catch (error) {
@@ -623,6 +683,14 @@ export const updateAttribute = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Contact not found" });
     }
 
+    // Check if attributes have changed
+    const attributesChanged = hasAttributeChanges(contact.attributes, updateData);
+
+    // Check if new attributes are added
+    const existingKeys = Object.keys(contact.attributes || {});
+    const newKeys = Object.keys(updateData || {});
+    const newAttributesAdded = newKeys.some(key => !existingKeys.includes(key));
+
     // Use the contact's userId or get from the current user
     let userId = contact.userId;
     if (!userId) {
@@ -669,6 +737,20 @@ export const updateAttribute = async (req: Request, res: Response) => {
       where: { id: contactId },
       data: { attributes: updatedContactAttributes },
     });
+
+    // Check if attributes changed and trigger rules
+    if (attributesChanged) {
+      const phoneNumberId = await getUserPhoneNumberId(userId);
+      if (phoneNumberId) {
+        if (newAttributesAdded) {
+          // If new attributes are added, trigger attributeAdded rule
+          await checkRulesForNodeAction(contact.phoneNumber, "attributeAdded", phoneNumberId, userId);
+        } else {
+          // If only existing attributes are modified, trigger attributeChanged rule
+          await checkRulesForNodeAction(contact.phoneNumber, "attributeChanged", phoneNumberId, userId);
+        }
+      }
+    }
 
     res.json({
       message: "Attribute updated",

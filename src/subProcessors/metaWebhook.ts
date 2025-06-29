@@ -455,7 +455,7 @@ function matchesEvent(uiCode: string, value: any): boolean {
       );
 
       case "SESSION_MSG_SENT":
-        // “sent” plus no type=template flag → this is a session/text message
+        // "sent" plus no type=template flag → this is a session/text message
         return statuses.some((s: any) =>
           s.status === "sent" &&
           (
@@ -465,7 +465,7 @@ function matchesEvent(uiCode: string, value: any): boolean {
         );
   
       case "TEMPLATE_MSG_SENT":
-        // “sent” plus type=template → this is a template message
+        // "sent" plus type=template → this is a template message
         return statuses.some((s: any) =>
           s.status === "sent" &&
           typeof s.biz_opaque_callback_data === "string" &&
@@ -480,7 +480,7 @@ function matchesEvent(uiCode: string, value: any): boolean {
 
     default:
       // payments & template failures come via other Graph fields,
-      // so we shouldn’t get here for those
+      // so we shouldn't get here for those
       return false;
   }
 }
@@ -505,7 +505,7 @@ export const triggerMyWebhooks = async (change: any) => {
   });
   if (!hooks.length) return;
 
-  // 3) for each hook, only fire if matchesEvent says “yes”
+  // 3) for each hook, only fire if matchesEvent says "yes"
   await Promise.all(hooks.map(async hook => {
     if (!matchesEvent(hook.eventTypes, change.value)) {
       return; // skip it
@@ -1738,4 +1738,374 @@ export const findChatbotIdByKeyword = async (text: string): Promise<number | nul
   });
 
   return keyword?.chatbot?.id || null;
+};
+
+export const checkRulesForNodeAction = async (
+  recipient: string,
+  nodeType:  "attributeChanged" | "attributeAdded",
+  phoneNumberId: string | undefined,
+  agentId: number | undefined
+) => {
+  try {
+    // Get business phone number
+    const bp = await prisma.businessPhoneNumber.findFirst({
+      where: { metaPhoneNumberId: phoneNumberId },
+    });
+
+    if (!bp) {
+      console.warn("No business phone number found for phone number ID:", phoneNumberId);
+      return;
+    }
+
+    // Fix triggerType
+    const activeRules = await prisma.rule.findMany({
+      where: {
+        businessPhoneNumberId: bp.id,
+        status: "Active",
+        triggerType: {
+          in: [nodeType]
+        }
+      },
+    });
+
+    if (activeRules.length === 0) {
+      return; // No rules to process
+    }
+
+    // Create a mock message object for rule evaluation
+    const mockMessage = {
+      type: "text",
+      text: { body: `Node action: ${nodeType}` },
+      timestamp: Math.floor(Date.now() / 1000),
+    };
+
+    // Process each rule
+    for (const rule of activeRules) {
+      await processRuleForNodeAction(rule, recipient, mockMessage, phoneNumberId, agentId, nodeType);
+    }
+  } catch (error) {
+    console.error("Error checking rules for node action:", error);
+  }
+};
+
+const processRuleForNodeAction = async (
+  rule: Rule,
+  recipient: string,
+  message: any,
+  phoneNumberId: string | undefined,
+  agentId: number | undefined,
+  nodeType: string
+) => {
+  const actionType = rule.action;
+  const actionData = rule.actionData as any;
+  const conditions = rule.conditions as any;
+  
+  const contact = await prisma.contact.findUnique({
+    where: { phoneNumber: recipient },
+  });
+
+  if (!contact) {
+    console.log(`Contact not found for recipient ${recipient}`);
+    return;
+  }
+
+  // Step 1: Evaluate Conditions
+  const conditionsMet = await evaluateRuleConditionsForNodeAction(conditions, recipient, message, phoneNumberId, nodeType);
+
+  if (!conditionsMet) {
+    console.log(`Rule "${rule.name}" skipped: Conditions not met for node action ${nodeType}`);
+    return;
+  }
+
+  // Step 2: Perform the action
+  switch (actionType) {
+    case "sendTemplate":
+      await sendTemplate(recipient, actionData.templateId, 0, {}, phoneNumberId);
+      break;
+    case "sendMessage": {
+      const { messageType, replyId } = actionData;
+    
+      if (messageType && replyId) {
+        const materialType = messageType;
+        const materialId = parseInt(replyId, 10);
+    
+        const sent = await sendDefaultMaterial(materialType, materialId, recipient, 0, phoneNumberId);
+        if (sent) {
+          console.log(`sendMessage action executed successfully for rule ${rule.name} (${nodeType})`);
+        } else {
+          console.warn(`Failed to send message for rule ${rule.name} (${nodeType})`);
+        }
+      }
+      break;
+    }
+    case "routeChat": {
+      const { routingType, selectedOptions } = actionData;
+    
+      if (!routingType || !Array.isArray(selectedOptions) || selectedOptions.length === 0) {
+        console.log("❌ Invalid routeChat action data");
+        break;
+      }
+    
+      const selected = selectedOptions[0];
+    
+      if (routingType === "agent") {
+        await prisma.contact.update({
+          where: { id: contact.id },
+          data: { userId: selected.id },
+        });
+        
+        await prisma.chatStatusHistory.create({
+          data: {
+            contactId: contact.id,
+            previousStatus: contact.ticketStatus,
+            newStatus: "Assigned",
+            type: "assignmentChanged",
+            note: `Assigned to agent ${selected.name} via rule (${nodeType})`,
+            assignedToUserId: selected.id,
+            changedById: null,
+            changedAt: new Date(),
+          },
+        });
+    
+        console.log(`✅ Assigned agent ${selected.name} to contact ${recipient} via rule (${nodeType})`);
+      }
+    
+      if (routingType === "team") {
+        const fullContact = await prisma.contact.findUnique({
+          where: { id: contact.id },
+          include: { assignedTeams: true },
+        });
+    
+        const alreadyAssigned = fullContact?.assignedTeams.some((team) => team.id === selected.id);
+    
+        if (!alreadyAssigned) {
+          await prisma.contact.update({
+            where: { id: contact.id },
+            data: {
+              assignedTeams: {
+                connect: { id: selected.id },
+              },
+            },
+          });
+          
+          await prisma.chatStatusHistory.create({
+            data: {
+              contactId: contact.id,
+              previousStatus: contact.ticketStatus,
+              newStatus: "TeamAssigned",
+              type: "assignmentChanged",
+              note: `Assigned to team ${selected.name} via rule (${nodeType})`,
+              changedById: null,
+              changedAt: new Date(),
+              timerStartTime: contact.ticketStatus === "Open" ? new Date() : contact.timerStartTime,
+            },
+          });
+    
+          console.log(`✅ Assigned team ${selected.name} to contact ${recipient} via rule (${nodeType})`);
+        }
+      }
+      break;
+    }
+    case "startChatbot": {
+      const chatbot = await prisma.chatbot.findFirst({
+        where: {
+          id: parseInt(actionData.chatbotId, 10),
+        },
+      });
+      if (chatbot) {
+        await handleChatbotTrigger("chatbot:" + chatbot.name, recipient, phoneNumberId);
+      }
+      break;
+    }
+    case "updateAttribute": {
+      const material = await prisma.replyMaterial.findFirst({
+        where: {
+          id: parseInt(actionData.attributeId, 10)
+        }
+      });
+    
+      if (!material?.content) break;
+    
+      let parsedAttributes: { attribute: string; value: string }[] = [];
+    
+      try {
+        parsedAttributes = JSON.parse(material.content);
+      } catch (e) {
+        console.error("Failed to parse attributes JSON:", e);
+        break;
+      }
+    
+      const normalizeBool = (val: string | null) =>
+        val?.toLowerCase() === "true" ? true : false;
+    
+      const directFields: any = {};
+      const flatAttributes: Record<string, string> = {};
+    
+      parsedAttributes.forEach(({ attribute, value }) => {
+        switch (attribute) {
+          case "allowbrodcast":
+            directFields.subscribed = normalizeBool(value);
+            break;
+          case "allowsms":
+            directFields.sendSMS = normalizeBool(value);
+            break;
+          case "Source":
+          case "Channel":
+            directFields.source = value || "Unknown";
+            break;
+          default:
+            flatAttributes[attribute] = value;
+        }
+      });
+    
+      const existingAttrs = (contact.attributes || {}) as Prisma.JsonObject;
+    
+      await prisma.contact.update({
+        where: { id: contact.id },
+        data: {
+          ...directFields,
+          attributes: {
+            ...existingAttrs,
+            ...flatAttributes,
+          },
+        },
+      });
+    
+      console.log(`Contact ${contact.id} updated with attributes via rule (${nodeType})`);
+      break;
+    }
+    default:
+      console.log(`Rule "${rule.name}" has an unknown action type for node action ${nodeType}.`);
+  }
+
+  // Increment rule's executed count
+  await prisma.rule.update({
+    where: { id: rule.id },
+    data: { executed: { increment: 1 } },
+  });
+};
+
+const evaluateRuleConditionsForNodeAction = async (
+  conditions: any,
+  recipient: string,
+  message: any,
+  phoneNumberId: string | undefined,
+  nodeType: string
+): Promise<boolean> => {
+  if (!conditions || Object.keys(conditions).length === 0) return true;
+
+  const contact = await prisma.contact.findUnique({
+    where: { phoneNumber: recipient },
+  });
+
+  if (!contact) return false;
+
+  // 1️⃣ Keyword Filter - Skip for node actions since there's no text input
+  if (conditions.keywordFilter) {
+    return false; // Node actions don't have keyword input
+  }
+
+  // 2️⃣ Contact Filter
+  if (conditions.contactFilter) {
+    const { operator, value } = conditions.contactFilter;
+    const contactPhoneNumber = contact.phoneNumber;
+  
+    switch (operator) {
+      case "exists":
+        if (!contactPhoneNumber) return false;
+        break;
+      case "not_exists":
+        if (contactPhoneNumber) return false;
+        break;
+      case "equals":
+        if (contactPhoneNumber !== value) return false;
+        break;
+      case "not_equals":
+        if (contactPhoneNumber === value) return false;
+        break;
+      case "contains":
+        if (!contactPhoneNumber.includes(value)) return false;
+        break;
+      case "not_contains":
+        if (contactPhoneNumber.includes(value)) return false;
+        break;
+      default:
+        return false;
+    }
+  }
+
+  // 3️⃣ No Keyword Filter - Skip for node actions
+  if (conditions.selectedFilter === "noKeyword") {
+    return false; // Node actions don't have keyword input
+  }
+
+  // 4️⃣ Contact Attribute Filter
+  if (conditions.contactAttributeFilter) {
+    const { attribute, operator, value } = conditions.contactAttributeFilter;
+  
+    const directFields = ["allowbrodcast", "allowsms", "Source", "Channel"];
+    let attrValue: any;
+  
+    if (directFields.includes(attribute)) {
+      switch (attribute) {
+        case "allowbrodcast":
+          attrValue = contact.subscribed;
+          break;
+        case "allowsms":
+          attrValue = contact.sendSMS;
+          break;
+        case "Source":
+        case "Channel":
+          attrValue = contact.source;
+          break;
+      }
+    } else {
+      const attributesObj = contact.attributes as Record<string, any>;
+      attrValue = attributesObj?.[attribute];
+    }
+  
+    if (attrValue === undefined || attrValue === null) return false;
+  
+    const attrStr = attrValue.toString().toLowerCase();
+    const filterVal = value.toString().toLowerCase();
+  
+    switch (operator) {
+      case "equals":
+        if (attrStr !== filterVal) return false;
+        break;
+      case "not_equals":
+        if (attrStr === filterVal) return false;
+        break;
+      case "contains":
+        if (!attrStr.includes(filterVal)) return false;
+        break;
+      case "not_contains":
+        if (attrStr.includes(filterVal)) return false;
+        break;
+      default:
+        return false;
+    }
+  }  
+  
+  // 5️⃣ Tags Filter
+  if (conditions.tagsFilter) {
+    const requiredTags = conditions.tagsFilter.tags?.map((t: string) => t.trim().toLowerCase());
+    const contactTags = contact.tags.map((t: string) => t.toLowerCase());
+
+    const tagMatches = requiredTags.every((tag: string) => contactTags.includes(tag));
+    if (!tagMatches) return false;
+  }
+
+  // 6️⃣ Timestamp Filter - Skip for node actions
+  if (conditions.timestampFilter) {
+    return false; // Node actions don't have message timestamps
+  }
+
+  // 7️⃣ New Chat Filter - Skip for node actions
+  if (conditions.selectedFilter === "newChat") {
+    return false; // Node actions are not new chat triggers
+  }
+
+  // ✅ All conditions passed
+  return true;
 };

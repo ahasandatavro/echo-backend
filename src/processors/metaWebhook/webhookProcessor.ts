@@ -4,7 +4,7 @@ import { metaWhatsAppAPI } from "../../config/metaConfig";
 import { bump, convertHtmlToWhatsAppText } from "../../helpers/index";
 import { resolveContactAttributes, resolveVariables } from "../../helpers/validation";
 import { ListMessage } from "../../interphases";
-import { performGoogleSheetAction } from "../../subProcessors/metaWebhook";
+import { performGoogleSheetAction, checkRulesForNodeAction } from "../../subProcessors/metaWebhook";
 import { MessageStatus } from "../../interphases"; // ✅ Import the correct enum
 import { Prisma } from "@prisma/client"; // ✅ Import Prisma types
 import { io } from "../../app";
@@ -528,7 +528,9 @@ export const processNode = async (
           },
         });        
         
-        console.log(`Contact ${recipient} subscription set to true.`);
+        
+        // Check rules after successful subscription
+        await checkRulesForNodeAction(recipient, "attributeChanged", agentPhoneNumberId, undefined);
         
         // Find the next edge using the "source_1" handle on success
         const nextEdge = edges.find(
@@ -582,6 +584,9 @@ export const processNode = async (
         });     
         
         console.log(`Contact ${recipient} subscription set to false.`);
+        
+        // Check rules after successful unsubscription
+        await checkRulesForNodeAction(recipient, "attributeChanged", agentPhoneNumberId, undefined);
         
         // Find the next edge using the "source_1" handle on success
         const nextEdge = edges.find(
@@ -853,6 +858,9 @@ export const processNode = async (
           where: { phoneNumber: recipient },
           data: { attributes: attributesJson },
         });
+    
+        // Check rules after successful attribute update
+        await checkRulesForNodeAction(recipient, "attributeChanged", agentPhoneNumberId, undefined);
     
         // 6) On success, transition along the first outgoing edge
         const nextEdge = edges.find(edge => edge.sourceId === currentNode.id);
