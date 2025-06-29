@@ -402,18 +402,34 @@ export const isValidWebhookRequest = (entry: any): boolean => {
 };
 
 export const processWebhookChange = async (change: any, io: any) => {
-  const statuses = change.value?.statuses;
-  if (statuses) await processBroadcastStatus(statuses);
+  switch (change.field) {
+    case "message_template_status_update":
+      if (change.value.reason) {
+        console.log(change.value.reason);
+      }
+      await updateTemplateInDb(change.value);
+      break;
 
-  if (change.field === "message_template_status_update") {
-    if(change.value.reason){
-      console.log(change.value.reason);
-    }
-    await updateTemplateInDb(change.value);
-    return;
+    case "messages":
+      await processMessageUpdate(change.value, io);
+      break;
+
+    case "account_update":
+      // Handle account update
+      console.log("Account update event:", change.value);
+      break;
+
+    case "history":
+      // Handle history event
+      console.log("History event:", change.value);
+      break;
+
+    // Add more cases for other fields you subscribe to
+
+    default:
+      // Catch-all for unhandled fields
+      console.log("Unhandled webhook field:", change.field, change.value);
   }
-
-  await processMessageUpdate(change.value, io);
 };
 
 // in your triggerMyWebhooks helper
@@ -1740,7 +1756,7 @@ export const findChatbotIdByKeyword = async (text: string): Promise<number | nul
   return keyword?.chatbot?.id || null;
 };
 
-export const checkRulesForNodeAction = async (
+export const checkRulesForNodeAction =   async (
   recipient: string,
   nodeType:  "attributeChanged" | "attributeAdded",
   phoneNumberId: string | undefined,

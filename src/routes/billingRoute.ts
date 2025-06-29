@@ -3,14 +3,13 @@ import {
   getBillingInformation,
   updateBillingInformation,
 } from "../controllers/billingController";
-import { authenticateJWT } from "../middlewares/authMiddleware";
 
 const router = express.Router();
 
 // Get billing information for the authenticated user
-router.get("/", authenticateJWT, getBillingInformation);
+router.get("/",  getBillingInformation);
 
 // Update or create billing information for the authenticated user
-router.put("/", authenticateJWT, updateBillingInformation);
+router.put("/",  updateBillingInformation);
 
 export default router; 

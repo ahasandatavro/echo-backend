@@ -286,8 +286,8 @@ export const updateUserByEmail = async (req: Request, res: Response): Promise<vo
         businessDescription: description ?? user.businessDescription,
         businessIndustry: vertical ?? user.businessIndustry,
         // image: profilePictureHandle,
-        website1: websites && websites[0] ? websites[0] : user.website1,
-        website2: websites && websites[1] ? websites[1] : user.website2,
+        website1: webs && webs[0] ? webs[0] : user.website1,
+        website2: webs && webs[1] ? websites[1] : user.website2,
       },
     });
 
