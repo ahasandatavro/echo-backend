@@ -106,27 +106,76 @@ export const executeWebhookWithLogging = async (
 
       const responseTime = Date.now() - startTime;
 
-      // Update log with success
-      let responseBodyToStore: any;
-      if (typeof response.data === 'object') {
-        responseBodyToStore = response.data;
-      } else {
-        try {
-          responseBodyToStore = JSON.parse(response.data);
-        } catch {
-          responseBodyToStore = { raw: response.data };
+      // Check if response status indicates success (2xx range)
+      if (response.status >= 200 && response.status < 300) {
+        // Update log with success
+        let responseBodyToStore: any;
+        if (typeof response.data === 'object') {
+          responseBodyToStore = response.data;
+        } else {
+          try {
+            responseBodyToStore = JSON.parse(response.data);
+          } catch {
+            responseBodyToStore = { raw: response.data };
+          }
         }
-      }
-      await updateWebhookLog(logEntry.id, {
-        status: 'SUCCESS',
-        responseStatus: response.status,
-        responseHeaders: response.headers,
-        responseBody: responseBodyToStore,
-        responseTime
-      });
+        
+        await updateWebhookLog(logEntry.id, {
+          status: 'SUCCESS',
+          responseStatus: response.status,
+          responseHeaders: response.headers,
+          responseBody: responseBodyToStore,
+          responseTime
+        });
 
-      console.log(`Webhook ${webhook.id} → ${webhook.url} succeeded (${responseTime}ms)`);
-      return;
+        console.log(`Webhook ${webhook.id} → ${webhook.url} succeeded (${responseTime}ms)`);
+        return;
+      } else {
+        // HTTP status code indicates failure (4xx, 5xx)
+        const responseTime = Date.now() - startTime;
+        retryCount++;
+
+        // Store the failed response details
+        let responseBodyToStore: any;
+        if (typeof response.data === 'object') {
+          responseBodyToStore = response.data;
+        } else {
+          try {
+            responseBodyToStore = JSON.parse(response.data);
+          } catch {
+            responseBodyToStore = { raw: response.data };
+          }
+        }
+
+        // Determine error type based on status code
+        let errorType = 'HTTP_ERROR';
+        if (response.status >= 400 && response.status < 500) {
+          errorType = `HTTP_${response.status}_CLIENT_ERROR`;
+        } else if (response.status >= 500) {
+          errorType = `HTTP_${response.status}_SERVER_ERROR`;
+        }
+
+        // Update log with failure details
+        await updateWebhookLog(logEntry.id, {
+          status: retryCount > maxRetries ? 'MAX_RETRIES_EXCEEDED' : 'FAILED',
+          responseStatus: response.status,
+          responseHeaders: response.headers,
+          responseBody: responseBodyToStore,
+          errorMessage: `HTTP ${response.status}: ${response.statusText}`,
+          errorType,
+          responseTime,
+          retryCount
+        });
+
+        if (retryCount > maxRetries) {
+          console.error(`Webhook ${webhook.id} → ${webhook.url} failed after ${maxRetries} retries. Final status: ${response.status}`);
+          return;
+        }
+
+        // Wait before retrying (exponential backoff)
+        const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 10000); // Max 10 seconds
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
 
     } catch (error: any) {
       const responseTime = Date.now() - startTime;
@@ -141,17 +190,41 @@ export const executeWebhookWithLogging = async (
       } else if (error.code === 'ECONNREFUSED') {
         errorType = 'CONNECTION_REFUSED';
       } else if (error.response) {
+        // This handles cases where we get a response but it's an error
         errorType = `HTTP_${error.response.status}`;
-      }
+        
+        // Store the error response details
+        let responseBodyToStore: any;
+        if (typeof error.response.data === 'object') {
+          responseBodyToStore = error.response.data;
+        } else {
+          try {
+            responseBodyToStore = JSON.parse(error.response.data);
+          } catch {
+            responseBodyToStore = { raw: error.response.data };
+          }
+        }
 
-      // Update log with failure details
-      await updateWebhookLog(logEntry.id, {
-        status: retryCount > maxRetries ? 'MAX_RETRIES_EXCEEDED' : 'FAILED',
-        errorMessage: error.message,
-        errorType,
-        responseTime,
-        retryCount
-      });
+        await updateWebhookLog(logEntry.id, {
+          status: retryCount > maxRetries ? 'MAX_RETRIES_EXCEEDED' : 'FAILED',
+          responseStatus: error.response.status,
+          responseHeaders: error.response.headers,
+          responseBody: responseBodyToStore,
+          errorMessage: error.message,
+          errorType,
+          responseTime,
+          retryCount
+        });
+      } else {
+        // Network or other errors
+        await updateWebhookLog(logEntry.id, {
+          status: retryCount > maxRetries ? 'MAX_RETRIES_EXCEEDED' : 'FAILED',
+          errorMessage: error.message,
+          errorType,
+          responseTime,
+          retryCount
+        });
+      }
 
       if (retryCount > maxRetries) {
         console.error(`Webhook ${webhook.id} → ${webhook.url} failed after ${maxRetries} retries:`, error.message);
