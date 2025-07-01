@@ -9,6 +9,7 @@ import {
   requestPasswordReset,
   resetPassword,
   refreshToken,
+  resendVerificationEmail,
   logout
 } from '../controllers/authController';
 import { authenticateJWT } from '../middlewares/authMiddleware';
@@ -22,6 +23,7 @@ router.get('/google', googleAuth);
 router.get('/google-callback', googleCallback);
 router.post("/get-access-token", authenticateJWT, getAccessToken);
 router.post("/verify-email", verifyEmail);
+router.post('/resend-verification-email', resendVerificationEmail);
 router.post('/request-password-reset', requestPasswordReset);
 router.post('/reset-password', resetPassword);
 export default router;

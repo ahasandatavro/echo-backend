@@ -150,7 +150,11 @@ export const loginUser = async (req: Request, res: Response) => {
     if (!user) return res.status(401).send("Invalid email");
 
     if (!user.emailVerified) {
-      return res.status(401).send("Please verify your email before logging in.");
+      return res.status(401).json({
+        error: "EMAIL_NOT_VERIFIED",
+        message: "Please verify your email address before logging in. Check your inbox for a verification link, or request a new one.",
+        code: "EMAIL_NOT_VERIFIED"
+      });
     }
 
     const validPassword = await bcrypt.compare(password, user.password);
@@ -558,6 +562,64 @@ export const refreshToken = async (req: Request, res: Response) => {
     });
   } catch (error) {
     return res.status(401).json({ message: 'Invalid refresh token' });
+  }
+};
+
+export const resendVerificationEmail = async (req: Request, res: Response) => {
+  const { email } = req.body;
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (!user) {
+      // Don't reveal that the email doesn't exist
+      return res.status(200).json({
+        success: true,
+        message: "If your email is registered and not verified, you will receive a verification link."
+      });
+    }
+
+    if (user.emailVerified) {
+      return res.status(200).json({
+        success: true,
+        message: "Your email is already verified. You can log in now."
+      });
+    }
+
+    // Generate new verification token
+    const verificationToken = generateVerificationToken();
+
+    // Update user with new verification token
+    await prisma.user.update({
+      where: { email },
+      data: {
+        verificationToken,
+      },
+    });
+
+    // Send verification email
+    try {
+      await sendWelcomeEmail(email, user.firstName || 'User', verificationToken);
+    } catch (emailError) {
+      console.error('Failed to send verification email:', emailError);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to send verification email. Please try again later."
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Verification email sent successfully. Please check your inbox."
+    });
+  } catch (error) {
+    console.error("Error resending verification email:", error);
+    res.status(500).json({
+      success: false,
+      message: "An error occurred while processing your request."
+    });
   }
 };
 

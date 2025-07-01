@@ -28,6 +28,7 @@ passport.use(
         });
 
         if (user) {
+          // Update existing user with new tokens and mark email as verified (Google emails are pre-verified)
           user = await prisma.user.update({
             where: {
               email: profile.emails?.[0]?.value, // Specify the user to update based on their email
@@ -36,12 +37,13 @@ passport.use(
               email: profile.emails?.[0]?.value,
               accessToken: accessToken,
               refreshToken: refreshToken || user.refreshToken,
-              accessTokenExpiresAt: expirationTimestamp, 
-
+              accessTokenExpiresAt: expirationTimestamp,
+              emailVerified: true, // Google emails are pre-verified
+              verificationToken: null, // Clear any existing verification token
             },
             })
         } else {
-          // Create a new user with tokens
+          // Create a new user with tokens and mark email as verified
           user = await prisma.user.create({
             data: {
               email:profile.emails?.[0]?.value || "no-reply@example.com",
@@ -50,6 +52,7 @@ passport.use(
               accessToken,
               refreshToken,
               accessTokenExpiresAt: expirationTimestamp,
+              emailVerified: true, // Google emails are pre-verified
             },
           });
         }
