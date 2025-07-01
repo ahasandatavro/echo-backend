@@ -9,10 +9,10 @@ datasource db {
 
 model HubspotIntegration {
   id             Int      @id @default(autoincrement())
-  userId         Int      @unique // One HubSpot integration per user
+  userId         Int      @unique
   accessToken    String?
   refreshToken   String?
-  tokenExpiresAt Int? // Unix timestamp
+  tokenExpiresAt Int?
   isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -28,16 +28,16 @@ model Webhook {
   eventTypes            String
   businessPhoneNumberId Int
   businessPhoneNumber   BusinessPhoneNumber @relation(fields: [businessPhoneNumberId], references: [id])
+  webhookLogs           WebhookLog[]
 }
 
 model User {
-  id                    Int                 @id @default(autoincrement())
-  email                 String              @unique
+  id                    Int                   @id @default(autoincrement())
+  email                 String                @unique
   password              String
-  role                  Role                @default(USER)
-  createdAt             DateTime            @default(now())
+  role                  Role                  @default(USER)
+  createdAt             DateTime              @default(now())
   about                 String?
-  attributes            String[]
   businessAddress       String?
   businessDescription   String?
   businessIndustry      String?
@@ -48,47 +48,46 @@ model User {
   lastName              String?
   phoneNumber           String?
   tags                  String[]
-  updatedAt             DateTime            @updatedAt
+  updatedAt             DateTime              @updatedAt
   website1              String?
   website2              String?
   accessToken           String?
   refreshToken          String?
   accessTokenExpiresAt  Int?
-  emailVerified         Boolean             @default(false)
+  selectedPhoneNumberId String?
+  selectedWabaId        String?
+  attributes            String[]
+  agent                 Boolean?              @default(false)
+  createdById           Int?
+  isOnline              Boolean               @default(false)
+  lastActive            DateTime?
+  emailVerified         Boolean               @default(false)
   verificationToken     String?
   resetToken            String?
   resetTokenExpiresAt   DateTime?
+  metaBusinessToken     String?
   apiKey                String?
+  billingInformation    BillingInformation?
+  businessAccount       BusinessAccount[]
+  assignedTickets       ChatStatusHistory[]   @relation("AssignedToUser")
+  chatStatusChanges     ChatStatusHistory[]
   chatbots              Chatbot[]
+  contactsCreated       Contact[]             @relation("ContactCreatedBy")
   contacts              Contact[]
   conversations         Conversation[]
-  templates             Template[]
-  teams                 Team[]              @relation("UserTeams")
-  chatStatusChanges     ChatStatusHistory[]
-  assignedTickets       ChatStatusHistory[] @relation("AssignedToUser")
-  businessAccount       BusinessAccount[]
-  selectedPhoneNumberId String?
-  selectedWabaId        String?
-  agent                 Boolean?            @default(false)
-  createdById           Int?
-  createdBy             User?               @relation("CreatedUsers", fields: [createdById], references: [id])
-  createdUsers          User[]              @relation("CreatedUsers")
-  isOnline              Boolean             @default(false)
-  lastActive            DateTime?
-  rules                 Rule[]
+  hubspotIntegration    HubspotIntegration?
+  keywords              Keyword[]
+  media                 Media[]
+  notificationSettings  NotificationSetting?
+  packageSubscriptions  PackageSubscription[]
   payments              Payment[]
-  packageSubscriptions  PackageSubscription[] // New relation
-
-  // ✅ New relations for RoutingMaterial assignments
-  receivedMaterials    RoutingMaterial[]     @relation("RoutingMaterialUsers") // For Notification type
-  assignedMaterials    RoutingMaterial[]     @relation("RoutingMaterialAssignedUser") // For AssignUser type
-  keywords             Keyword[]
-  hubspotIntegration   HubspotIntegration?
-  notificationSettings NotificationSetting[]
-  contactsCreated   Contact[] @relation("ContactCreatedBy")
-  metaBusinessToken   String?
-  billingInformation  BillingInformation?
-  media               Media[]
+  assignedMaterials     RoutingMaterial[]     @relation("RoutingMaterialAssignedUser")
+  rules                 Rule[]
+  templates             Template[]
+  createdBy             User?                 @relation("CreatedUsers", fields: [createdById], references: [id])
+  createdUsers          User[]                @relation("CreatedUsers")
+  receivedMaterials     RoutingMaterial[]     @relation("RoutingMaterialUsers")
+  teams                 Team[]                @relation("UserTeams")
 }
 
 model BusinessAccount {
@@ -96,7 +95,6 @@ model BusinessAccount {
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
   userId               Int
-  user                 User                  @relation(fields: [userId], references: [id])
   timeZone             String?
   businessName         String?
   businessVerification String?
@@ -104,39 +102,34 @@ model BusinessAccount {
   paymentMethod        String?
   metaAccessToken      String?
   metaWabaId           String?
-  phoneNumbers         BusinessPhoneNumber[]
   workingHours         Json?
-  language             String?
   contentDirection     String?
   holidayMode          Boolean?              @default(false)
+  language             String?
   supportButtonEnabled Boolean?              @default(false)
   supportButtonWebsite String?
+  user                 User                  @relation(fields: [userId], references: [id])
+  phoneNumbers         BusinessPhoneNumber[]
 }
 
 model Rule {
-  id          Int      @id @default(autoincrement())
-  name        String
-  triggerType String // e.g. "whatsappMessage", "attributeAdded", etc.
-  action      String // e.g. "sendTemplate", "sendMessage", etc.
-  status      String   @default("Active") // "Active" or "Inactive"
-  executed    Int      @default(0) // Number of times the rule has been executed
-  lastUpdated DateTime @default(now()) @updatedAt
-  createdAt   DateTime @default(now())
-
-  // Rule conditions and actions data (stored as JSON)
-  conditions Json? // Filters and conditions
-  actionData Json? // Details specific to the action type
-
-  // Who created the rule
-  userId Int
-  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-//the rule under the businessPhoneNumber
+  name                  String
+  triggerType           String
+  action                String
+  status                String              @default("Active")
+  executed              Int                 @default(0)
+  lastUpdated           DateTime            @default(now()) @updatedAt
+  createdAt             DateTime            @default(now())
+  conditions            Json?
+  actionData            Json?
+  userId                Int
+  id                    Int                 @id @default(autoincrement())
   businessPhoneNumberId Int
   businessPhoneNumber   BusinessPhoneNumber @relation(fields: [businessPhoneNumberId], references: [id], onDelete: Cascade)
+  user                  User                @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
-   @@index([businessPhoneNumberId])
+  @@index([businessPhoneNumberId])
 }
 
 model BusinessPhoneNumber {
@@ -144,93 +137,76 @@ model BusinessPhoneNumber {
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
   businessAccountId     Int
-  businessAccount       BusinessAccount        @relation(fields: [businessAccountId], references: [id])
   phoneNumber           String?
   metaPhoneNumberId     String                 @unique
   displayName           String?
   connectionStatus      String?
   subscription          String?
-  conversations         Conversation[]
-  defaultActionSettings DefaultActionSettings?
-  webhooks              Webhook[]
-  notificationSetting   NotificationSetting?
   fallbackEnabled       Boolean                @default(false)
   fallbackMessage       String?
   fallbackTriggerCount  Int                    @default(3)
   fallbackHitCount      Int                    @default(0)
-  rules                 Rule[]
+  businessAccount       BusinessAccount        @relation(fields: [businessAccountId], references: [id])
+  conversations         Conversation[]
+  defaultActionSettings DefaultActionSettings?
+  media                 Media[]
+  notificationSetting   NotificationSetting?
   replyMaterials        ReplyMaterial[]
   roundRobinState       RoundRobinState?
-  media                 Media[]
+  rules                 Rule[]
+  webhooks              Webhook[]
+  webhookLogs           WebhookLog[]
 }
 
 model NotificationSetting {
-  id                    Int                  @id @default(autoincrement())
-  createdAt             DateTime             @default(now())
-  updatedAt             DateTime             @updatedAt
-  businessPhoneNumberId Int?                 @unique
-  businessPhoneNumber   BusinessPhoneNumber? @relation(fields: [businessPhoneNumberId], references: [id])
-
-  // Desktop notifications
-  newChatDesktop          Boolean @default(true)
-  newMessageDesktop       Boolean @default(true)
-  assignedAgentDesktop    Boolean @default(true)
-  messageAssignedDesktop  Boolean @default(true)
-  chatAssignedTeamDesktop Boolean @default(true)
-
-  // Sound notifications
-  newChatSound          Boolean @default(true)
-  newMessageSound       Boolean @default(true)
-  assignedAgentSound    Boolean @default(true)
-  messageAssignedSound  Boolean @default(true)
-  chatAssignedTeamSound Boolean @default(true)
-
-  // Sound option
-  selectedSound String @default("Alert")
-  userId        Int?   @unique
-  user          User?  @relation(fields: [userId], references: [id])
+  id                      Int                  @id @default(autoincrement())
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
+  businessPhoneNumberId   Int?                 @unique
+  newChatDesktop          Boolean              @default(true)
+  newMessageDesktop       Boolean              @default(true)
+  assignedAgentDesktop    Boolean              @default(true)
+  messageAssignedDesktop  Boolean              @default(true)
+  chatAssignedTeamDesktop Boolean              @default(true)
+  newChatSound            Boolean              @default(true)
+  newMessageSound         Boolean              @default(true)
+  assignedAgentSound      Boolean              @default(true)
+  messageAssignedSound    Boolean              @default(true)
+  chatAssignedTeamSound   Boolean              @default(true)
+  selectedSound           String               @default("Alert")
+  userId                  Int?                 @unique
+  businessPhoneNumber     BusinessPhoneNumber? @relation(fields: [businessPhoneNumberId], references: [id])
+  user                    User?                @relation(fields: [userId], references: [id])
 }
 
 model DefaultActionSettings {
-  id                    Int                 @id @default(autoincrement())
-  createdAt             DateTime            @default(now())
-  updatedAt             DateTime            @updatedAt
-  businessPhoneNumberId Int                 @unique
-  businessPhoneNumber   BusinessPhoneNumber @relation(fields: [businessPhoneNumberId], references: [id])
-
-  workingHours Json? // ✅ Stores working hours in JSON
-
-  // ✅ Default action settings (Boolean fields)
-  outsideWorkingHoursEnabled Boolean @default(false) // When it is not working hours
-  noAgentOnlineEnabled       Boolean @default(false) // When no customer service is online
-  waitingMessageEnabled      Boolean @default(false) // keep user angaged while delay reply from business side
-  fallbackMessageEnabled     Boolean @default(false) // When no keyword or default action match
-  welcomeMessageEnabled      Boolean @default(false) // When no keyword match
-  noResponseAfter24hEnabled  Boolean @default(false) // If customer does not respond
-
-  // ✅ Selected material/chatbot/template for default actions
-  outsideWorkingHoursMaterialId   Int? // Associated material/chatbot/template
-  outsideWorkingHoursMaterialType String? // Type: chatbot, template, sticker, etc.
-
-  noAgentOnlineMaterialId   Int?
-  noAgentOnlineMaterialType String?
-
-  fallbackMessageMaterialId   Int?
-  fallbackMessageMaterialType String?
-
-  welcomeMessageMaterialId   Int?
-  welcomeMessageMaterialType String?
-
-  waitingMessageMaterialId   Int?
-  waitingMessageMaterialType String?
-
-  noResponseAfter24hMaterialId   Int?
-  noResponseAfter24hMaterialType String?
-
-  // ✅ Additional settings from pic-2 (Boolean fields)
-  expiredChatReassignmentDisabled Boolean @default(false) // Expired chat not reassigned
-  noKeywordMatchReplyEnabled      Boolean @default(false) // Reply after X minutes if no match
-  roundRobinAssignmentEnabled     Boolean @default(false) // Assign chats in round-robin
+  id                              Int                 @id @default(autoincrement())
+  createdAt                       DateTime            @default(now())
+  updatedAt                       DateTime            @updatedAt
+  businessPhoneNumberId           Int                 @unique
+  workingHours                    Json?
+  outsideWorkingHoursEnabled      Boolean             @default(false)
+  noAgentOnlineEnabled            Boolean             @default(false)
+  fallbackMessageEnabled          Boolean             @default(false)
+  noResponseAfter24hEnabled       Boolean             @default(false)
+  outsideWorkingHoursMaterialId   Int?
+  outsideWorkingHoursMaterialType String?
+  noAgentOnlineMaterialId         Int?
+  noAgentOnlineMaterialType       String?
+  fallbackMessageMaterialId       Int?
+  fallbackMessageMaterialType     String?
+  noResponseAfter24hMaterialId    Int?
+  noResponseAfter24hMaterialType  String?
+  expiredChatReassignmentDisabled Boolean             @default(false)
+  noKeywordMatchReplyEnabled      Boolean             @default(false)
+  roundRobinAssignmentEnabled     Boolean             @default(false)
+  waitingMessageEnabled           Boolean             @default(false)
+  waitingMessageMaterialId        Int?
+  waitingMessageMaterialType      String?
+  welcomeMessageEnabled           Boolean             @default(false)
+  welcomeMessageMaterialId        Int?
+  welcomeMessageMaterialType      String?
+  businessPhoneNumber             BusinessPhoneNumber @relation(fields: [businessPhoneNumberId], references: [id])
 }
 
 model Team {
@@ -240,10 +216,10 @@ model Team {
   size             Int
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
-  contacts         Contact[]           @relation("ContactTeams")
-  users            User[]              @relation("UserTeams")
   assignedTickets  ChatStatusHistory[]
   routingMaterials RoutingMaterial[]   @relation("RoutingMaterialTeam")
+  contacts         Contact[]           @relation("ContactTeams")
+  users            User[]              @relation("UserTeams")
 }
 
 model Message {
@@ -263,10 +239,10 @@ model Message {
   messageType    String        @default("text")
   buttonOptions  Json?
   listItems      Json?
+  templateId     Int?
   chatbot        Chatbot?      @relation("ChatbotMessages", fields: [chatbotId], references: [id])
   contact        Contact       @relation(fields: [contactId], references: [id])
   conversation   Conversation? @relation(fields: [conversationId], references: [id])
-  templateId     Int?
   template       Template?     @relation(fields: [templateId], references: [id])
 }
 
@@ -275,63 +251,52 @@ model Broadcast {
   name              String
   templateName      String
   userId            Int
-  phoneNumberId     String? // e.g. your BusinessPhoneNumber metaPhoneNumberId
+  phoneNumberId     String?
   createdAt         DateTime             @default(now())
-  scheduledDateTime DateTime? // When the broadcast is scheduled to be sent
-  sentAt            DateTime? // When the broadcast was actually sent
-  status            String               @default("PENDING") // Values: PENDING, SCHEDULED, SENT, FAILED
+  sentAt            DateTime?
+  status            String               @default("PENDING")
+  scheduledDateTime DateTime?
   recipients        BroadcastRecipient[]
 }
 
 model BroadcastRecipient {
-  id          Int             @id @default(autoincrement())
-  broadcast   Broadcast       @relation(fields: [broadcastId], references: [id])
-  broadcastId Int
-  contact     Contact         @relation(fields: [contactId], references: [id])
-  contactId   Int
-  status      BroadcastStatus @default(SENT)
-  createdAt   DateTime        @default(now())
+  id           Int             @id @default(autoincrement())
+  broadcastId  Int
+  contactId    Int
+  status       BroadcastStatus @default(SENT)
+  createdAt    DateTime        @default(now())
   errorMessage String?
-}
-
-enum BroadcastStatus {
-  PENDING
-  SCHEDULED
-  SENT
-  DELIVERED
-  READ
-  FAILED
+  broadcast    Broadcast       @relation(fields: [broadcastId], references: [id])
+  contact      Contact         @relation(fields: [contactId], references: [id])
 }
 
 model Contact {
-  id                 Int                 @id @default(autoincrement())
+  id                 Int                  @id @default(autoincrement())
   name               String?
-  phoneNumber        String              @unique
+  phoneNumber        String               @unique
   email              String?
   source             String
   userId             Int?
   tags               String[]
   attributes         Json?
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-  sendSMS            Boolean?            @default(false)
-  subscribed         Boolean?            @default(false)
-  // ✅ Assigned Agent
-  user               User?               @relation(fields: [userId], references: [id])
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  sendSMS            Boolean?             @default(false)
+  subscribed         Boolean?             @default(false)
+  latestChatStatusId Int?                 @unique
+  lastMessageTime    DateTime?
+  ticketStatus       String?
+  timerEndTime       DateTime?
+  timerStartTime     DateTime?
+  createdById        Int?
+  broadcasts         BroadcastRecipient[]
+  chatStatusHistory  ChatStatusHistory[]
+  createdBy          User?                @relation("ContactCreatedBy", fields: [createdById], references: [id])
+  user               User?                @relation(fields: [userId], references: [id])
   conversations      Conversation[]
   messages           Message[]
   notes              Note[]
-  assignedTeams      Team[]              @relation("ContactTeams")
-  ticketStatus       String?
-  latestChatStatusId Int?                @unique
-  chatStatusHistory  ChatStatusHistory[]
-
-  lastMessageTime DateTime?
-  timerStartTime  DateTime?
-  timerEndTime    DateTime?
-  broadcasts      BroadcastRecipient[]
-  createdById        Int?
-  createdBy          User?               @relation("ContactCreatedBy", fields: [createdById], references: [id])
+  assignedTeams      Team[]               @relation("ContactTeams")
 }
 
 model Note {
@@ -346,14 +311,14 @@ model Chatbot {
   id            Int            @id @default(autoincrement())
   name          String
   description   String?
-  triggered     Int?          @default(0)
-  stepsFinished Int?          @default(0)
-  finished      Int?          @default(0)
+  stepsFinished Int?           @default(0)
   startNodeId   Int?           @unique
   ownerId       Int?
   status        Status         @default(ACTIVE)
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
+  triggered     Int?           @default(0)
+  finished      Int?           @default(0)
   owner         User?          @relation(fields: [ownerId], references: [id])
   startNode     Node?          @relation("StartNode", fields: [startNodeId], references: [id])
   conversations Conversation[]
@@ -421,14 +386,14 @@ model Conversation {
   validationFailureCount Int                  @default(0)
   contactId              Int?
   chatStatus             String?
+  businessPhoneNumberId  Int?
   ChatStatusHistory      ChatStatusHistory[]
+  businessPhoneNumber    BusinessPhoneNumber? @relation(fields: [businessPhoneNumberId], references: [id])
   chatbot                Chatbot?             @relation(fields: [chatbotId], references: [id])
   contact                Contact?             @relation(fields: [contactId], references: [id])
   user                   User?                @relation(fields: [userId], references: [id])
   messages               Message[]
   variables              Variable[]
-  businessPhoneNumberId  Int?
-  businessPhoneNumber    BusinessPhoneNumber? @relation(fields: [businessPhoneNumberId], references: [id])
 }
 
 model Keyword {
@@ -440,8 +405,8 @@ model Keyword {
   fuzzyPercent     Int?
   createdAt        DateTime                 @default(now())
   updatedAt        DateTime                 @updatedAt
-  chatbot          Chatbot?                 @relation(fields: [chatbotId], references: [id])
   userId           Int?
+  chatbot          Chatbot?                 @relation(fields: [chatbotId], references: [id])
   user             User?                    @relation(fields: [userId], references: [id])
   replyMaterials   KeywordReplyMaterial[]
   routingMaterials KeywordRoutingMaterial[]
@@ -449,27 +414,23 @@ model Keyword {
 }
 
 model KeywordReplyMaterial {
-  id              Int @id @default(autoincrement())
+  id              Int           @id @default(autoincrement())
   keywordId       Int
   replyMaterialId Int
-
-  keyword       Keyword       @relation(fields: [keywordId], references: [id])
-  replyMaterial ReplyMaterial @relation(fields: [replyMaterialId], references: [id])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  keyword         Keyword       @relation(fields: [keywordId], references: [id])
+  replyMaterial   ReplyMaterial @relation(fields: [replyMaterialId], references: [id])
 }
 
 model KeywordRoutingMaterial {
-  id                Int @id @default(autoincrement())
+  id                Int             @id @default(autoincrement())
   keywordId         Int
   routingMaterialId Int
-
-  keyword         Keyword         @relation(fields: [keywordId], references: [id])
-  routingMaterial RoutingMaterial @relation(fields: [routingMaterialId], references: [id])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  keyword           Keyword         @relation(fields: [keywordId], references: [id])
+  routingMaterial   RoutingMaterial @relation(fields: [routingMaterialId], references: [id])
 }
 
 model Template {
@@ -478,90 +439,191 @@ model Template {
   language         String            @default("en_US")
   content          String?
   userId           Int
-  category         String
-  status           String
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
-  user             User?             @relation(fields: [userId], references: [id])
-  messages         Message[]
+  category         String
+  status           String
   wabaId           String?
   keywordTemplates KeywordTemplate[]
+  messages         Message[]
+  user             User              @relation(fields: [userId], references: [id])
 }
 
 model KeywordTemplate {
   id         Int      @id @default(autoincrement())
   keywordId  Int
   templateId Int
-  keyword    Keyword  @relation(fields: [keywordId], references: [id], onDelete: Cascade)
-  template   Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+  keyword    Keyword  @relation(fields: [keywordId], references: [id], onDelete: Cascade)
+  template   Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
 }
 
 model ReplyMaterial {
-  id        Int                    @id @default(autoincrement())
-  type      MaterialType
-  name      String
-  content   String?
-  fileUrl   String?
-  createdAt DateTime               @default(now())
-  updatedAt DateTime               @updatedAt
-  keywords  KeywordReplyMaterial[]
-  businessPhoneNumberId  Int?
-  businessPhoneNumber    BusinessPhoneNumber? @relation(fields: [businessPhoneNumberId], references: [id])
-
+  id                    Int                    @id @default(autoincrement())
+  type                  MaterialType
+  name                  String
+  content               String?
+  fileUrl               String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  businessPhoneNumberId Int?
+  keywords              KeywordReplyMaterial[]
+  businessPhoneNumber   BusinessPhoneNumber?   @relation(fields: [businessPhoneNumberId], references: [id])
 }
 
 model RoutingMaterial {
-  id           Int         @id @default(autoincrement())
-  type         RoutingType
-  materialName String
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-
-  // ✅ Relations for notification and assignments
-  users          User[] @relation("RoutingMaterialUsers") // For Notification type
-  assignedUser   User?  @relation("RoutingMaterialAssignedUser", fields: [assignedUserId], references: [id]) // For AssignUser type
+  id             Int                      @id @default(autoincrement())
+  type           RoutingType
+  materialName   String
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
   assignedUserId Int?
+  teamId         Int?
+  keywords       KeywordRoutingMaterial[]
+  assignedUser   User?                    @relation("RoutingMaterialAssignedUser", fields: [assignedUserId], references: [id])
+  team           Team?                    @relation("RoutingMaterialTeam", fields: [teamId], references: [id])
+  users          User[]                   @relation("RoutingMaterialUsers")
+}
 
-  team     Team?                    @relation("RoutingMaterialTeam", fields: [teamId], references: [id]) // For AssignTeam type
-  teamId   Int?
-  keywords KeywordRoutingMaterial[]
+model ChatStatusHistory {
+  id               Int           @id @default(autoincrement())
+  contactId        Int
+  conversationId   Int?
+  changedAt        DateTime      @default(now())
+  createdAt        DateTime      @default(now())
+  changedById      Int?
+  newStatus        String
+  previousStatus   String?
+  timerEndTime     DateTime?
+  timerStartTime   DateTime?
+  assignedToTeamId Int?
+  assignedToUserId Int?
+  note             String?
+  type             String        @default("statusChanged")
+  assignedToTeam   Team?         @relation(fields: [assignedToTeamId], references: [id])
+  assignedToUser   User?         @relation("AssignedToUser", fields: [assignedToUserId], references: [id])
+  changedBy        User?         @relation(fields: [changedById], references: [id])
+  contact          Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  Conversation     Conversation? @relation(fields: [conversationId], references: [id])
+}
+
+model Payment {
+  id                  Int                  @id @default(autoincrement())
+  userId              Int
+  orderId             String               @unique
+  paymentId           String?              @unique
+  amount              Int
+  currency            String               @default("INR")
+  status              String               @default("PENDING")
+  signature           String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  metadata            Json
+  paymentType         String               @default("upgrade-package")
+  cardType            String?
+  lastFourDigits      String?
+  packageSubscription PackageSubscription?
+  user                User                 @relation(fields: [userId], references: [id])
+}
+
+model PackageSubscription {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  paymentId   Int      @unique
+  packageName String
+  startDate   DateTime @default(now())
+  endDate     DateTime
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  payment     Payment  @relation(fields: [paymentId], references: [id])
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+model RoundRobinState {
+  id                  String              @id @default(cuid())
+  phoneNumberId       String              @unique
+  lastAssignedIndex   Int
+  businessPhoneNumber BusinessPhoneNumber @relation(fields: [phoneNumberId], references: [metaPhoneNumberId])
+}
+
+model BillingInformation {
+  id           Int      @id @default(autoincrement())
+  userId       Int      @unique
+  email        String
+  firstName    String
+  lastName     String
+  company      String?
+  countryCode  String
+  mobileNumber String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Media {
+  id                    Int                  @id @default(autoincrement())
+  url                   String
+  fileName              String?
+  fileType              String?
+  fileSize              Int?
+  mimeType              String?
+  userId                Int
+  businessPhoneNumberId Int?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  businessPhoneNumber   BusinessPhoneNumber? @relation(fields: [businessPhoneNumberId], references: [id])
+  user                  User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model WebhookLog {
+  id                    Int                 @id @default(autoincrement())
+  webhookId             Int
+  requestUrl            String
+  requestMethod         String              @default("POST")
+  requestHeaders        Json?
+  requestBody           Json?
+  requestTimestamp      DateTime            @default(now())
+  responseStatus        Int?
+  responseHeaders       Json?
+  responseBody          Json?
+  responseTime          Int?
+  status                WebhookLogStatus    @default(PENDING)
+  retryCount            Int                 @default(0)
+  maxRetries            Int                 @default(3)
+  errorMessage          String?
+  errorType             String?
+  eventType             String
+  businessPhoneNumberId Int
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  businessPhoneNumber   BusinessPhoneNumber @relation(fields: [businessPhoneNumberId], references: [id])
+  webhook               Webhook             @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@index([webhookId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([businessPhoneNumberId])
+}
+
+enum BroadcastStatus {
+  SENT
+  DELIVERED
+  READ
+  FAILED
+  PENDING
+  SCHEDULED
 }
 
 enum RoutingType {
   Notification
   AssignUser
   AssignTeam
-}
-
-model ChatStatusHistory {
-  id        Int     @id @default(autoincrement())
-  contactId Int
-  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
-
-  previousStatus String?
-  newStatus      String
-  changedById    Int? // ✅ Foreign key reference to User (Agent or Bot)
-  changedBy      User?   @relation(fields: [changedById], references: [id], onDelete: SetNull)
-
-  createdAt DateTime @default(now())
-  changedAt DateTime @default(now())
-
-  timerStartTime DateTime? // ✅ Only updates when a new message is received
-  timerEndTime   DateTime?
-
-  type String  @default("statusChanged") // "statusChanged" | "assignmentChanged"
-  note String?
-
-  assignedToUserId Int? // Optional, use if you want to store who it's assigned to
-  assignedToUser   User? @relation("AssignedToUser", fields: [assignedToUserId], references: [id])
-
-  assignedToTeamId Int?
-  assignedToTeam   Team? @relation(fields: [assignedToTeamId], references: [id])
-
-  conversationId Int?
-  Conversation   Conversation? @relation(fields: [conversationId], references: [id])
 }
 
 enum MessageStatus {
@@ -609,77 +671,10 @@ enum MaterialType {
   AssignTeam
 }
 
-model Payment {
-  id            Int      @id @default(autoincrement())
-  userId        Int
-  user          User     @relation(fields: [userId], references: [id])
-  orderId       String   @unique
-  paymentId     String?  @unique
-  amount        Int
-  currency      String   @default("INR")
-  status        String   @default("PENDING") // PENDING, SUCCESS, FAILED
-  paymentType   String   @default("upgrade-package") // New field for payment type
-  metadata      Json     // New field to store packageName and packageDuration
-  signature     String?
-  lastFourDigits String? // Last four digits of the card/account
-  cardType      String?  // Type of card/account (e.g., "visa", "mastercard", "upi", "netbanking")
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  packageSubscription PackageSubscription? // New relation
-}
-
-model PackageSubscription {
-  id          Int      @id @default(autoincrement())
-  userId      Int
-  user        User     @relation(fields: [userId], references: [id])
-  paymentId   Int      @unique
-  payment     Payment  @relation(fields: [paymentId], references: [id])
-  packageName String
-  startDate   DateTime @default(now())
-  endDate     DateTime
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([userId])
-}
-
-model RoundRobinState {
-  id                String   @id @default(cuid())
-  phoneNumberId     String   @unique
-  lastAssignedIndex Int
-  businessPhoneNumber BusinessPhoneNumber @relation(fields: [phoneNumberId], references: [metaPhoneNumberId])
-}
-
-model BillingInformation {
-  id          Int      @id @default(autoincrement())
-  userId      Int      @unique
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  email       String
-  firstName   String
-  lastName    String
-  company     String?
-  countryCode String
-  mobileNumber String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([userId])
-}
-
-model Media {
-  id                    Int                 @id @default(autoincrement())
-  url                   String
-  fileName              String?
-  fileType              String?
-  fileSize              Int?
-  mimeType              String?
-  userId                Int
-  businessPhoneNumberId Int?
-  createdAt             DateTime            @default(now())
-  updatedAt             DateTime            @updatedAt
-  
-  // Relations
-  user                  User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  businessPhoneNumber   BusinessPhoneNumber? @relation(fields: [businessPhoneNumberId], references: [id], onDelete: SetNull)
+enum WebhookLogStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  RETRYING
+  MAX_RETRIES_EXCEEDED
 }

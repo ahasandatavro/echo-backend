@@ -81,18 +81,21 @@ export async function syncTemplates(wabaId: string) {
           where: { selectedWabaId: wabaId },
         });
 
+        const data: any = {
+          name: tpl.name,
+          language: tpl.language,
+          category: tpl.category,
+          status: tpl.status,
+          content: JSON.stringify(content),
+          wabaId: wabaId,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        if (user?.id !== undefined) {
+          data.userId = user.id;
+        }
         await prisma.template.create({
-          data: {
-            name: tpl.name,
-            language: tpl.language,
-            category: tpl.category,
-            status: tpl.status,
-            content: JSON.stringify(content),
-            userId: user?.id,
-            wabaId: wabaId,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          },
+          data,
         });
       }
 

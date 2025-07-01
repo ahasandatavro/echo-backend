@@ -17,6 +17,154 @@ import { validateUserResponse } from "../helpers/validation";
 import axios from "axios";
 import { bump } from "../helpers";
 
+// Webhook Logging Functions
+export const logWebhookCall = async (
+  webhook: any,
+  payload: any,
+  eventType: string,
+  businessPhoneNumberId: number
+) => {
+  try {
+    // Create initial log entry
+    const logEntry = await prisma.webhookLog.create({
+      data: {
+        webhookId: webhook.id,
+        requestUrl: webhook.url,
+        requestBody: payload,
+        eventType,
+        businessPhoneNumberId,
+        status: 'PENDING'
+      }
+    });
+
+    return logEntry;
+  } catch (error) {
+    console.error('Error creating webhook log entry:', error);
+    return null;
+  }
+};
+
+export const updateWebhookLog = async (
+  logId: number,
+  updateData: {
+    status: 'PENDING' | 'SUCCESS' | 'FAILED' | 'RETRYING' | 'MAX_RETRIES_EXCEEDED';
+    responseStatus?: number;
+    responseHeaders?: any;
+    responseBody?: string;
+    responseTime?: number;
+    errorMessage?: string;
+    errorType?: string;
+    retryCount?: number;
+  }
+) => {
+  try {
+    await prisma.webhookLog.update({
+      where: { id: logId },
+      data: updateData
+    });
+  } catch (error) {
+    console.error('Error updating webhook log:', error);
+  }
+};
+
+export const executeWebhookWithLogging = async (
+  webhook: any,
+  payload: any,
+  eventType: string,
+  businessPhoneNumberId: number,
+  maxRetries: number = 3
+) => {
+  // Create initial log entry
+  const logEntry = await logWebhookCall(webhook, payload, eventType, businessPhoneNumberId);
+  
+  if (!logEntry) {
+    console.error('Failed to create webhook log entry for webhook:', webhook.id);
+    return;
+  }
+
+  let retryCount = 0;
+  const startTime = Date.now();
+
+  while (retryCount <= maxRetries) {
+    try {
+      // Update status to RETRYING if this is a retry
+      if (retryCount > 0) {
+        await updateWebhookLog(logEntry.id, {
+          status: 'RETRYING',
+          retryCount
+        });
+      }
+
+      // Make the webhook call
+      const response = await axios.post(webhook.url, payload, {
+        timeout: 10000, // 10 second timeout
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'ZiloChat-Webhook/1.0'
+        }
+      });
+
+      const responseTime = Date.now() - startTime;
+
+      // Update log with success
+      let responseBodyToStore: any;
+      if (typeof response.data === 'object') {
+        responseBodyToStore = response.data;
+      } else {
+        try {
+          responseBodyToStore = JSON.parse(response.data);
+        } catch {
+          responseBodyToStore = { raw: response.data };
+        }
+      }
+      await updateWebhookLog(logEntry.id, {
+        status: 'SUCCESS',
+        responseStatus: response.status,
+        responseHeaders: response.headers,
+        responseBody: responseBodyToStore,
+        responseTime
+      });
+
+      console.log(`Webhook ${webhook.id} → ${webhook.url} succeeded (${responseTime}ms)`);
+      return;
+
+    } catch (error: any) {
+      const responseTime = Date.now() - startTime;
+      retryCount++;
+
+      // Determine error type
+      let errorType = 'UNKNOWN';
+      if (error.code === 'ECONNABORTED') {
+        errorType = 'TIMEOUT';
+      } else if (error.code === 'ENOTFOUND') {
+        errorType = 'DNS_ERROR';
+      } else if (error.code === 'ECONNREFUSED') {
+        errorType = 'CONNECTION_REFUSED';
+      } else if (error.response) {
+        errorType = `HTTP_${error.response.status}`;
+      }
+
+      // Update log with failure details
+      await updateWebhookLog(logEntry.id, {
+        status: retryCount > maxRetries ? 'MAX_RETRIES_EXCEEDED' : 'FAILED',
+        errorMessage: error.message,
+        errorType,
+        responseTime,
+        retryCount
+      });
+
+      if (retryCount > maxRetries) {
+        console.error(`Webhook ${webhook.id} → ${webhook.url} failed after ${maxRetries} retries:`, error.message);
+        return;
+      }
+
+      // Wait before retrying (exponential backoff)
+      const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 10000); // Max 10 seconds
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+};
+
 export const performGoogleSheetAction = async (
   payload: {
     action: string;
@@ -526,11 +674,13 @@ export const triggerMyWebhooks = async (change: any) => {
     if (!matchesEvent(hook.eventTypes, change.value)) {
       return; // skip it
     }
-    try {
-      await axios.post(hook.url, { eventType: graphField });
-    } catch (err) {
-      console.error(`Webhook ${hook.id} → ${hook.url} failed`, err);
-    }
+    // Use the new logging function
+    await executeWebhookWithLogging(
+      hook,
+      { eventType: graphField },
+      graphField,
+      hook.businessPhoneNumberId
+    );
   }));
 };
 
@@ -630,17 +780,10 @@ for (const team of finalContact.assignedTeams) {
     notifyEmails.add(agent.email);
   }
 }
+// For now, let's simplify and get all users with notification settings
 const finalRecipients = await prisma.user.findMany({
   where: {
     email: { in: Array.from(notifyEmails) },
-    notificationSettings: {
-      some: {
-        OR: [
-          { messageAssignedSound: true },
-          { messageAssignedDesktop: true },
-        ],
-      },
-    },
   },
   select: { email: true },
 });
