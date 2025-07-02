@@ -190,8 +190,29 @@ if (!validation || validation.type==="") {
   }
 };
 
-export const resolveVariables = async (text: string, chatbotId: number): Promise<string> => {
+export const resolveVariables = async (text: string, chatbotId: number, recipient?: string, agentPhoneNumberId?: string): Promise<string> => {
   try {
+    const businessPhoneNumberId = await prisma.businessPhoneNumber.findUnique({
+      where: {
+        metaPhoneNumberId: agentPhoneNumberId,
+      },
+      select: { 
+        id: true,
+      },
+    });
+    if (!businessPhoneNumberId) return text;
+
+    const conversation = await prisma.conversation.findFirst({
+      where: {
+       recipient: recipient,
+       chatbotId: chatbotId,
+      },
+      select: {
+        id: true,
+      },
+    });
+    if (!conversation) return text;
+
     const regex = /@(\w+)/g; // Match all occurrences of @variableName
     const matches: RegExpExecArray[] = [];
     let match;
@@ -202,8 +223,16 @@ export const resolveVariables = async (text: string, chatbotId: number): Promise
     if (matches.length === 0) return text; // If no variables, return the original text
 
     // Fetch all variables for the given chatbotId from the database
+    //fetch the latest variables
     const variables = await prisma.variable.findMany({
-      where: { chatbotId },
+      where: { chatbotId, conversationId: conversation.id, name: { in: matches.map((match) => match[1]) } },
+      select: {
+        name: true,
+        value: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
     });
 
     // Create a mapping of variable names to their values
@@ -217,12 +246,13 @@ export const resolveVariables = async (text: string, chatbotId: number): Promise
     
 
     // Replace each @variableName in the text with its value
-    let resolvedText = text;
+     let resolvedText = text;
     matches.forEach((match) => {
       const variableName = match[1]; // Extract variable name (without @)
       const variableValue = variableMap[variableName] || ""; // Use the value or empty string if not found
-      resolvedText = resolvedText.replace(`@${variableName}`, variableValue);
-    });
+       resolvedText = resolvedText.replace(`@${variableName}`, variableValue||"");
+     });
+    // const resolvedText = variables[0].value || "";
 
     return resolvedText;
   } catch (error) {

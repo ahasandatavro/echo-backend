@@ -443,7 +443,7 @@ export const processNode = async (
     
             // Resolve variables if they start with "@", otherwise keep them as is
             if (variable.startsWith("@")) {
-              variable = await resolveVariables(variable, currentNode?.chatId);
+              variable = await resolveVariables(variable, currentNode?.chatId,recipient,agentPhoneNumberId);
             }
             if (variable.includes("{{")) {
               variable = await resolveContactAttributes(variable, recipient);
@@ -745,7 +745,7 @@ export const processNode = async (
       if (questionData) {
         const questionMessage = {
           text: convertHtmlToWhatsAppText(questionData.questionText),
-          chatId: currentNode.chatbotId,
+          chatId: currentNode.chatId,
           buttons: questionData.answerVariants?.map((variant: any, index: number) => ({
             id: `${index}_node_${currentNode.id}`,
             title: variant,
@@ -768,6 +768,7 @@ export const processNode = async (
               where: {
                 recipient: recipient,
                 chatbotId: currentNode?.chatbotId,
+
               },
             });
     
@@ -1251,7 +1252,7 @@ export const sendMessage = async (
           // Resolve variables in the message text
           messageBody = message.message;
           if (!plainText && messageBody.includes("@")) {
-            messageBody = await resolveVariables(messageBody, chatbotId);
+            messageBody = await resolveVariables(messageBody, chatbotId, recipient, agentPhoneNumberId||"");
           }
           if (!plainText && messageBody.includes("{{")) {
             messageBody = await resolveContactAttributes(messageBody, recipient);
@@ -1358,7 +1359,7 @@ export const sendMessageWithButtons = async (
     const url = `${metaWhatsAppAPI.baseURL}/${agentPhoneNumberId}/messages`;
 
     const headerText:any = buttonMessage.header && buttonMessage.header.type === "text"
-    ? await resolveVariables(buttonMessage.header, buttonMessage.chatId)
+    ? await resolveVariables(buttonMessage.header, buttonMessage.chatId,recipient,agentPhoneNumberId)
     : undefined;
 
       const headerPayload = buttonMessage.header && (buttonMessage.header as any).type
@@ -1370,7 +1371,7 @@ export const sendMessageWithButtons = async (
     let bodyText=buttonMessage.body.text;
 
     if (buttonMessage.body.text && buttonMessage.body.text.includes("@")) {
-      bodyText = await resolveVariables(buttonMessage.body.text, buttonMessage.chatId);
+      bodyText = await resolveVariables(buttonMessage.body.text, buttonMessage.chatId,recipient,agentPhoneNumberId);
     }
     if (buttonMessage.body.text && buttonMessage.body.text.includes("{{")) {
       bodyText = await resolveContactAttributes(buttonMessage.body.text, recipient);
