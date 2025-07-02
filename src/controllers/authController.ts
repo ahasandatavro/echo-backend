@@ -225,7 +225,33 @@ export const googleCallback = [
       setTokenCookies(res, accessToken, refreshToken, true);
 
       // Redirect to frontend with success message
-      res.redirect(`${process.env.FRONTEND_URL}/#`);
+      const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Google Auth Success</title>
+      </head>
+      <body>
+        <script>
+          // Send message to parent window
+          window.opener.postMessage({
+            token: '${accessToken}',
+            user: {
+              email: '${user.email}',
+              id: '${user.id}'
+            }
+          }, '${process.env.FRONTEND_URL}');
+          
+          // Close the popup
+          window.close();
+        </script>
+        <p>Authentication successful! You can close this window.</p>
+      </body>
+      </html>
+    `;
+    
+    res.send(html);
+     // res.redirect(`${process.env.FRONTEND_URL}/#`);
     } catch (error) {
       console.error("Google Callback Error:", error);
       res.redirect(`${process.env.FRONTEND_URL}/#/auth/error`);
