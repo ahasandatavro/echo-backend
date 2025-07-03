@@ -1,7 +1,7 @@
 import { google } from "googleapis";
 import { prisma } from '../models/prismaClient';
 import { BroadcastStatus } from "@prisma/client";
-import { resolveVariables } from "../helpers/validation";
+import { resolveContactAttributes, resolveVariables } from "../helpers/validation";
 import { Rule } from "@prisma/client";
 import { Prisma } from "@prisma/client";
 import {
@@ -247,7 +247,8 @@ export const performGoogleSheetAction = async (
     referenceColumn?: { name: string; value: string };
     variables:any[]
   },
-  currentNode:any
+  currentNode:any,
+  recipient:string
 ): Promise<any> => {
   try {
     // Step 1: Find the chatbot and its owner
@@ -313,7 +314,10 @@ export const performGoogleSheetAction = async (
                 return ""; // Default to empty string on error
               }
             }
-        
+        else if(variable.value.includes("{{")) {
+          const resolvedValue = await resolveContactAttributes(variable.value, recipient);
+          return resolvedValue || ""; // Ensure resolvedValue is a valid string
+        }
             // Ensure variable.value is a string or valid primitive
             return typeof variable.value === "string" || typeof variable.value === "number"
               ? variable.value
@@ -1479,7 +1483,7 @@ else chatbotId = text ? await findChatbotIdByKeyword(text) : null;
 
   const nextHitCount = fallbackHitCount + 1;
 
-  if (nextHitCount >= fallbackTriggerCount) {
+  if (nextHitCount > fallbackTriggerCount) {
     // threshold reached → reset counter and send
     await prisma.businessPhoneNumber.update({
       where: { id },
