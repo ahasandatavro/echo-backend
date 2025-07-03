@@ -10,9 +10,10 @@ import {
   resetPassword,
   refreshToken,
   resendVerificationEmail,
-  logout
+  logout,
+  googleCallbackSheets
 } from '../controllers/authController';
-import { authenticateJWT } from '../middlewares/authMiddleware';
+import { authenticateJWT, authenticateJWTWithoutSubscription } from '../middlewares/authMiddleware';
 const router = express.Router();
 
 router.post('/register', registerUser);
@@ -21,7 +22,8 @@ router.post('/refresh-token', refreshToken);
 router.post('/logout', logout);
 router.get('/google', googleAuth);
 router.get('/google-callback', googleCallback);
-router.post("/get-access-token", authenticateJWT, getAccessToken);
+router.get('/google-callback-sheets',authenticateJWTWithoutSubscription, googleCallbackSheets);
+router.post("/get-access-token", authenticateJWT, getAccessToken);//for whatsapp embedded signUp
 router.post("/verify-email", verifyEmail);
 router.post('/resend-verification-email', resendVerificationEmail);
 router.post('/request-password-reset', requestPasswordReset);

@@ -220,10 +220,24 @@ export const googleCallback = [
       const user = req.user;
       // Generate tokens
       const { accessToken, refreshToken } = generateTokens(user.id, user.role, true); // Default to remember me for Google auth
-
+ 
+      
       // Set tokens in HTTP-only cookies
       setTokenCookies(res, accessToken, refreshToken, true);
-
+const userData=await prisma.user.findUnique({ where: { id: user.id } });
+const activePackage = await prisma.packageSubscription.findFirst({
+  where: { userId: user.id, isActive: true },
+  orderBy: { endDate: 'desc' },
+  include: { payment: true }
+});
+let packageData=null;
+if(activePackage){
+ packageData={
+  packageName: activePackage.packageName,
+  startDate: activePackage.startDate,
+  endDate: activePackage.endDate,
+  isActive: activePackage.isActive
+    }}
       // Redirect to frontend with success message
       const html = `
       <!DOCTYPE html>
@@ -236,6 +250,79 @@ export const googleCallback = [
           // Send message to parent window
           window.opener.postMessage({
             token: '${accessToken}',
+            user: {
+              email: '${user.email}',
+              id: '${user.id}',
+               package: ${JSON.stringify(packageData)}
+            }
+          }, '${process.env.FRONTEND_URL}');
+          
+          // Close the popup
+          window.close();
+        </script>
+        <p>Authentication successful! You can close this window.</p>
+      </body>
+      </html>
+    `;
+    res.send(html);
+     // res.redirect(`${process.env.FRONTEND_URL}/#`);
+    } catch (error) {
+      const errorHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Google Auth Error</title>
+      </head>
+      <body>
+        <script>
+          window.opener.postMessage({
+            error: 'Authentication failed'
+          }, '${process.env.FRONTEND_URL}');
+          window.close();
+        </script>
+        <p>Authentication failed! You can close this window.</p>
+      </body>
+      </html>
+    `;
+    
+    res.send(errorHtml);
+      // console.error("Google Callback Error:", error);
+      // res.redirect(`${process.env.FRONTEND_URL}/#/auth/error`);
+    }
+  },
+];
+const attachOriginalUser = (req: any, res: Response, next: any) => {
+  req.originalUserId = req.user.userId; // store original user before passport overwrites it
+  next();
+};
+
+export const googleCallbackSheets = [
+  attachOriginalUser,
+  passport.authenticate("google-sheets", {
+    session: false
+  }),
+  async (req: any, res: Response) => {
+    try {
+      const user = req.user;
+      // Generate tokens
+     // const { accessToken, refreshToken } = generateTokens(user.id, user.role, true); // Default to remember me for Google auth
+ 
+      
+      // Set tokens in HTTP-only cookies
+      //setTokenCookies(res, accessToken, refreshToken, true);
+
+      // Redirect to frontend with success message
+      const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Google Auth Success</title>
+      </head>
+      <body>
+        <script>
+          // Send message to parent window
+          window.opener.postMessage({
+            token: '123',
             user: {
               email: '${user.email}',
               id: '${user.id}'
@@ -253,11 +340,31 @@ export const googleCallback = [
     res.send(html);
      // res.redirect(`${process.env.FRONTEND_URL}/#`);
     } catch (error) {
-      console.error("Google Callback Error:", error);
-      res.redirect(`${process.env.FRONTEND_URL}/#/auth/error`);
+      const errorHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Google Auth Error</title>
+      </head>
+      <body>
+        <script>
+          window.opener.postMessage({
+            error: 'Authentication failed'
+          }, '${process.env.FRONTEND_URL}');
+          window.close();
+        </script>
+        <p>Authentication failed! You can close this window.</p>
+      </body>
+      </html>
+    `;
+    
+    res.send(errorHtml);
+      // console.error("Google Callback Error:", error);
+      // res.redirect(`${process.env.FRONTEND_URL}/#/auth/error`);
     }
   },
 ];
+
 
 export const getAccessToken = async (
   req: Request,
