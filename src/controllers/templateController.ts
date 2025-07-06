@@ -329,8 +329,8 @@ export const createTemplate = async (req: Request, res: Response) => {
     const saveAsDraftInitial =
       draft === true || draft === 'true';
 
-    const sampleContents = JSON.parse(req.body.sampleContents || "{}");
     const components = JSON.parse(req.body.components || "[]");
+    console.log("components",components);
     const files = req.files as { [fieldname: string]: Express.Multer.File[] };
 const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
 
@@ -466,9 +466,6 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
       if ((component.type === "HEADER" || component.type === "header") && component.format === "TEXT") {
         const headerText = component.text || "";
         const variableNumbers = extractHeaderVariableNumbers(headerText);
-        const headerExamples = variableNumbers.map(
-          num => sampleContents[num] || ""
-        );
         
         // If variables are detected in the text, always include example field
         // Meta API requires example field when variables are present
@@ -477,9 +474,7 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
         return {
           ...component,
           text: headerText,
-          ...(hasVariables
-            ? { example: { header_text: headerExamples } }
-            : {}),
+          ...(component.example ? { example: component.example } : {}),
         };
       }
 
@@ -489,9 +484,6 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
         );
         const variableNumbers = extractBodyVariableNumbers(
           processedText
-        );
-        const bodyExamples = variableNumbers.map(
-          num => sampleContents[num] || ""
         );
         
         // Meta API requires BODY text to be between 1-1024 characters
@@ -512,9 +504,7 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
         return {
           type: "BODY",
           text: processedText,
-          ...(hasVariables
-            ? { example: { body_text: [bodyExamples] } }
-            : {}),
+          ...(component.example ? { example: component.example } : {}),
         };
       }
 
@@ -597,9 +587,6 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
         
         // Extract variables from footer text
         const variableNumbers = extractFooterVariableNumbers(footerText);
-        const footerExamples = variableNumbers.map(
-          num => sampleContents[num] || ""
-        );
         
         // If variables are detected in the text, always include example field
         // Meta API requires example field when variables are present
@@ -608,16 +595,40 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
         return {
           type: "FOOTER",
           text: footerText,
-          ...(hasVariables
-            ? { example: { footer_text: footerExamples } }
-            : {}),
         };
       }
     }
 
     // Handle BUTTONS components
     if (component.type === "BUTTONS" || component.type === "buttons") {
-      return component;
+      // Process buttons to add examples for dynamic URLs
+      const processedButtons = component.buttons?.map((button: any) => {
+        if (button.type === "URL" && button.url && /\{\{(\d+)\}\}/.test(button.url)) {
+          // Extract variable numbers from URL
+          const matches = button.url.match(/\{\{(\d+)\}\}/g);
+          const variableNumbers = matches ? matches.map((match: string) => match.replace(/\{\{(\d+)\}\}/, '$1')) : [];
+          
+          // Get example values from component.example.button_url array
+          let exampleValues = ["example-value"]; // fallback
+          if (component.example && component.example.button_url && Array.isArray(component.example.button_url)) {
+            // Use the button_url array values, matching by variable number index
+            exampleValues = variableNumbers.map((num: string, index: number) => {
+              return component.example.button_url[index] || `example-${num}`;
+            });
+          }
+          button.example = exampleValues[0];
+          return {
+            ...button,
+          };
+        }
+        return button;
+      });
+      // Remove example property from BUTTONS component
+      const { example, ...componentWithoutExample } = component;
+      return {
+        ...componentWithoutExample,
+        buttons: processedButtons || component.buttons,
+      };
     }
 
     return component;
@@ -783,27 +794,23 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
             if (buttonText.length > 25) {
               throw new Error(`Button text "${buttonText}" is too long. Maximum 25 characters allowed.`);
             }
+            // Extract variable numbers from URL
+            const matches = urlTemplate.match(/\{\{(\d+)\}\}/g);
+            const variableNumbers = matches ? matches.map((match: string) => match.replace(/\{\{(\d+)\}\}/, '$1')) : [];
+            let exampleValues = ["example-value"]; // fallback
+            if (components.example && components.example.button_url && Array.isArray(components.example.button_url)) {
+              // Use the button_url array values, matching by variable number index
+              exampleValues = variableNumbers.map((num: string, index: number) => {
+                return components.example.button_url[index] || `example-${num}`;
+              });
+            }// fallback
             
-            const placeholderMatches = Array.from(
-              urlTemplate.matchAll(/\{\{(\d+)\}\}/g)
-            );
-            const examples = placeholderMatches
-              .map(m => sampleContents[m[1]])
-              .filter((s): s is string => typeof s === "string");
-
             const btn: any = {
               type: "URL",
               text: buttonText,
               url: urlTemplate,
+              example: exampleValues
             };
-                if (
-                    urlType === "Dynamic" &&
-                    examples.length === placeholderMatches.length &&
-                    examples.length > 0
-                  ) {
-                    // Graph API wants a single string, not an array:
-                    btn.example = { url: examples[0] };
-                 }
             return btn;
           }
 
@@ -837,10 +844,28 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
       });
 
       console.log("Transformed meta buttons:", metaButtons);
-      validComponents.push({
+      
+      // Create BUTTONS component with example if needed
+      const buttonsComponent: any = {
         type: "BUTTONS",
         buttons: metaButtons,
+      };
+      
+      // Add example if any button has variables
+      const hasButtonVariables = buttonsData.some(button => {
+        if (button.type === "Visit Website" && button.url) {
+          return /\{\{(\d+)\}\}/.test(button.url);
+        }
+        return false;
       });
+      
+      if (hasButtonVariables) {
+        buttonsComponent.example = {
+          button_text: ["example-value"]
+        };
+      }
+      
+      validComponents.push(buttonsComponent);
     }
 
     let response: any;
@@ -862,44 +887,44 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
         const apiVersions = ['v17.0', 'v18.0', 'v19.0', 'v20.0', 'v21.0', 'v22.0'];
         let workingVersion = null;
         
-        // for (const version of apiVersions) {
-        //   try {
-        //     const testUrl = `https://graph.facebook.com/${version}/${selectedWabaId}?fields=id,name&access_token=${process.env.META_ACCESS_TOKEN}`;
-        //     console.log(`Testing with API version ${version}:`, testUrl);
-        //     const testResponse = await axios.get(testUrl);
-        //     console.log(`API version ${version} works:`, testResponse.data);
-        //     workingVersion = version;
-        //     break;
-        //   } catch (testErr: any) {
-        //     console.log(`API version ${version} failed:`, testErr.response?.status);
-        //   }
-        // }
+        for (const version of apiVersions) {
+          try {
+            const testUrl = `https://graph.facebook.com/${version}/${selectedWabaId}?fields=id,name&access_token=${process.env.META_ACCESS_TOKEN}`;
+            console.log(`Testing with API version ${version}:`, testUrl);
+            const testResponse = await axios.get(testUrl);
+            console.log(`API version ${version} works:`, testResponse.data);
+            workingVersion = version;
+            break;
+          } catch (testErr: any) {
+            console.log(`API version ${version} failed:`, testErr.response?.status);
+          }
+        }
         
-        // if (!workingVersion) {
-        //   console.error("All API versions failed for WABA ID:", selectedWabaId);
+        if (!workingVersion) {
+          console.error("All API versions failed for WABA ID:", selectedWabaId);
           
-        //   // Let's also check if this is actually a WABA ID by trying to get the user's WABAs
-        //   try {
-        //     const userWabasUrl = `https://graph.facebook.com/v17.0/me/accounts?access_token=${process.env.META_ACCESS_TOKEN}`;
-        //     console.log("Checking user's WABAs:", userWabasUrl);
-        //     const userWabasResponse = await axios.get(userWabasUrl);
-        //     console.log("User's WABAs:", userWabasResponse.data);
+          // Let's also check if this is actually a WABA ID by trying to get the user's WABAs
+          try {
+            const userWabasUrl = `https://graph.facebook.com/v17.0/me/accounts?access_token=${process.env.META_ACCESS_TOKEN}`;
+            console.log("Checking user's WABAs:", userWabasUrl);
+            const userWabasResponse = await axios.get(userWabasUrl);
+            console.log("User's WABAs:", userWabasResponse.data);
             
-        //     return res.status(400).json({
-        //       error: "Invalid WABA ID",
-        //       details: `WABA ID ${selectedWabaId} not found. Please check your WhatsApp Business Account selection.`
-        //     });
-        //   } catch (wabaErr: any) {
-        //     return res.status(400).json({
-        //       error: "Invalid WABA ID or access token",
-        //       details: "Could not verify WhatsApp Business Account with any API version"
-        //     });
-        //   }
-        // }
+            return res.status(400).json({
+              error: "Invalid WABA ID",
+              details: `WABA ID ${selectedWabaId} not found. Please check your WhatsApp Business Account selection.`
+            });
+          } catch (wabaErr: any) {
+            return res.status(400).json({
+              error: "Invalid WABA ID or access token",
+              details: "Could not verify WhatsApp Business Account with any API version"
+            });
+          }
+        }
         
         console.log("Using working API version:", workingVersion);
         // Update the API URL to use the working version
-        const workingApiUrl = `https://graph.facebook.com/v18.0/${selectedWabaId}/message_templates`;
+        const workingApiUrl = `https://graph.facebook.com/${workingVersion}/${selectedWabaId}/message_templates`;
         console.log("Updated API URL:", workingApiUrl);
         
         console.log("Making template creation request...");
