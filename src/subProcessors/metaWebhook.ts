@@ -632,7 +632,7 @@ export const processWebhookChange = async (change: any, io: any) => {
       if (change.value.reason) {
         console.log(change.value.reason);
       }
-      await updateTemplateInDb(change.value);
+      await updateTemplateInDb(change.value,change.value.reason);
       break;
 
     case "messages":
@@ -1912,13 +1912,12 @@ export const handleInvalidQuestionResponse = async (
   }
 };
 
-export const updateTemplateInDb = async (data: any) => {
+export const updateTemplateInDb = async (data: any,reason:string) => {
   const {
     event,
     message_template_id,
     message_template_name,
     message_template_language,
-    reason,
   } = data;
 
   await prisma.template.update({
@@ -1927,6 +1926,7 @@ export const updateTemplateInDb = async (data: any) => {
       status: event,
       language: message_template_language,
       updatedAt: new Date(),
+      rejectionError: reason ||"",
     },
   });
 };

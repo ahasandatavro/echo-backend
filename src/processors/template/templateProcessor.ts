@@ -44,7 +44,7 @@ import { prisma } from "../../models/prismaClient";
 //       const matches = Array.from(c.text.matchAll(/\{\{(\d+)\}\}/g));
 //       const params = matches.map(m => ({
 //         type: "text" as const,
-//         text: /* you’ll need to supply these at call-time */ ""
+//         text: /* you'll need to supply these at call-time */ ""
 //       }));
 //       sendComponents.push({
 //         type: "body",
@@ -164,6 +164,13 @@ export const brodcastTemplate = async (
     components: Array<{
       type: string;
       text?: string;
+      format?: string;
+      url?: string;
+      example?: {
+        header_handle?: string[];
+        header_text?: string[];
+        url?: string;
+      };
       buttons?: Array<{
         type: string;
         text: string;
@@ -171,79 +178,146 @@ export const brodcastTemplate = async (
         phone_number?: string;
       }>;
     } | null>;
-    // we ignore header/example in this sample
   } = JSON.parse(dbTpl.content);
 
   // 3. build the send-payload components array
   const sendComponents: any[] = [];
+  
+  console.log("Template components to process:", tplDef.components);
 
   tplDef.components.forEach((c, idx) => {
     if (!c) return;
 
-    if (c.type === "BODY" && c.text) {
+    if (c.type === "HEADER") {
+      if (c.format === "IMAGE" && c.example?.header_handle) {
+        // Handle image header - use header_handle from Meta API
+        sendComponents.push({
+          type: "header",
+          parameters: [
+            {
+              type: "image",
+              image: {
+                link: c.url // Use the header_handle from Meta API
+              }
+            }
+          ]
+        });
+      } else if (c.format === "TEXT" && c.text) {
+        // Handle text header
+        const matches = Array.from(c.text.matchAll(/\{\{(\d+)\}\}/g));
+        const params = matches.map(m => ({
+          type: "text" as const,
+          text: /* you'll need to supply these at call-time */ ""
+        }));
+        sendComponents.push({
+          type: "header",
+          parameters: params
+        });
+      }
+    }
+
+    if (c.type === "BODY" && c.text && c.text.trim().length > 0) {
       // extract all {{n}} placeholders
+      const matches = Array.from(c.text.matchAll(/\{\{(\d+)\}\}/g));
+      if (matches.length > 0) {
+        const params = matches.map(m => ({
+          type: "text" as const,
+          text: /* you'll need to supply these at call-time */ ""
+        }));
+        sendComponents.push({
+          type: "body",
+          parameters: params
+        });
+      } else {
+        // No placeholders, just send body without parameters
+        sendComponents.push({
+          type: "body"
+        });
+      }
+    }
+
+    if (c.type === "FOOTER" && c.text) {
+      // Handle footer component
       const matches = Array.from(c.text.matchAll(/\{\{(\d+)\}\}/g));
       const params = matches.map(m => ({
         type: "text" as const,
-        text: /* you’ll need to supply these at call-time */ ""
+        text: /* you'll need to supply these at call-time */ ""
       }));
       sendComponents.push({
-        type: "body",
-       // parameters: params
+        type: "footer",
+        parameters: params
       });
     }
 
-    if (c.type === "BUTTONS" && Array.isArray(c.buttons)) {
+    if (c.type === "BUTTONS" && Array.isArray(c.buttons) && c.buttons.length > 0) {
+      // Valid Meta API button sub_types: CATALOG, COPY_CODE, FLOW, MPM, ORDER_DETAILS, QUICK_REPLY, REMINDER, URL, VOICE_CALL
+      console.log("Processing buttons:", c.buttons);
       c.buttons.forEach((btn, buttonIndex) => {
+        console.log(`Processing button ${buttonIndex}:`, btn);
         if (btn.type === "URL" && btn.url) {
-          // find URL placeholders
-          const matches = Array.from(btn.url.matchAll(/\{\{(\d+)\}\}/g));
-          const params = matches.map(m => ({
-            type: "text" as const,
-            text: /* supply the matching value for each {{n}} */
-              ""
-          }));
-
+          // For URL buttons, we need to provide the URL as a parameter
           sendComponents.push({
             type: "button",
-            sub_type: "URL",
+            sub_type: "url",
             index: buttonIndex.toString(),
-            //parameters: params
+            parameters: [
+              {
+                type: "text",
+                text: btn.url // Use the actual URL from the template
+              }
+            ]
           });
         }
 
-        if (btn.type === "PHONE_NUMBER" && btn.phone_number) {
+        if ((btn.type === "PHONE_NUMBER" || btn.type === "VOICE_CALL") && btn.phone_number) {
           sendComponents.push({
             type: "button",
-            sub_type: "VOICE_CALL",
-            index: buttonIndex.toString(),
+            sub_type: "voice_call",
+            index: buttonIndex.toString()
+            // VOICE_CALL buttons don't need parameters - phone number is defined in template
           });
         }
 
-        if (btn.type === "QUICK_REPLY") {
+        if (btn.type === "QUICK_REPLY" || btn.type === "Quick replies") {
           sendComponents.push({
             type: "button",
-            sub_type: "QUICK_REPLY",
-            index: buttonIndex.toString(),
-            // parameters: [
-            //   { type: "text" as const, text: btn.text }
-            // ]
+            sub_type: "quick_reply",
+            index: buttonIndex.toString()
+            // QUICK_REPLY buttons don't need parameters - text is defined in template
+          });
+        }
+
+        if (btn.type === "COPY_CODE" || btn.type === "Copy offer code") {
+          sendComponents.push({
+            type: "button",
+            sub_type: "copy_code",
+            index: buttonIndex.toString()
+            // COPY_CODE buttons don't need parameters - text is defined in template
           });
         }
       });
     }
   });
-      const url = `${metaWhatsAppAPI.baseURL}/${phoneNumberId}/messages`;
+  
+  console.log("Send components built:", sendComponents);
+  
+  // Only include components if there are any
+  const templatePayload: any = {
+    name: selectedTemplate,
+    language: { code: dbTpl.language }
+  };
+  
+  if (sendComponents.length > 0) {
+    templatePayload.components = sendComponents;
+  }
+  
+  const url = `${metaWhatsAppAPI.baseURL}/${phoneNumberId}/messages`;
       const payload = {
         messaging_product: "whatsapp",
         to: recipient,
         biz_opaque_callback_data: broadcastId ? `broadcastId=${broadcastId}` : undefined,
         type: "template",
-        template: {
-          name: selectedTemplate,
-          language: { code: dbTpl.language },
-          components: sendComponents
-        },
+        template: templatePayload
       };
   
       await axios.post(url, payload, {
@@ -254,7 +328,13 @@ export const brodcastTemplate = async (
       });
      
     } catch (error: any) {
-      console.error("Error sending template message:", error.response.data.error.message);
+      console.error("Error sending template message:", error.response?.data?.error?.message || error.message);
+      console.error("Full error response:", JSON.stringify(error.response?.data, null, 2));
+      return {
+        success: false,
+        message: error.response?.data?.error?.message || error.message,
+        error: error.response?.data
+      }
       throw error;
     }
   };

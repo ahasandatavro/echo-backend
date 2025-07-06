@@ -5,11 +5,12 @@ import { preprocessHtmlForWhatsApp } from "../helpers";
 import fs from "fs";
 import FormData from "form-data";
 import { prisma } from "../models/prismaClient";
+import { Readable } from "stream";
 import { brodcastTemplate } from "../processors/template/templateProcessor";
 import { uploadFileToDigitalOcean } from "../routes/replyMaterialRoute";
 import { syncTemplates as syncTemplatesService } from "../services/templateService";
 import { checkBroadcastAccess, checkTemplateLimit } from "../utils/packageUtils";
-
+import { uploadFileToDigitalOceanHelper } from "../helpers";
 interface ButtonData {
   id?: number;
   type: string;      // e.g. "Visit Website", "Call Phone", "Copy offer code", "Quick replies"
@@ -71,6 +72,7 @@ export const getAllTemplates = async (req: Request, res: Response) => {
         name: tmpl.name,
         language: tmpl.language,
         status: tmpl.status,
+        rejectedReason: tmpl.rejectionError||"",
         category: tmpl.category,
         id: tmpl.id.toString(),
         lastUpdated:tmpl.updatedAt.toISOString().split("T")[0]
@@ -235,27 +237,227 @@ export const createTemplate = async (req: Request, res: Response) => {
       select: { selectedWabaId: true },
     });
     const selectedWabaId = dbUser?.selectedWabaId;
+    
+    
+    if (!selectedWabaId) {
+      return res.status(400).json({
+        error: "No WABA ID selected",
+        details: "Please select a WhatsApp Business Account first"
+      });
+    }
+    
+    // Use the configured API version (v22.0)
     const WHATSAPP_GRAPH_API = `${process.env.META_BASE_URL}/${selectedWabaId}/message_templates`;
+    console.log("=== DEBUG INFO ===");
+    console.log("META_BASE_URL:", process.env.META_BASE_URL);
+    console.log("selectedWabaId:", selectedWabaId);
+    console.log("Full API URL:", WHATSAPP_GRAPH_API);
+    console.log("==================");
 
     const { name, category, language, draft } = req.body;
+    
+    // Validate required parameters
+    if (!name || !category || !language) {
+      return res.status(400).json({
+        error: "Missing required parameters",
+        details: "name, category, and language are required"
+      });
+    }
+    
+    // Validate template name format
+    if (name.length > 512) {
+      return res.status(400).json({
+        error: "Template name too long",
+        details: "Template name must be 512 characters or less"
+      });
+    }
+    
+    // Check for invalid characters in template name
+    const invalidChars = /[<>:"/\\|?*]/;
+    if (invalidChars.test(name)) {
+      return res.status(400).json({
+        error: "Invalid template name",
+        details: "Template name contains invalid characters"
+      });
+    }
+
+    // Additional Meta API requirements for template names
+    // Template names must start with a letter and contain only alphanumeric characters, underscores, and hyphens
+    const validNamePattern = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
+    if (!validNamePattern.test(name)) {
+      return res.status(400).json({
+        error: "Invalid template name format",
+        details: "Template name must start with a letter and contain only alphanumeric characters, underscores, and hyphens"
+      });
+    }
+
+    // Template names must be between 1-512 characters
+    if (name.length < 1) {
+      return res.status(400).json({
+        error: "Template name too short",
+        details: "Template name must be at least 1 character long"
+      });
+    }
+    
+    // Validate category
+    const validCategories = ['MARKETING', 'UTILITY', 'AUTHENTICATION'];
+    const normalizedCategory = category.toUpperCase();
+    if (!validCategories.includes(normalizedCategory)) {
+      return res.status(400).json({
+        error: "Invalid category",
+        details: `Category must be one of: ${validCategories.join(', ')}`
+      });
+    }
+
+    // Validate language code format (ISO 639-1 format: xx_XX)
+    const validLanguagePattern = /^[a-z]{2}_[A-Z]{2}$/;
+    if (!validLanguagePattern.test(language)) {
+      return res.status(400).json({
+        error: "Invalid language code format",
+        details: "Language must be in ISO 639-1 format (e.g., 'en_US', 'es_ES')"
+      });
+    }
+    
+   // console.log("Template parameters:", { name, category, language, draft });
+    
     const saveAsDraftInitial =
       draft === true || draft === 'true';
 
     const sampleContents = JSON.parse(req.body.sampleContents || "{}");
     const components = JSON.parse(req.body.components || "[]");
-    const file = req.file;
+    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
+
+ 
+    
+    const file = files?.["file"]?.[0] || null;
     const filePath = file?.path || "";
 
     // Preprocess components (BODY, HEADER, etc.)
+  //  console.log("Processing components:", JSON.stringify(components, null, 2));
     const processedComponents = components.map(async (component: any) => {
       if (
-        component.type === "HEADER" &&
+        (component.type === "HEADER" || component.type === "header") &&
         (!component.format || (!component.text?.trim() && !file))
       ) {
         return null;
       }
+      if (component.type === "CAROUSEL" || component.type === "carousel") {
+        console.log("Processing CAROUSEL component with cards:", component.cards?.length || 0);
+        
+        if (!component.cards || !Array.isArray(component.cards) || component.cards.length === 0) {
+          console.error("Invalid carousel: missing or empty cards array");
+          return null;
+        }
+        
+        const carouselCards = await Promise.all(component.cards.map(async (card: any, index: number) => {
+          console.log(`Processing carousel card ${index}:`, card);
+          
+          if (!card.components || !Array.isArray(card.components)) {
+            console.error(`Invalid carousel card ${index}: missing components array`);
+            return null;
+          }
+          
+          const cardComponents = await Promise.all(card.components.map(async (c: any) => {
+            if ((c.type === "HEADER" || c.type === "header") && (c.format === "IMAGE" || c.format === "image")) {
+              const cardFile = carouselFiles[index];
+              
+              if (!cardFile) {
+                console.warn(`No carousel file found for card ${index}, using existing header_handle`);
+                return c; // Return the component as-is if no file is provided
+              }
+              
+              let fileUrl = "";
+              try {
+                fileUrl = await uploadFileToDigitalOceanHelper(cardFile);
+              } catch (error) {
+                console.error(`Error uploading carousel media for card ${index}:`, error);
+              }
+      
+              const uploadRes = await axios.post(
+                `${process.env.META_BASE_URL}/${process.env.META_APP_ID}/uploads`,
+                null,
+                {
+                  params: {
+                    file_name: cardFile.originalname,
+                    file_length: cardFile.size,
+                    file_type: cardFile.mimetype,
+                    access_token: process.env.META_ACCESS_TOKEN,
+                  },
+                  headers: {
+                    Authorization: `Bearer ${process.env.META_ACCESS_TOKEN}`,
+                  },
+                }
+              );
+      
+              const mediaUploadId = uploadRes.data.id;
+              const form = new FormData();
+              form.append("file_offset", 0);
+              //form.append("file", fs.createReadStream(cardFile.path));
+              const stream = Readable.from(cardFile.buffer);
+              form.append("file", stream, {
+                filename: cardFile.originalname,
+                contentType: cardFile.mimetype,
+              });
+              const headers = {
+                Authorization: `OAuth ${process.env.META_ACCESS_TOKEN}`,
+                file_offset: "0",
+                "Content-Length": cardFile.size,
+                ...form.getHeaders(),
+              };
+      
+              const mediaIdRes = await axios.post(
+                `${process.env.META_BASE_URL}/${mediaUploadId}`,
+                form,
+                { headers }
+              );
+      
+              return {
+                type: "HEADER",
+                format: "IMAGE",
+                example: {header_handle: [ mediaIdRes.data.h] },
+              };
+            }
+      
+            // for body use preprocessHtmlForWhatsApp
+            if (c.type === "BODY" || c.type === "body") {
+              c.text = preprocessHtmlForWhatsApp(c.text || "");
+            }
 
-      if (component.type === "HEADER" && component.format === "TEXT") {
+            // Handle BUTTONS components in carousel cards
+            if (c.type === "BUTTONS" || c.type === "buttons") {
+              return c;
+            }
+        
+            return c;
+          }));
+      
+          return { components: cardComponents };
+        }));
+      
+        // Filter out null cards
+        const validCards = carouselCards.filter(card => card !== null);
+        
+        if (validCards.length === 0) {
+          console.error("No valid cards in carousel");
+          return null;
+        }
+        
+        // Meta API v22.0 might not support CAROUSEL component type
+        // Let's convert it to a regular template with the first card's HEADER component
+        const firstCard = validCards[0];
+        if (firstCard && firstCard.components && firstCard.components.length > 0) {
+          const headerComponent = firstCard.components.find((c: any) => c.type === "HEADER");
+          if (headerComponent) {
+            console.log("Converting carousel to HEADER component");
+            return headerComponent;
+          }
+        }
+        
+        console.log("No valid carousel components found, returning null");
+        return null;
+      }
+      if ((component.type === "HEADER" || component.type === "header") && component.format === "TEXT") {
         const headerText = component.text || "";
         const variableNumbers = extractHeaderVariableNumbers(headerText);
         const headerExamples = variableNumbers.map(
@@ -270,8 +472,8 @@ export const createTemplate = async (req: Request, res: Response) => {
         };
       }
 
-      if (component.type === "BODY") {
-        const processedText = preprocessHtmlForWhatsApp(
+      if (component.type === "BODY" || component.type === "body") {
+        let processedText = preprocessHtmlForWhatsApp(
           component.text || ""
         );
         const variableNumbers = extractBodyVariableNumbers(
@@ -280,8 +482,20 @@ export const createTemplate = async (req: Request, res: Response) => {
         const bodyExamples = variableNumbers.map(
           num => sampleContents[num] || ""
         );
+        
+        // Meta API requires BODY text to be between 1-1024 characters
+        if (!processedText || processedText.trim().length === 0) {
+          console.warn("BODY component has empty text, skipping");
+          return null;
+        }
+        
+        if (processedText.length > 1024) {
+          console.warn("BODY text too long, truncating to 1024 characters");
+          processedText = processedText.substring(0, 1024);
+        }
+        
         return {
-          ...component,
+          type: "BODY",
           text: processedText,
           ...(bodyExamples.length > 0
             ? { example: { body_text: bodyExamples } }
@@ -289,9 +503,9 @@ export const createTemplate = async (req: Request, res: Response) => {
         };
       }
 
-      if (component.type === "HEADER" && file) {
+      if ((component.type === "HEADER" || component.type === "header") && file) {
         let fileUrl = "";
-        try{ fileUrl = await uploadFileToDigitalOcean(file);}
+        try{ fileUrl = await uploadFileToDigitalOceanHelper(file);}
         catch(error){
           console.error("Error uploading media to DigitalOcean:", error);
         }
@@ -315,11 +529,18 @@ export const createTemplate = async (req: Request, res: Response) => {
         const mediaUploadId = uploadRes.data.id;
         const form = new FormData();
         form.append("file_offset", 0);
-        form.append("file", fs.createReadStream(filePath));
+        //form.append("file", fs.createReadStream(cardFile.path));
+        const stream = Readable.from(file.buffer);
+        form.append("file", stream, {
+          filename: file.originalname,
+          contentType: file.mimetype,
+          });
+        // form.append("file_offset", 0);
+        // form.append("file", fs.createReadStream(filePath));
         const headers = {
           Authorization: `OAuth ${process.env.META_ACCESS_TOKEN}`,
           file_offset: "0",
-          "Content-Length": fs.statSync(filePath).size,
+          "Content-Length": file.size,
           ...form.getHeaders(),
         };
         const mediaIdRes = await axios.post(
@@ -328,29 +549,183 @@ export const createTemplate = async (req: Request, res: Response) => {
           { headers }
         );
         if (mediaIdRes.data?.h) {
-          return {
+          // Store fileUrl for later use in database (not sent to Meta API)
+          const headerComponent = {
             type: "HEADER",
             format: component.format,
             example: { header_handle: [mediaIdRes.data.h] },
-            url: fileUrl,
+            _fileUrl: fileUrl // Internal property to store DigitalOcean URL
           };
+          return headerComponent;
         }
         throw new Error("Failed to upload media to WhatsApp");
       } 
+
+      // Handle FOOTER component
+      if (component.type === "FOOTER" || component.type === "footer") {
+        const footerText = component.text || "";
+        
+        // Meta API requires FOOTER text to be between 1-60 characters
+        if (!footerText || footerText.trim().length === 0) {
+          console.warn("FOOTER component has empty text, skipping");
+          return null;
+        }
+        
+        if (footerText.length > 60) {
+          console.warn("FOOTER text too long, truncating to 60 characters");
+          const truncatedText = footerText.substring(0, 60);
+          return {
+            type: "FOOTER",
+            text: truncatedText,
+          };
+        }
+        
+        return {
+          type: "FOOTER",
+          text: footerText,
+        };
+      }
     }
+
+    // Handle BUTTONS components
+    if (component.type === "BUTTONS" || component.type === "buttons") {
       return component;
+    }
+
+    return component;
     });
 
     const resolvedComponents = await Promise.all(
       processedComponents
     );
 
+    // Filter out null components
+    const filteredComponents = resolvedComponents.filter(component => component !== null);
+    
+    console.log("Final filtered components:", JSON.stringify(filteredComponents, null, 2));
+    
+    if (filteredComponents.length === 0) {
+      return res.status(400).json({
+        error: "No valid components found",
+        details: "All components were filtered out during processing"
+      });
+    }
+    
+    // Ensure we have at least one valid component
+    const validComponents = filteredComponents.filter(comp => comp && comp.type);
+    console.log("Components with fileUrl:", validComponents.filter(comp => comp._fileUrl).map(comp => ({ type: comp.type, fileUrl: comp._fileUrl })));
+    if (validComponents.length === 0) {
+      return res.status(400).json({
+        error: "No valid components found",
+        details: "All components are invalid or missing type"
+      });
+    }
+    
+    // Create clean components for Meta API (remove internal properties)
+    const metaApiComponents = validComponents.map(comp => {
+      if (comp._fileUrl) {
+        // Remove _fileUrl from component sent to Meta API
+        const { _fileUrl, ...cleanComponent } = comp;
+        return cleanComponent;
+      }
+      return comp;
+    });
+
+    // Validate template structure according to Meta API requirements
+    const headerComponents = metaApiComponents.filter(comp => comp.type === "HEADER");
+    const bodyComponents = metaApiComponents.filter(comp => comp.type === "BODY");
+    const footerComponents = metaApiComponents.filter(comp => comp.type === "FOOTER");
+    const buttonComponents = metaApiComponents.filter(comp => comp.type === "BUTTONS");
+
+    // Meta API requirements:
+    // 1. Only one HEADER component allowed
+    if (headerComponents.length > 1) {
+      return res.status(400).json({
+        error: "Invalid template structure",
+        details: "Only one HEADER component allowed per template"
+      });
+    }
+
+    // 2. Only one BODY component allowed
+    if (bodyComponents.length > 1) {
+      return res.status(400).json({
+        error: "Invalid template structure",
+        details: "Only one BODY component allowed per template"
+      });
+    }
+
+    // 3. Only one FOOTER component allowed
+    if (footerComponents.length > 1) {
+      return res.status(400).json({
+        error: "Invalid template structure",
+        details: "Only one FOOTER component allowed per template"
+      });
+    }
+
+    // 4. Only one BUTTONS component allowed
+    if (buttonComponents.length > 1) {
+      return res.status(400).json({
+        error: "Invalid template structure",
+        details: "Only one BUTTONS component allowed per template"
+      });
+    }
+
+    // 5. Template must have at least one component
+    if (metaApiComponents.length === 0) {
+      return res.status(400).json({
+        error: "Invalid template structure",
+        details: "Template must have at least one component"
+      });
+    }
+
+    // 6. For MARKETING templates, BODY is required
+    if (normalizedCategory === "MARKETING" && bodyComponents.length === 0) {
+      return res.status(400).json({
+        error: "Invalid template structure",
+        details: "MARKETING templates must have a BODY component"
+      });
+    }
+
+    // 7. Validate component content
+    for (const comp of metaApiComponents) {
+      if (comp.type === "BODY" && (!comp.text || comp.text.trim().length === 0)) {
+        return res.status(400).json({
+          error: "Invalid BODY component",
+          details: "BODY component must have non-empty text"
+        });
+      }
+      
+      if (comp.type === "FOOTER" && (!comp.text || comp.text.trim().length === 0)) {
+        return res.status(400).json({
+          error: "Invalid FOOTER component",
+          details: "FOOTER component must have non-empty text"
+        });
+      }
+      
+      if (comp.type === "HEADER" && comp.format === "TEXT" && (!comp.text || comp.text.trim().length === 0)) {
+        return res.status(400).json({
+          error: "Invalid HEADER component",
+          details: "TEXT HEADER component must have non-empty text"
+        });
+      }
+    }
+
     // Transform buttons
     const buttonsData: ButtonData[] = JSON.parse(
       req.body.buttons || "[]"
     );
+    console.log("Original buttons data:", buttonsData);
+    
     if (buttonsData.length > 0) {
-      const metaButtons = buttonsData.map(button => {
+      // Validate button count (Meta API allows max 3 buttons)
+      if (buttonsData.length > 3) {
+        return res.status(400).json({
+          error: "Too many buttons",
+          details: "Maximum 3 buttons allowed per template"
+        });
+      }
+      
+      const metaButtons = buttonsData.map((button, index) => {
         const {
           urlType,
           label,
@@ -359,14 +734,28 @@ export const createTemplate = async (req: Request, res: Response) => {
         } = button;
         switch (button.type) {
           case "Call Phone":
+            const phoneButtonText = label || "Call";
+            
+            // Validate button text length (Meta API limit is 25 characters)
+            if (phoneButtonText.length > 25) {
+              throw new Error(`Button text "${phoneButtonText}" is too long. Maximum 25 characters allowed.`);
+            }
+            
             return {
-              type: "PHONE_NUMBER",
-              text: label || "Call",
+              type: "VOICE_CALL",
+              text: phoneButtonText,
               phone_number: phone || "",
             };
 
           case "Visit Website": {
             const urlTemplate = url || "";
+            const buttonText = label || "Visit us";
+            
+            // Validate button text length (Meta API limit is 25 characters)
+            if (buttonText.length > 25) {
+              throw new Error(`Button text "${buttonText}" is too long. Maximum 25 characters allowed.`);
+            }
+            
             const placeholderMatches = Array.from(
               urlTemplate.matchAll(/\{\{(\d+)\}\}/g)
             );
@@ -376,7 +765,7 @@ export const createTemplate = async (req: Request, res: Response) => {
 
             const btn: any = {
               type: "URL",
-              text: label || "Visit us",
+              text: buttonText,
               url: urlTemplate,
             };
                 if (
@@ -391,16 +780,36 @@ export const createTemplate = async (req: Request, res: Response) => {
           }
 
           case "Copy offer code":
+            const copyButtonText = label || "Copy Code";
+            
+            // Validate button text length (Meta API limit is 25 characters)
+            if (copyButtonText.length > 25) {
+              throw new Error(`Button text "${copyButtonText}" is too long. Maximum 25 characters allowed.`);
+            }
+            
+            return {
+              type: "COPY_CODE",
+              text: copyButtonText,
+            };
+
           case "Quick replies":
           default:
+            const buttonText = label || "Reply";
+            
+            // Validate button text length (Meta API limit is 25 characters)
+            if (buttonText.length > 25) {
+              throw new Error(`Button text "${buttonText}" is too long. Maximum 25 characters allowed.`);
+            }
+            
             return {
               type: "QUICK_REPLY",
-              text: label || "Reply",
+              text: buttonText,
             };
         }
       });
 
-      resolvedComponents.push({
+      console.log("Transformed meta buttons:", metaButtons);
+      validComponents.push({
         type: "BUTTONS",
         buttons: metaButtons,
       });
@@ -410,33 +819,182 @@ export const createTemplate = async (req: Request, res: Response) => {
     let saveAsDraft = saveAsDraftInitial;
 
     if (!saveAsDraft) {
+      console.log("Template payload being sent:\n", JSON.stringify({
+        name,
+        language,
+        category,
+        components: filteredComponents
+      }, null, 2));
+      
       try {
-        response = await axiosInstance.post(
-          WHATSAPP_GRAPH_API,
+        // Test if the WABA ID is valid first
+        console.log("Testing WABA ID validity...");
+        
+        // Try different API versions to see which one works
+        const apiVersions = ['v17.0', 'v18.0', 'v19.0', 'v20.0', 'v21.0', 'v22.0'];
+        let workingVersion = null;
+        
+        for (const version of apiVersions) {
+          try {
+            const testUrl = `https://graph.facebook.com/${version}/${selectedWabaId}?fields=id,name&access_token=${process.env.META_ACCESS_TOKEN}`;
+            console.log(`Testing with API version ${version}:`, testUrl);
+            const testResponse = await axios.get(testUrl);
+            console.log(`API version ${version} works:`, testResponse.data);
+            workingVersion = version;
+            break;
+          } catch (testErr: any) {
+            console.log(`API version ${version} failed:`, testErr.response?.status);
+          }
+        }
+        
+        if (!workingVersion) {
+          console.error("All API versions failed for WABA ID:", selectedWabaId);
+          
+          // Let's also check if this is actually a WABA ID by trying to get the user's WABAs
+          try {
+            const userWabasUrl = `https://graph.facebook.com/v17.0/me/accounts?access_token=${process.env.META_ACCESS_TOKEN}`;
+            console.log("Checking user's WABAs:", userWabasUrl);
+            const userWabasResponse = await axios.get(userWabasUrl);
+            console.log("User's WABAs:", userWabasResponse.data);
+            
+            return res.status(400).json({
+              error: "Invalid WABA ID",
+              details: `WABA ID ${selectedWabaId} not found. Please check your WhatsApp Business Account selection.`
+            });
+          } catch (wabaErr: any) {
+            return res.status(400).json({
+              error: "Invalid WABA ID or access token",
+              details: "Could not verify WhatsApp Business Account with any API version"
+            });
+          }
+        }
+        
+        console.log("Using working API version:", workingVersion);
+        // Update the API URL to use the working version
+        const workingApiUrl = `https://graph.facebook.com/${workingVersion}/${selectedWabaId}/message_templates`;
+        console.log("Updated API URL:", workingApiUrl);
+        
+        console.log("Making template creation request...");
+        
+        // Final validation of the payload
+        const finalPayload = {
+          name,
+          category: normalizedCategory,
+          language,
+          components: metaApiComponents,
+        };
+        
+        // Validate that all required fields are present
+        if (!finalPayload.name || !finalPayload.category || !finalPayload.language || !finalPayload.components) {
+          return res.status(400).json({
+            error: "Missing required fields",
+            details: "Template payload is missing required fields"
+          });
+        }
+        
+        // Validate components array is not empty
+        if (!Array.isArray(finalPayload.components) || finalPayload.components.length === 0) {
+          return res.status(400).json({
+            error: "No components",
+            details: "Template must have at least one component"
+          });
+        }
+        
+        console.log("Meta API payload:", JSON.stringify(finalPayload, null, 2));
+        response = await axios.post(
+          workingApiUrl,
+          finalPayload,
           {
-            name,
-            category,
-            language,
-            components: resolvedComponents,
+            headers: {
+              Authorization: `Bearer ${process.env.META_ACCESS_TOKEN}`,
+              "Content-Type": "application/json",
+            },
+            timeout: 20000,
           }
         );
-      } catch (err: any) {
-        console.warn(
-          "Meta API call failed, saving template as DRAFT:",
-          err.message
-        );
-        // return res.status(500).json({
-        //   error: "err.response?.data.error.message",
-        //   details: err.response?.data.error.message || err.message,
-        // });
+        console.log("Template created successfully:\n", JSON.stringify(response.data, null, 2));
+      } 
+      catch (err: any) {
+        console.error("Meta API call failed:");
+        console.error("Error status:", err.response?.status);
+        console.error("Error status text:", err.response?.statusText);
+        console.error("Error headers:", err.response?.headers);
+        console.error("Error data:", err.response?.data);
+        console.error("Error message:", err.message);
+        
+        // Check for HTML response (usually indicates wrong URL or API version)
+        if (err.response?.headers?.['content-type']?.includes('text/html')) {
+          console.error("Received HTML response instead of JSON - likely wrong API URL or version");
+          return res.status(400).json({
+            error: "API Configuration Error",
+            details: "Received HTML response. Please check API URL and version configuration."
+          });
+        }
+        if (err.response?.status === 401) {
+          return res.status(401).json({
+            error: "Authentication failed",
+            details: "Invalid or expired access token"
+          });
+        }
+        
+        if (err.response?.status === 403) {
+          return res.status(403).json({
+            error: "Permission denied",
+            details: "Insufficient permissions to create templates"
+          });
+        }
+        
+        if (err.response?.status === 400) {
+          const errorData = err.response?.data;
+          console.error("Meta API 400 error details:", JSON.stringify(errorData, null, 2));
+          
+          // Extract specific error information
+          let errorMessage = "Invalid template format";
+          let errorDetails = "";
+          
+          if (errorData?.error?.message) {
+            errorMessage = errorData.error.message;
+          }
+          
+          if (errorData?.error?.error_data?.details) {
+            errorDetails = errorData.error.error_data.details;
+          } else if (errorData?.error?.error_subcode) {
+            errorDetails = `Error subcode: ${errorData.error.error_subcode}`;
+          }
+          
+          return res.status(400).json({
+            error: errorMessage,
+            details: errorDetails || "Please check template structure and content",
+            metaErrorCode: errorData?.error?.code,
+            metaErrorSubcode: errorData?.error?.error_subcode
+          });
+        }
+        
+        // For other errors, save as draft
         saveAsDraft = true;
-      }
+        return res.status(400).json({
+          error: "Template creation failed",
+          details: err.response?.data?.error?.message || err.message,
+        });
+       }
     }
 
+    // Create components for database storage (include fileUrl if available)
+    const dbComponents = validComponents.map(comp => {
+      if (comp._fileUrl) {
+        // Include fileUrl in database storage
+        return {
+          ...comp,
+          url: comp._fileUrl // Add url property for database storage
+        };
+      }
+      return comp;
+    });
+    
     const templateContent = {
       name,
       parameter_format: "POSITIONAL",
-      components: resolvedComponents,
+      components: dbComponents,
       language,
       status: saveAsDraft
         ? "DRAFT"
@@ -477,11 +1035,11 @@ export const createTemplate = async (req: Request, res: Response) => {
     if (saveAsDraft) {
       return res.status(201).json(dbTemplate);
     }
-    return res.status(201).json(response.data);
+    return res.status(201).json(dbTemplate);
   } catch (error: any) {
     return res.status(500).json({
       error: "Failed to create template",
-      details: error.response?.data || error.message,
+      details: error.response?.data || "",
     });
   }
 };
