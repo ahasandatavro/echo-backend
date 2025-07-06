@@ -219,6 +219,12 @@ function extractHeaderVariableNumbers(text:string) {
   return matches.map(m => m[1]);
 }
 
+function extractFooterVariableNumbers(text:string) {
+  // Returns array of variable numbers as strings, in order of appearance
+  const matches = Array.from((text || "").matchAll(/\{\{(\d+)\}\}/g));
+  return matches.map(m => m[1]);
+}
+
 export const createTemplate = async (req: Request, res: Response) => {
   try {
     const user: any = req.user;
@@ -463,10 +469,15 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
         const headerExamples = variableNumbers.map(
           num => sampleContents[num] || ""
         );
+        
+        // If variables are detected in the text, always include example field
+        // Meta API requires example field when variables are present
+        const hasVariables = variableNumbers.length > 0;
+        
         return {
           ...component,
           text: headerText,
-          ...(headerExamples.length > 0
+          ...(hasVariables
             ? { example: { header_text: headerExamples } }
             : {}),
         };
@@ -494,11 +505,15 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
           processedText = processedText.substring(0, 1024);
         }
         
+        // If variables are detected in the text, always include example field
+        // Meta API requires example field when variables are present
+        const hasVariables = variableNumbers.length > 0;
+        
         return {
           type: "BODY",
           text: processedText,
-          ...(bodyExamples.length > 0
-            ? { example: { body_text: bodyExamples } }
+          ...(hasVariables
+            ? { example: { body_text: [bodyExamples] } }
             : {}),
         };
       }
@@ -580,9 +595,22 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
           };
         }
         
+        // Extract variables from footer text
+        const variableNumbers = extractFooterVariableNumbers(footerText);
+        const footerExamples = variableNumbers.map(
+          num => sampleContents[num] || ""
+        );
+        
+        // If variables are detected in the text, always include example field
+        // Meta API requires example field when variables are present
+        const hasVariables = variableNumbers.length > 0;
+        
         return {
           type: "FOOTER",
           text: footerText,
+          ...(hasVariables
+            ? { example: { footer_text: footerExamples } }
+            : {}),
         };
       }
     }
