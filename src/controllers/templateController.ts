@@ -834,44 +834,44 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
         const apiVersions = ['v17.0', 'v18.0', 'v19.0', 'v20.0', 'v21.0', 'v22.0'];
         let workingVersion = null;
         
-        for (const version of apiVersions) {
-          try {
-            const testUrl = `https://graph.facebook.com/${version}/${selectedWabaId}?fields=id,name&access_token=${process.env.META_ACCESS_TOKEN}`;
-            console.log(`Testing with API version ${version}:`, testUrl);
-            const testResponse = await axios.get(testUrl);
-            console.log(`API version ${version} works:`, testResponse.data);
-            workingVersion = version;
-            break;
-          } catch (testErr: any) {
-            console.log(`API version ${version} failed:`, testErr.response?.status);
-          }
-        }
+        // for (const version of apiVersions) {
+        //   try {
+        //     const testUrl = `https://graph.facebook.com/${version}/${selectedWabaId}?fields=id,name&access_token=${process.env.META_ACCESS_TOKEN}`;
+        //     console.log(`Testing with API version ${version}:`, testUrl);
+        //     const testResponse = await axios.get(testUrl);
+        //     console.log(`API version ${version} works:`, testResponse.data);
+        //     workingVersion = version;
+        //     break;
+        //   } catch (testErr: any) {
+        //     console.log(`API version ${version} failed:`, testErr.response?.status);
+        //   }
+        // }
         
-        if (!workingVersion) {
-          console.error("All API versions failed for WABA ID:", selectedWabaId);
+        // if (!workingVersion) {
+        //   console.error("All API versions failed for WABA ID:", selectedWabaId);
           
-          // Let's also check if this is actually a WABA ID by trying to get the user's WABAs
-          try {
-            const userWabasUrl = `https://graph.facebook.com/v17.0/me/accounts?access_token=${process.env.META_ACCESS_TOKEN}`;
-            console.log("Checking user's WABAs:", userWabasUrl);
-            const userWabasResponse = await axios.get(userWabasUrl);
-            console.log("User's WABAs:", userWabasResponse.data);
+        //   // Let's also check if this is actually a WABA ID by trying to get the user's WABAs
+        //   try {
+        //     const userWabasUrl = `https://graph.facebook.com/v17.0/me/accounts?access_token=${process.env.META_ACCESS_TOKEN}`;
+        //     console.log("Checking user's WABAs:", userWabasUrl);
+        //     const userWabasResponse = await axios.get(userWabasUrl);
+        //     console.log("User's WABAs:", userWabasResponse.data);
             
-            return res.status(400).json({
-              error: "Invalid WABA ID",
-              details: `WABA ID ${selectedWabaId} not found. Please check your WhatsApp Business Account selection.`
-            });
-          } catch (wabaErr: any) {
-            return res.status(400).json({
-              error: "Invalid WABA ID or access token",
-              details: "Could not verify WhatsApp Business Account with any API version"
-            });
-          }
-        }
+        //     return res.status(400).json({
+        //       error: "Invalid WABA ID",
+        //       details: `WABA ID ${selectedWabaId} not found. Please check your WhatsApp Business Account selection.`
+        //     });
+        //   } catch (wabaErr: any) {
+        //     return res.status(400).json({
+        //       error: "Invalid WABA ID or access token",
+        //       details: "Could not verify WhatsApp Business Account with any API version"
+        //     });
+        //   }
+        // }
         
         console.log("Using working API version:", workingVersion);
         // Update the API URL to use the working version
-        const workingApiUrl = `https://graph.facebook.com/${workingVersion}/${selectedWabaId}/message_templates`;
+        const workingApiUrl = `https://graph.facebook.com/v18.0/${selectedWabaId}/message_templates`;
         console.log("Updated API URL:", workingApiUrl);
         
         console.log("Making template creation request...");
