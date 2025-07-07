@@ -1148,6 +1148,238 @@ export const deleteTemplate = async (req: Request, res: Response) => {
   }
 };
 
+// export const createBroadcast = async (req: Request, res: Response) => {
+//   try {
+//     const user: any = req.user;
+    
+//     // Check broadcast access based on package
+//     const accessCheck = await checkBroadcastAccess(user.userId);
+//     if (!accessCheck.allowed) {
+//       return res.status(403).json({
+//         success: false,
+//         message: accessCheck.message || "Access denied for broadcast features"
+//       });
+//     }
+
+//     const { broadcastName, templateName, userId, contacts, chatbotId, scheduledDateTime } = req.body;
+
+//     const dbUser = await prisma.user.findFirst({
+//       where: { id: user.userId },
+//       select: { id: true, selectedPhoneNumberId: true },
+//     });
+//     const phoneNumberId = dbUser?.selectedPhoneNumberId;
+//     if (!phoneNumberId) {
+//       return res.status(400).json({ message: "No phone number selected." });
+//     }
+//     const contactsToConnect = await prisma.contact.findMany({
+//       where: {
+//         phoneNumber: { in: contacts },
+//       },
+//       select: { id: true },
+//     });
+//     const broadcast = await prisma.broadcast.create({
+//       data: {
+//         name: broadcastName,
+//         templateName,
+//         userId: dbUser?.id || 1,
+//         phoneNumberId,
+//         recipients: {
+//           create: contactsToConnect.map((contact) => ({
+//             contact: { connect: { id: contact.id } },
+//           })),
+//         },
+//       },
+//     });
+
+//     // If scheduling is requested
+//     if (scheduledDateTime) {
+//       const scheduledDate = new Date(scheduledDateTime);
+
+//       // Schedule the broadcast using Agenda
+//       const agenda = (await import('../config/agenda')).default;
+//       await agenda.schedule(scheduledDate, 'sendScheduledBroadcast', {
+//         broadcastId: broadcast.id
+//       });
+
+//       // Update the broadcast with scheduling info
+//       await prisma.broadcast.update({
+//         where: { id: broadcast.id },
+//         data: {
+//           scheduledDateTime: scheduledDate,
+//           status: 'SCHEDULED'
+//         }
+//       });
+
+//       res.status(200).json({
+//         success: true,
+//         broadcastId: broadcast.id,
+//         message: "Broadcast scheduled successfully!",
+//         scheduledFor: scheduledDate
+//       });
+//     } else {
+//       // Send immediately if no scheduling requested
+//       for (const phoneNumber of contacts) {
+//         await brodcastTemplate(
+//           phoneNumber,
+//           templateName,
+//           chatbotId,
+//           broadcast.id,
+//           phoneNumberId
+//         );
+//       }
+
+//       // Update sent time
+//       await prisma.broadcast.update({
+//         where: { id: broadcast.id },
+//         data: {
+//           sentAt: new Date(),
+//           status: 'SENT'
+//         }
+//       });
+
+//       res.status(200).json({
+//         success: true,
+//         broadcastId: broadcast.id,
+//         message: "Broadcast sent successfully!",
+//       });
+//     }
+//   } catch (error: any) {
+//     console.error("Error creating broadcast:", error);
+//     res.status(500).json({
+//       success: false,
+//       message: error.response?.data?.error?.error_data?.details || error.message,
+//       error: error.message,
+//     });
+//   }
+// };
+interface TemplateComponent {
+  type: string;
+  text?: string;
+  format?: string;
+  url?: string;
+  buttons?: Array<{
+    type: string;
+    text: string;
+    url?: string;
+    phone_number?: string;
+  }>;
+}
+
+interface TemplateData {
+  components: TemplateComponent[];
+}
+
+/**
+ * Substitute parameters in template components
+ */
+export function substituteTemplateParameters(
+  templateContent: string,
+  parameters: Record<string, string>
+): string {
+  try {
+    const templateData: TemplateData = JSON.parse(templateContent);
+    
+    // Create a deep copy to avoid mutating the original
+    const modifiedComponents = templateData.components.map(component => {
+      const newComponent = { ...component };
+      
+      // Handle text components (HEADER, BODY, FOOTER)
+      if (newComponent.text) {
+        newComponent.text = substituteParametersInText(newComponent.text, parameters);
+      }
+      
+      // Handle buttons with URL parameters
+      if (newComponent.buttons) {
+        newComponent.buttons = newComponent.buttons.map(button => {
+          const newButton = { ...button };
+          if (newButton.url) {
+            newButton.url = substituteParametersInText(newButton.url, parameters);
+          }
+          return newButton;
+        });
+      }
+      
+      return newComponent;
+    });
+    
+    return JSON.stringify({ ...templateData, components: modifiedComponents });
+  } catch (error) {
+    console.error("Error substituting template parameters:", error);
+    return templateContent; // Return original if parsing fails
+  }
+}
+
+/**
+ * Substitute parameters in a text string
+ */
+function substituteParametersInText(text: string, parameters: Record<string, string>): string {
+  let result = text;
+  
+  // Replace {{n}} placeholders with parameter values
+  Object.entries(parameters).forEach(([key, value]) => {
+    // Convert parameter keys to the format expected by the template
+    // e.g., "header_0" -> "0", "body_1" -> "1"
+    const paramIndex = key.split('_').pop();
+    if (paramIndex) {
+      const placeholder = `{{${paramIndex}}}`;
+      result = result.replace(new RegExp(placeholder, 'g'), value);
+    }
+  });
+  
+  return result;
+}
+
+/**
+ * Extract parameter placeholders from template content
+ */
+export function extractTemplateParameters(templateContent: string): string[] {
+  try {
+    const templateData: TemplateData = JSON.parse(templateContent);
+    const parameters = new Set<string>();
+    
+    templateData.components?.forEach(component => {
+      // Extract from text components
+      if (component.text) {
+        const matches = component.text.match(/\{\{(\d+)\}\}/g);
+        matches?.forEach(match => parameters.add(match));
+      }
+      
+      // Extract from button URLs
+      component.buttons?.forEach(button => {
+        if (button.url) {
+          const matches = button.url.match(/\{\{(\d+)\}\}/g);
+          matches?.forEach(match => parameters.add(match));
+        }
+      });
+    });
+    
+    return Array.from(parameters).sort();
+  } catch (error) {
+    console.error("Error extracting template parameters:", error);
+    return [];
+  }
+}
+
+/**
+ * Validate that all required parameters are provided
+ */
+export function validateTemplateParameters(
+  templateContent: string,
+  parameters: Record<string, string>
+): { isValid: boolean; missingParams: string[] } {
+  const requiredParams = extractTemplateParameters(templateContent);
+  const providedParams = Object.keys(parameters).map(key => {
+    const paramIndex = key.split('_').pop();
+    return paramIndex ? `{{${paramIndex}}}` : null;
+  }).filter(Boolean) as string[];
+  
+  const missingParams = requiredParams.filter(param => !providedParams.includes(param));
+  
+  return {
+    isValid: missingParams.length === 0,
+    missingParams
+  };
+} 
 export const createBroadcast = async (req: Request, res: Response) => {
   try {
     const user: any = req.user;
@@ -1161,22 +1393,64 @@ export const createBroadcast = async (req: Request, res: Response) => {
       });
     }
 
-    const { broadcastName, templateName, userId, contacts, chatbotId, scheduledDateTime } = req.body;
+    const { 
+      broadcastName, 
+      templateName, 
+      userId, 
+      contacts, 
+      chatbotId, 
+      scheduledDateTime,
+      templateParameters 
+    } = req.body;
 
     const dbUser = await prisma.user.findFirst({
       where: { id: user.userId },
       select: { id: true, selectedPhoneNumberId: true },
     });
+    
     const phoneNumberId = dbUser?.selectedPhoneNumberId;
     if (!phoneNumberId) {
       return res.status(400).json({ message: "No phone number selected." });
     }
+
+    // Get the template to validate parameters
+    const bp = await prisma.businessPhoneNumber.findFirst({
+      where: { metaPhoneNumberId: phoneNumberId }
+    });
+    
+    const businessAccount = await prisma.businessAccount.findFirst({
+      where: { id: bp?.businessAccountId }
+    });
+
+    const dbTpl = await prisma.template.findUnique({
+      where: { name: templateName, wabaId: businessAccount?.metaWabaId },
+    });
+
+    if (!dbTpl || !dbTpl.content) {
+      return res.status(400).json({ 
+        success: false,
+        message: `Template "${templateName}" not found or has no content` 
+      });
+    }
+
+    // Validate template parameters if provided
+    if (templateParameters && Object.keys(templateParameters).length > 0) {
+      const validation = validateTemplateParameters(dbTpl.content, templateParameters);
+      if (!validation.isValid) {
+        return res.status(400).json({
+          success: false,
+          message: `Missing required template parameters: ${validation.missingParams.join(', ')}`
+        });
+      }
+    }
+
     const contactsToConnect = await prisma.contact.findMany({
       where: {
         phoneNumber: { in: contacts },
       },
       select: { id: true },
     });
+
     const broadcast = await prisma.broadcast.create({
       data: {
         name: broadcastName,
@@ -1198,7 +1472,8 @@ export const createBroadcast = async (req: Request, res: Response) => {
       // Schedule the broadcast using Agenda
       const agenda = (await import('../config/agenda')).default;
       await agenda.schedule(scheduledDate, 'sendScheduledBroadcast', {
-        broadcastId: broadcast.id
+        broadcastId: broadcast.id,
+        templateParameters // Pass parameters to scheduled job
       });
 
       // Update the broadcast with scheduling info
@@ -1219,12 +1494,13 @@ export const createBroadcast = async (req: Request, res: Response) => {
     } else {
       // Send immediately if no scheduling requested
       for (const phoneNumber of contacts) {
-        await brodcastTemplate(
+        await broadcastTemplate(
           phoneNumber,
           templateName,
           chatbotId,
           broadcast.id,
-          phoneNumberId
+          phoneNumberId,
+          templateParameters // Pass parameters to broadcast function
         );
       }
 
@@ -1253,6 +1529,423 @@ export const createBroadcast = async (req: Request, res: Response) => {
   }
 };
 
+// export const broadcastTemplate = async (
+//   recipient: string,
+//   selectedTemplate: string,
+//   chatbotId: number,
+//   broadcastId: number,
+//   phoneNumberId?: string,
+//   templateParameters?: Record<string, string>
+// ) => {
+//   try {
+//     const bp = await prisma.businessPhoneNumber.findFirst({
+//       where: { metaPhoneNumberId: phoneNumberId }
+//     });
+    
+//     const businessAccount = await prisma.businessAccount.findFirst({
+//       where: { id: bp?.businessAccountId }
+//     });
+
+//     const dbTpl = await prisma.template.findUnique({
+//       where: { name: selectedTemplate, wabaId: businessAccount?.metaWabaId },
+//     });
+
+//     if (!dbTpl || !dbTpl.content) {
+//       throw new Error(`Template "${selectedTemplate}" not found or has no content`);
+//     }
+
+//     // Substitute template parameters if provided
+//     let processedTemplateContent = dbTpl.content;
+//     if (templateParameters && Object.keys(templateParameters).length > 0) {
+//       processedTemplateContent = substituteTemplateParameters(dbTpl.content, templateParameters);
+//     }
+
+//     // Parse the processed template content
+//     const tplDef: {
+//       components: Array<{
+//         type: string;
+//         text?: string;
+//         format?: string;
+//         url?: string;
+//         example?: {
+//           header_handle?: string[];
+//           header_text?: string[];
+//           url?: string;
+//         };
+//         buttons?: Array<{
+//           type: string;
+//           text: string;
+//           url?: string;
+//           phone_number?: string;
+//         }>;
+//       } | null>;
+//     } = JSON.parse(processedTemplateContent);
+
+//     // Build the send-payload components array
+//     const sendComponents: any[] = [];
+    
+//     console.log("Template components to process:", tplDef.components);
+
+//     tplDef.components.forEach((c, idx) => {
+//       if (!c) return;
+
+//       if (c.type === "HEADER") {
+//         if (c.format === "IMAGE" && c.example?.header_handle) {
+//           // Handle image header - use header_handle from Meta API
+//           sendComponents.push({
+//             type: "header",
+//             parameters: [
+//               {
+//                 type: "image",
+//                 image: {
+//                   link: c.url // Use the header_handle from Meta API
+//                 }
+//               }
+//             ]
+//           });
+//         } else if (c.format === "TEXT" && c.text) {
+//           // Handle text header
+//           const matches = Array.from(c.text.matchAll(/\{\{(\d+)\}\}/g));
+//           const params = matches.map(m => ({
+//             type: "text" as const,
+//             text: /* you'll need to supply these at call-time */ ""
+//           }));
+//           sendComponents.push({
+//             type: "header",
+//             parameters: params
+//           });
+//         }
+//       }
+
+//       if (c.type === "BODY" && c.text && c.text.trim().length > 0) {
+//         // extract all {{n}} placeholders
+//         const matches = Array.from(c.text.matchAll(/\{\{(\d+)\}\}/g));
+//         if (matches.length > 0) {
+//           const params = matches.map(m => ({
+//             type: "text" as const,
+//             text: /* you'll need to supply these at call-time */ ""
+//           }));
+//           sendComponents.push({
+//             type: "body",
+//             parameters: params
+//           });
+//         } else {
+//           // No placeholders, just send body without parameters
+//           sendComponents.push({
+//             type: "body"
+//           });
+//         }
+//       }
+
+//       if (c.type === "FOOTER" && c.text) {
+//         // Handle footer component
+//         const matches = Array.from(c.text.matchAll(/\{\{(\d+)\}\}/g));
+//         const params = matches.map(m => ({
+//           type: "text" as const,
+//           text: /* you'll need to supply these at call-time */ ""
+//         }));
+//         sendComponents.push({
+//           type: "footer",
+//           parameters: params
+//         });
+//       }
+
+//       if (c.type === "BUTTONS" && Array.isArray(c.buttons) && c.buttons.length > 0) {
+//         // Valid Meta API button sub_types: CATALOG, COPY_CODE, FLOW, MPM, ORDER_DETAILS, QUICK_REPLY, REMINDER, URL, VOICE_CALL
+//         console.log("Processing buttons:", c.buttons);
+//         c.buttons.forEach((btn, buttonIndex) => {
+//           console.log(`Processing button ${buttonIndex}:`, btn);
+//           if (btn.type === "URL" && btn.url) {
+//             // For URL buttons, we need to provide the URL as a parameter
+//             sendComponents.push({
+//               type: "button",
+//               sub_type: "url",
+//               index: buttonIndex.toString(),
+//               parameters: [
+//                 {
+//                   type: "text",
+//                   text: btn.url // Use the actual URL from the template
+//                 }
+//               ]
+//             });
+//           }
+
+//           if ((btn.type === "PHONE_NUMBER" || btn.type === "VOICE_CALL") && btn.phone_number) {
+//             sendComponents.push({
+//               type: "button",
+//               sub_type: "voice_call",
+//               index: buttonIndex.toString()
+//               // VOICE_CALL buttons don't need parameters - phone number is defined in template
+//             });
+//           }
+
+//           if (btn.type === "QUICK_REPLY" || btn.type === "Quick replies") {
+//             sendComponents.push({
+//               type: "button",
+//               sub_type: "quick_reply",
+//               index: buttonIndex.toString()
+//               // QUICK_REPLY buttons don't need parameters - text is defined in template
+//             });
+//           }
+
+//           if (btn.type === "COPY_CODE" || btn.type === "Copy offer code") {
+//             sendComponents.push({
+//               type: "button",
+//               sub_type: "copy_code",
+//               index: buttonIndex.toString()
+//               // COPY_CODE buttons don't need parameters - text is defined in template
+//             });
+//           }
+//         });
+//       }
+//     });
+    
+//     console.log("Send components built:", sendComponents);
+    
+//     // Only include components if there are any
+//     const templatePayload: any = {
+//       name: selectedTemplate,
+//       language: { code: dbTpl.language }
+//     };
+    
+//     if (sendComponents.length > 0) {
+//       templatePayload.components = sendComponents;
+//     }
+    
+//     const url = `${process.env.META_BASE_URL}/${phoneNumberId}/messages`;
+//     const payload = {
+//       messaging_product: "whatsapp",
+//       to: recipient,
+//       biz_opaque_callback_data: broadcastId ? `broadcastId=${broadcastId}` : undefined,
+//       type: "template",
+//       template: templatePayload
+//     };
+
+//     await axios.post(url, payload, {
+//       headers: {
+//         Authorization: `Bearer ${process.env.META_WHATSAPP_ACCESS_TOKEN}`,
+//         "Content-Type": "application/json",
+//       },
+//     });
+     
+//   } catch (error: any) {
+//     console.error("Error sending template message:", error.response?.data?.error?.message || error.message);
+//     console.error("Full error response:", JSON.stringify(error.response?.data, null, 2));
+//     return {
+//       success: false,
+//       message: error.response?.data?.error?.message || error.message,
+//       error: error.response?.data
+//     }
+//     throw error;
+//   }
+// };
+export const broadcastTemplate = async (
+  recipient: string,
+  selectedTemplate: string,
+  chatbotId: number,
+  broadcastId: number,
+  phoneNumberId?: string,
+  templateParameters?: Record<string, string>
+) => {
+  try {
+    const bp = await prisma.businessPhoneNumber.findFirst({
+      where: { metaPhoneNumberId: phoneNumberId }
+    });
+    
+    const businessAccount = await prisma.businessAccount.findFirst({
+      where: { id: bp?.businessAccountId }
+    });
+
+    const dbTpl = await prisma.template.findUnique({
+      where: { name: selectedTemplate, wabaId: businessAccount?.metaWabaId },
+    });
+
+    if (!dbTpl || !dbTpl.content) {
+      throw new Error(`Template "${selectedTemplate}" not found or has no content`);
+    }
+
+    // Substitute template parameters if provided
+    let processedTemplateContent = dbTpl.content;
+    if (templateParameters && Object.keys(templateParameters).length > 0) {
+      processedTemplateContent = substituteTemplateParameters(dbTpl.content, templateParameters);
+    }
+
+    // Parse the processed template content
+    const tplDef: {
+      components: Array<{
+        type: string;
+        text?: string;
+        format?: string;
+        url?: string;
+        example?: {
+          header_handle?: string[];
+          header_text?: string[];
+          url?: string;
+        };
+        buttons?: Array<{
+          type: string;
+          text: string;
+          url?: string;
+          phone_number?: string;
+        }>;
+      } | null>;
+    } = JSON.parse(processedTemplateContent);
+
+    // Build the send-payload components array
+    const sendComponents: any[] = [];
+    
+    tplDef.components.forEach((c, idx) => {
+      if (!c) return;
+
+      if (c.type === "HEADER") {
+        if (c.format === "IMAGE" && c.example?.header_handle) {
+          sendComponents.push({
+            type: "header",
+            parameters: [
+              {
+                type: "image",
+                image: {
+                  link: c.url
+                }
+              }
+            ]
+          });
+        } else if (c.format === "TEXT" && c.text) {
+          const matches = Array.from(c.text.matchAll(/\{\{(\d+)\}\}/g));
+          const params = matches.map(m => {
+            const paramNum = m[1];
+            const key = `header_${paramNum}`;
+            return {
+              type: "text" as const,
+              text: templateParameters?.[key] ?? ""
+            };
+          });
+          sendComponents.push({
+            type: "header",
+            parameters: params
+          });
+        }
+      }
+
+      if (c.type === "BODY" && c.text && c.text.trim().length > 0) {
+        const matches = Array.from(c.text.matchAll(/\{\{(\d+)\}\}/g));
+        if (matches.length > 0) {
+          const params = matches.map(m => {
+            const paramNum = m[1];
+            const key = `body_${paramNum}`;
+            return {
+              type: "text" as const,
+              text: templateParameters?.[key] ?? ""
+            };
+          });
+          sendComponents.push({
+            type: "body",
+            parameters: params
+          });
+        } else {
+          sendComponents.push({ type: "body" });
+        }
+      }
+
+      if (c.type === "FOOTER" && c.text) {
+        const matches = Array.from(c.text.matchAll(/\{\{(\d+)\}\}/g));
+        const params = matches.map(m => {
+          const paramNum = m[1];
+          const key = `footer_${paramNum}`;
+          return {
+            type: "text" as const,
+            text: templateParameters?.[key] ?? ""
+          };
+        });
+        sendComponents.push({
+          type: "footer",
+          parameters: params
+        });
+      }
+
+      if (c.type === "BUTTONS" && Array.isArray(c.buttons) && c.buttons.length > 0) {
+        c.buttons.forEach((btn, buttonIndex) => {
+          if (btn.type === "URL" && btn.url) {
+            const matches = Array.from(btn.url.matchAll(/\{\{(\d+)\}\}/g));
+            const params = matches.map(m => {
+              const paramNum = m[1];
+              const key = `button_${buttonIndex}_${paramNum}`;
+              return {
+                type: "text" as const,
+                text: templateParameters?.[key] ?? ""
+              };
+            });
+            sendComponents.push({
+              type: "button",
+              sub_type: "url",
+              index: buttonIndex.toString(),
+              parameters: params
+            });
+          }
+
+          if ((btn.type === "PHONE_NUMBER" || btn.type === "VOICE_CALL") && btn.phone_number) {
+            sendComponents.push({
+              type: "button",
+              sub_type: "voice_call",
+              index: buttonIndex.toString()
+            });
+          }
+
+          if (btn.type === "QUICK_REPLY" || btn.type === "Quick replies") {
+            sendComponents.push({
+              type: "button",
+              sub_type: "quick_reply",
+              index: buttonIndex.toString()
+            });
+          }
+
+          if (btn.type === "COPY_CODE" || btn.type === "Copy offer code") {
+            sendComponents.push({
+              type: "button",
+              sub_type: "copy_code",
+              index: buttonIndex.toString()
+            });
+          }
+        });
+      }
+    });
+    
+    const templatePayload: any = {
+      name: selectedTemplate,
+      language: { code: dbTpl.language }
+    };
+    
+    if (sendComponents.length > 0) {
+      templatePayload.components = sendComponents;
+    }
+    
+    const url = `${process.env.META_BASE_URL}/${phoneNumberId}/messages`;
+    const payload = {
+      messaging_product: "whatsapp",
+      to: recipient,
+      biz_opaque_callback_data: broadcastId ? `broadcastId=${broadcastId}` : undefined,
+      type: "template",
+      template: templatePayload
+    };
+
+    await axios.post(url, payload, {
+      headers: {
+        Authorization: `Bearer ${process.env.META_ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+    });
+     
+  } catch (error: any) {
+    console.error("Error sending template message:", error.response?.data?.error?.message || error.message);
+    console.error("Full error response:", JSON.stringify(error.response?.data, null, 2));
+    return {
+      success: false,
+      message: error.response?.data?.error?.message || error.message,
+      error: error.response?.data
+    }
+    throw error;
+  }
+};
 export const updateBroadcast = async (req: Request, res: Response) => {
   try {
     const user: any = req.user;
