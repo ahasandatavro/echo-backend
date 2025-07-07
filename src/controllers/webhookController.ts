@@ -407,3 +407,185 @@ export const getWebhookLogStats = async (req: Request, res: Response) => {
     return res.status(500).json({ error: 'Failed to fetch webhook log statistics' });
   }
 };
+
+// Test a webhook by sending a test payload
+export const testWebhook = async (req: Request, res: Response) => {
+  const { webhookId, eventType, testPayload } = req.body;
+
+  if (!webhookId) {
+    return res.status(400).json({ error: 'webhookId is required' });
+  }
+
+  if (!eventType) {
+    return res.status(400).json({ error: 'eventType is required' });
+  }
+
+  try {
+    // Find the webhook
+    const webhook = await prisma.webhook.findUnique({
+      where: {
+        id: parseInt(webhookId),
+      },
+      include: {
+        businessPhoneNumber: true,
+      },
+    });
+
+    if (!webhook) {
+      return res.status(404).json({ error: 'Webhook not found' });
+    }
+
+    // Check if user has access to this webhook
+    const reqUser: any = req.user;
+    const userId = reqUser.userId;
+    
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized: User not authenticated" });
+    }
+
+    // Verify user has access to this webhook's business phone number
+    const user = await prisma.user.findUnique({
+      where: { id: parseInt(userId) },
+      select: { selectedPhoneNumberId: true }
+    });
+
+    if (!user?.selectedPhoneNumberId || 
+        webhook.businessPhoneNumber.metaPhoneNumberId !== user.selectedPhoneNumberId) {
+      return res.status(403).json({ error: 'Access denied to this webhook' });
+    }
+
+    // Prepare the test payload
+    const defaultPayload = {
+      event: eventType,
+      timestamp: new Date().toISOString(),
+      data: {
+        test: true,
+        message: "This is a test webhook payload"
+      }
+    };
+
+    const payload = testPayload || defaultPayload;
+    const headers = {
+      'Content-Type': 'application/json',
+      'User-Agent': 'ZiloChat-Webhook-Test/1.0',
+      'X-Webhook-Event': eventType,
+      'X-Webhook-Test': 'true'
+    };
+
+    const requestStartTime = Date.now();
+    const requestTimestamp = new Date().toISOString();
+
+    try {
+      // Make the HTTP request
+      const response = await fetch(webhook.url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+
+      const responseTime = Date.now() - requestStartTime;
+      const responseBody = await response.text();
+      const responseHeaders = Object.fromEntries(response.headers.entries());
+
+      // Determine if the request was successful
+      const isSuccess = response.status >= 200 && response.status < 300;
+
+      // Create webhook log entry
+      await prisma.webhookLog.create({
+        data: {
+          webhookId: webhook.id,
+          requestUrl: webhook.url,
+          requestMethod: 'POST',
+          requestHeaders: headers,
+          requestBody: payload,
+          requestTimestamp: new Date(requestTimestamp),
+          responseStatus: response.status,
+          responseHeaders: responseHeaders,
+          responseBody: responseBody,
+          responseTime: responseTime,
+          status: isSuccess ? 'SUCCESS' : 'FAILED',
+          eventType: eventType,
+          businessPhoneNumberId: webhook.businessPhoneNumberId,
+          errorMessage: isSuccess ? null : `HTTP ${response.status}: ${response.statusText}`,
+          errorType: isSuccess ? null : 'HTTP_ERROR'
+        }
+      });
+
+      return res.status(200).json({
+        success: isSuccess,
+        requestDetails: {
+          url: webhook.url,
+          method: 'POST',
+          headers: headers,
+          body: JSON.stringify(payload),
+          timestamp: requestTimestamp
+        },
+        responseDetails: {
+          statusCode: response.status,
+          headers: responseHeaders,
+          body: responseBody,
+          responseTime: responseTime
+        },
+        error: isSuccess ? null : {
+          message: `HTTP ${response.status}: ${response.statusText}`,
+          type: 'HTTP_ERROR',
+          code: response.status.toString()
+        }
+      });
+
+    } catch (fetchError) {
+      const responseTime = Date.now() - requestStartTime;
+      const errorMessage = fetchError instanceof Error ? fetchError.message : 'Unknown error';
+      const errorType = 'NETWORK_ERROR';
+
+      // Create webhook log entry for failed request
+      await prisma.webhookLog.create({
+        data: {
+          webhookId: webhook.id,
+          requestUrl: webhook.url,
+          requestMethod: 'POST',
+          requestHeaders: headers,
+          requestBody: payload,
+          requestTimestamp: new Date(requestTimestamp),
+          responseTime: responseTime,
+          status: 'FAILED',
+          eventType: eventType,
+          businessPhoneNumberId: webhook.businessPhoneNumberId,
+          errorMessage: errorMessage,
+          errorType: errorType
+        }
+      });
+
+      return res.status(200).json({
+        success: false,
+        requestDetails: {
+          url: webhook.url,
+          method: 'POST',
+          headers: headers,
+          body: JSON.stringify(payload),
+          timestamp: requestTimestamp
+        },
+        responseDetails: {
+          statusCode: null,
+          headers: null,
+          body: null,
+          responseTime: responseTime
+        },
+        error: {
+          message: errorMessage,
+          type: errorType
+        }
+      });
+    }
+
+  } catch (error) {
+    console.error('Error testing webhook:', error);
+    return res.status(500).json({ 
+      success: false,
+      error: {
+        message: 'Internal server error',
+        type: 'INTERNAL_ERROR'
+      }
+    });
+  }
+};
