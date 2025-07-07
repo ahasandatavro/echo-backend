@@ -43,18 +43,57 @@ passport.use(
             },
             })
         } else {
-          // Create a new user with tokens and mark email as verified
-          user = await prisma.user.create({
-            data: {
-              email:profile.emails?.[0]?.value || "no-reply@example.com",
-              password: "", // No password needed for Google sign-in
-              role: "USER",
-              accessToken,
-              refreshToken,
-              accessTokenExpiresAt: expirationTimestamp,
-              emailVerified: true, // Google emails are pre-verified
-            },
+          // Create free payment and package subscription in a single transaction
+          const startDate = new Date();
+          const endDate = new Date(startDate);
+          endDate.setDate(endDate.getDate() + 7);
+
+          const result = await prisma.$transaction(async (tx) => {
+            // 1. Create user
+            const newUser = await tx.user.create({
+              data: {
+                email: profile.emails?.[0]?.value || "no-reply@example.com",
+                password: "", // No password needed for Google sign-in
+                role: "USER",
+                accessToken,
+                refreshToken,
+                accessTokenExpiresAt: expirationTimestamp,
+                emailVerified: true, // Google emails are pre-verified
+              },
+            });
+
+            // 2. Create free payment record
+            const payment = await tx.payment.create({
+              data: {
+                userId: newUser.id,
+                orderId: `free_${Date.now()}_${newUser.id}`,
+                amount: 0,
+                currency: 'INR',
+                paymentType: 'free-signup',
+                metadata: {
+                  packageName: 'Free',
+                  packageDuration: '7days'
+                },
+                status: 'SUCCESS'
+              }
+            });
+
+            // 3. Create free package subscription using the payment ID
+            const packageSubscription = await tx.packageSubscription.create({
+              data: {
+                userId: newUser.id,
+                paymentId: payment.id,
+                packageName: 'Free',
+                startDate,
+                endDate,
+                isActive: true
+              }
+            });
+
+            return { newUser, payment, packageSubscription };
           });
+
+          user = result.newUser;
         }
 
         return done(null, user);
