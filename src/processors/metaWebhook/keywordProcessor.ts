@@ -5,6 +5,7 @@ import { Chatbot, Contact, Keyword, KeywordReplyMaterial, KeywordRoutingMaterial
 import dayjs from 'dayjs';
 import { DefaultActionSettings } from '@prisma/client'; 
 import { bump } from "../../helpers";
+import { findMatchingKeyword } from "../../utils/keywordMatcher";
 // Define types for the keyword query result
 type KeywordWithRelations = Keyword & {
   chatbot: Chatbot | null;
@@ -60,13 +61,9 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
   const defaultHandled = await checkAndSendDefaultMaterial(defaultActionSettings, recipient, agentPhoneNumberId,text);
   if (defaultHandled) return true;
   try {
-    // Find keyword with all possible related entities
-    const keyword = await prisma.keyword.findFirst({
+    // Get all keywords for the user to perform advanced matching
+    const allKeywords = await prisma.keyword.findMany({
       where: {
-        value: {
-          equals: text,
-          mode: "insensitive",
-        },
         userId: dbUser?.id
       },
       include: { 
@@ -92,7 +89,15 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
           }
         }
       }
-    }) as KeywordWithRelations | null;
+    }) as KeywordWithRelations[];
+
+    // Use the new matching logic to find the best matching keyword
+    const matchResult = findMatchingKeyword(text, allKeywords);
+    const keyword = matchResult?.keyword as KeywordWithRelations | null;
+
+    if (matchResult) {
+      console.log(`Keyword matched: "${keyword?.value}" with ${matchResult.matchType} match (score: ${matchResult.matchScore?.toFixed(2)})`);
+    }
 
     if (!keyword) {
       if(defaultActionSettings?.fallbackMessageEnabled){
@@ -327,15 +332,17 @@ const checkAndSendDefaultMaterial = async (
 
     if (!isWithinWorkingHours(workingHours)) {
       let dbUser = await prisma.user.findFirst({ where: { selectedPhoneNumberId: agentPhoneNumberId } });
-      const keyword = await prisma.keyword.findFirst({
+      
+      // Get all keywords for the user to perform advanced matching
+      const allKeywords = await prisma.keyword.findMany({
         where: {
-          value: {
-            equals: text,
-            mode: "insensitive",
-          },
           userId: dbUser?.id
         }
       });
+      
+      // Use the new matching logic to find the best matching keyword
+      const matchResult = findMatchingKeyword(text, allKeywords);
+      const keyword = matchResult?.keyword;
   if(keyword){
     if(defaultActionSettings?.noKeywordMatchReplyEnabled){
       const type = defaultActionSettings.outsideWorkingHoursMaterialType;
@@ -478,15 +485,17 @@ const agents = await prisma.user.findMany({
     if (messages.length < 2) {  
     // Check for keyword match (same logic as processKeyword)
     let dbUser = await prisma.user.findFirst({ where: { selectedPhoneNumberId: agentPhoneNumberId } });
-    const keyword = await prisma.keyword.findFirst({
+    
+    // Get all keywords for the user to perform advanced matching
+    const allKeywords = await prisma.keyword.findMany({
       where: {
-        value: {
-          equals: text,
-          mode: "insensitive",
-        },
         userId: dbUser?.id
       }
     });
+    
+    // Use the new matching logic to find the best matching keyword
+    const matchResult = findMatchingKeyword(text, allKeywords);
+    const keyword = matchResult?.keyword;
 
     if ( !keyword && defaultActionSettings?.welcomeMessageEnabled) {
       const type = defaultActionSettings.welcomeMessageMaterialType;
