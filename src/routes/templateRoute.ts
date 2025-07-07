@@ -30,7 +30,7 @@ router.post("/", upload.fields([
   { name: "carouselFiles[]", maxCount: 10 }
 ]), createTemplate);
 router.get('/brodcast', getBroadcasts);
-router.post("/brodcast", createBroadcast);
+router.post("/brodcast", upload.single('headerImage'), createBroadcast);
 router.get("/brodcast/:id", getBroadcastById);
 router.put("/brodcast/:id", updateBroadcast);
 router.delete("/brodcast/:id", deleteBroadcast);
