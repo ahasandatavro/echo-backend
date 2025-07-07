@@ -384,7 +384,7 @@ export const processNode = async (
           };
     
           // Simulate or perform Google Sheet operation
-          const googleSheetResult:boolean = await performGoogleSheetAction(payload, currentNode); // Define this function
+          const googleSheetResult:boolean = await performGoogleSheetAction(payload, currentNode, recipient); // Define this function
           let nextEdge:any;
            if(googleSheetResult==true){
             nextEdge = edges.find(
@@ -443,7 +443,7 @@ export const processNode = async (
     
             // Resolve variables if they start with "@", otherwise keep them as is
             if (variable.startsWith("@")) {
-              variable = await resolveVariables(variable, currentNode?.chatId);
+              variable = await resolveVariables(variable, currentNode?.chatId,recipient,agentPhoneNumberId);
             }
             if (variable.includes("{{")) {
               variable = await resolveContactAttributes(variable, recipient);
@@ -641,15 +641,7 @@ export const processNode = async (
         if (!chatbot) {
           throw new Error(`Chatbot "${selectedChatbotName}" not found.`);
         }
-        const keywordRecord = await prisma.keyword.findFirst({
-          where: { chatbotId: chatbot?.id },
-        });
-        if (!keywordRecord) {
-          throw new Error(`No keyword for chatbot ID ${chatbot?.id}.`);
-        }
-    
-        // 3️⃣ Kick off the flow
-        console.log(`Triggering chatbot with keyword: ${keywordRecord?.value}`);
+   
         await processChatFlow(chatbot?.id||1, recipient, agentPhoneNumberId);
     
         // 4️⃣ Follow the "success" edge
@@ -693,13 +685,25 @@ export const processNode = async (
         }
         const selectedTags: string[] = tagsData.selectedTags;
         
-        // Update the Contact record by pushing the selected tags to the existing tags array.
+        // Get the current contact to check existing tags
+        const currentContact = await prisma.contact.findUnique({
+          where: { phoneNumber: recipient },
+          select: { tags: true }
+        });
+        
+        if (!currentContact) {
+          throw new Error(`Contact with phoneNumber ${recipient} not found.`);
+        }
+        
+        // Combine existing tags with new tags and remove duplicates
+        const existingTags = currentContact.tags || [];
+        const uniqueTags = [...new Set([...existingTags, ...selectedTags])];
+        
+        // Update the Contact record with unique tags
         await prisma.contact.update({
           where: { phoneNumber: recipient },
           data: {
-            tags: {
-              push: selectedTags,
-            },
+            tags: uniqueTags,
           },
         });
         
@@ -745,7 +749,7 @@ export const processNode = async (
       if (questionData) {
         const questionMessage = {
           text: convertHtmlToWhatsAppText(questionData.questionText),
-          chatId: currentNode.chatbotId,
+          chatId: currentNode.chatId,
           buttons: questionData.answerVariants?.map((variant: any, index: number) => ({
             id: `${index}_node_${currentNode.id}`,
             title: variant,
@@ -768,6 +772,7 @@ export const processNode = async (
               where: {
                 recipient: recipient,
                 chatbotId: currentNode?.chatbotId,
+
               },
             });
     
@@ -838,9 +843,35 @@ export const processNode = async (
             typeof a.key === "string" && typeof a.value === "string"
         );
     
-        // 4) Reduce into a flat object for JSON storage
+        // 4) Resolve variables in both keys and values
+        const resolvedPairs = await Promise.all(
+          cleanPairs.map(async ({ key, value }: { key: string; value: string }) => {
+            let resolvedKey = key;
+            let resolvedValue = value;
+    
+            // Resolve variables in the key
+            if (key.includes("@")) {
+              resolvedKey = await resolveVariables(key, currentNode?.chatId || currentNode?.chatbotId, recipient, agentPhoneNumberId);
+            }
+            if (key.includes("{{")) {
+              resolvedKey = await resolveContactAttributes(key, recipient);
+            }
+    
+            // Resolve variables in the value
+            if (value.includes("@")) {
+              resolvedValue = await resolveVariables(value, currentNode?.chatId || currentNode?.chatbotId, recipient, agentPhoneNumberId);
+            }
+            if (value.includes("{{")) {
+              resolvedValue = await resolveContactAttributes(value, recipient);
+            }
+    
+            return { key: resolvedKey, value: resolvedValue };
+          })
+        );
+    
+        // 5) Reduce into a flat object for JSON storage
         //    stripping any leading "@" from the key:
-        const attributesJson: Record<string, string> = cleanPairs.reduce(
+        const attributesJson: Record<string, string> = resolvedPairs.reduce(
           (obj: Record<string, string>, { key, value }: { key: string; value: string }) => {
             // remove leading @ if present
             const sanitizedKey = key.startsWith("@") 
@@ -853,7 +884,7 @@ export const processNode = async (
           {}
         );
         
-        // 5) Update the contact's JSON attributes column
+        // 6) Update the contact's JSON attributes column
         await prisma.contact.update({
           where: { phoneNumber: recipient },
           data: { attributes: attributesJson },
@@ -862,7 +893,7 @@ export const processNode = async (
         // Check rules after successful attribute update
         await checkRulesForNodeAction(recipient, "attributeChanged", agentPhoneNumberId, undefined);
     
-        // 6) On success, transition along the first outgoing edge
+        // 7) On success, transition along the first outgoing edge
         const nextEdge = edges.find(edge => edge.sourceId === currentNode.id);
         if (nextEdge) {
           const nextNode = nodes.find(node => node.id === nextEdge.targetId);
@@ -1251,7 +1282,7 @@ export const sendMessage = async (
           // Resolve variables in the message text
           messageBody = message.message;
           if (!plainText && messageBody.includes("@")) {
-            messageBody = await resolveVariables(messageBody, chatbotId);
+            messageBody = await resolveVariables(messageBody, chatbotId, recipient, agentPhoneNumberId||"");
           }
           if (!plainText && messageBody.includes("{{")) {
             messageBody = await resolveContactAttributes(messageBody, recipient);
@@ -1358,7 +1389,7 @@ export const sendMessageWithButtons = async (
     const url = `${metaWhatsAppAPI.baseURL}/${agentPhoneNumberId}/messages`;
 
     const headerText:any = buttonMessage.header && buttonMessage.header.type === "text"
-    ? await resolveVariables(buttonMessage.header, buttonMessage.chatId)
+    ? await resolveVariables(buttonMessage.header, buttonMessage.chatId,recipient,agentPhoneNumberId)
     : undefined;
 
       const headerPayload = buttonMessage.header && (buttonMessage.header as any).type
@@ -1370,7 +1401,7 @@ export const sendMessageWithButtons = async (
     let bodyText=buttonMessage.body.text;
 
     if (buttonMessage.body.text && buttonMessage.body.text.includes("@")) {
-      bodyText = await resolveVariables(buttonMessage.body.text, buttonMessage.chatId);
+      bodyText = await resolveVariables(buttonMessage.body.text, buttonMessage.chatId,recipient,agentPhoneNumberId);
     }
     if (buttonMessage.body.text && buttonMessage.body.text.includes("{{")) {
       bodyText = await resolveContactAttributes(buttonMessage.body.text, recipient);
