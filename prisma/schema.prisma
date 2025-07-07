@@ -447,6 +447,7 @@ model Template {
   keywordTemplates KeywordTemplate[]
   messages         Message[]
   user             User              @relation(fields: [userId], references: [id])
+  rejectionError   String?
 }
 
 model KeywordTemplate {

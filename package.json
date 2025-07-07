@@ -16,7 +16,6 @@
   "dependencies": {
     "@hokify/agenda": "^6.3.0",
     "@hubspot/api-client": "^12.0.1",
-    "@prisma/client": "^6.7.0",
     "@sendgrid/mail": "^8.1.5",
     "@types/cookie-parser": "^1.4.8",
     "aws-sdk": "^2.1692.0",
@@ -38,16 +37,17 @@
     "jsonwebtoken": "^9.0.2",
     "mime-types": "^2.1.35",
     "multer": "^1.4.5-lts.1",
-    "npm": "^11.0.0",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
     "pg": "^8.12.0",
     "razorpay": "^2.9.6",
     "request": "^2.88.2",
     "socket.io": "^4.8.1",
-    "swagger-jsdoc": "^6.2.8"
+    "swagger-jsdoc": "^6.2.8",
+    "tmp-promise": "^3.0.3"
   },
   "devDependencies": {
+    "@prisma/client": "^6.11.0",
     "@types/bcrypt": "^5.0.2",
     "@types/body-parser": "^1.19.5",
     "@types/cors": "^2.8.17",
@@ -61,9 +61,12 @@
     "@types/pg": "^8.11.6",
     "@types/request": "^2.48.12",
     "@types/swagger-jsdoc": "^6.0.4",
+    "@types/tmp": "^0.2.6",
     "cors": "^2.8.5",
+    "i": "^0.3.7",
     "nodemon": "^3.1.0",
-    "prisma": "^6.7.0",
+    "npm": "^11.4.2",
+    "prisma": "^6.11.0",
     "rimraf": "^6.0.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.2"

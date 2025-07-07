@@ -25,7 +25,10 @@ router.get("/", getAllTemplates);
 router.get("/sync", syncTemplatesController);
 router.get("/approved", getAllApprovedTemplates);
 router.get("/library", getTemplatesLibrary);
-router.post("/", upload.single("file"),createTemplate);
+router.post("/", upload.fields([
+  { name: "file", maxCount: 1 },
+  { name: "carouselFiles[]", maxCount: 10 }
+]), createTemplate);
 router.get('/brodcast', getBroadcasts);
 router.post("/brodcast", createBroadcast);
 router.get("/brodcast/:id", getBroadcastById);
