@@ -322,6 +322,11 @@ const checkAndSendDefaultMaterial = async (
   agentPhoneNumberId: string | undefined,
   text: string
 ): Promise<boolean> => {
+  // Early return if no defaultActionSettings
+  if (!defaultActionSettings) {
+    return false;
+  }
+
   const workingHours = defaultActionSettings.workingHours as WorkingHours;
   // Check for outside working hours
   if (
@@ -370,7 +375,7 @@ const checkAndSendDefaultMaterial = async (
   
 
   // Check for no agents online
-  if (isWithinWorkingHours(workingHours) && defaultActionSettings?.noAgentOnlineEnabled && agentPhoneNumberId) {
+  if (workingHours && isWithinWorkingHours(workingHours) && defaultActionSettings?.noAgentOnlineEnabled && agentPhoneNumberId) {
     // Find all agents with matching selectedPhoneNumberId
     const agents = await prisma.user.findMany({
       where: {
