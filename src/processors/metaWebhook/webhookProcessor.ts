@@ -14,6 +14,7 @@ import { processBroadcastStatus } from "../../subProcessors/metaWebhook";
 import fs from 'fs';
 import path from 'path';
 import { uploadMediaToDigitalOcean } from "../inboxProcessor";
+import { findMatchingKeyword } from "../../utils/keywordMatcher";
 
 export const processChatFlow = async (chatbotId: number, recipient: string, agentPhoneNumberId: string | undefined) => {
   try {
@@ -1818,18 +1819,17 @@ export const getOrCreateConversation = async (recipient: string, message: any): 
 export const findChatbotIdByKeyword = async (text: string | undefined): Promise<number | null> => {
   if (!text) return null;
   
-  const keyword = await prisma.keyword.findFirst({
-    where: {
-      value: {
-        contains: text,
-        mode: "insensitive",
-      },
-    },
+  // Get all keywords to perform advanced matching
+  const allKeywords = await prisma.keyword.findMany({
     include: { chatbot: true },
   });
+  
+  // Use the new matching logic to find the best matching keyword
+  const matchResult = findMatchingKeyword(text, allKeywords);
+  const keyword = matchResult?.keyword;
 
   if (keyword?.chatbot) {
-    console.log(`Keyword matched. Using chatbot ID: ${keyword.chatbot.id}`);
+    console.log(`Keyword matched: "${keyword.value}" with ${matchResult?.matchType} match (score: ${matchResult?.matchScore?.toFixed(2)}). Using chatbot ID: ${keyword.chatbot.id}`);
     return keyword.chatbot.id;
   }
   
@@ -2128,18 +2128,19 @@ export const handleInvalidResponse = async (conversation: any, failureCount: num
 };
 
 export const processKeywordMessage = async (text: string, recipient: string, agentPhoneNumberId: string | undefined) => {
-  const keyword = await prisma.keyword.findFirst({
-    where: {
-      value: {
-        contains: text,
-        mode: "insensitive",
-      },
-    },
+  // Get all keywords to perform advanced matching
+  const allKeywords = await prisma.keyword.findMany({
     include: { chatbot: true },
   });
+  
+  // Use the new matching logic to find the best matching keyword
+  const matchResult = findMatchingKeyword(text, allKeywords);
+  const keyword = matchResult?.keyword;
 
   if (keyword?.chatbot) {
     const chatbotId = keyword.chatbot.id;
+    console.log(`Keyword matched: "${keyword.value}" with ${matchResult?.matchType} match (score: ${matchResult?.matchScore?.toFixed(2)}). Starting chatbot flow.`);
+    
     await prisma.conversation.update({
       where: { id: (await prisma.conversation.findFirst({ where: { recipient } }))?.id },
       data: { answeringQuestion: false },
