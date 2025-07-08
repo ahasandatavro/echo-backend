@@ -14,6 +14,7 @@ import {
 import { processWebhookMessage } from "../processors/inboxProcessor";
 import { handleFallbackMaterial, isWithinWorkingHours, processKeyword, sendDefaultMaterial } from "../processors/metaWebhook/keywordProcessor";
 import { validateUserResponse } from "../helpers/validation";
+import { findMatchingKeyword } from "../utils/keywordMatcher";
 import axios from "axios";
 import { bump } from "../helpers";
 
@@ -1175,14 +1176,13 @@ const evaluateRuleConditions = async (
   // 1️⃣ Keyword Filter
   if (conditions.keywordFilter) {
     const text = message?.text?.body || "";
-    const keyword = await prisma.keyword.findFirst({
-      where: {
-        value: {
-          equals: text,
-          mode: "insensitive",
-        },
-      },
-    });
+    
+    // Get all keywords to perform advanced matching
+    const allKeywords = await prisma.keyword.findMany();
+    
+    // Use the new matching logic to find the best matching keyword
+    const matchResult = findMatchingKeyword(text, allKeywords);
+    const keyword = matchResult?.keyword;
 
     if (keyword) {
       return false;
@@ -1224,14 +1224,13 @@ const evaluateRuleConditions = async (
   }
    if(conditions.selectedFilter==="noKeyword"){
     const text = message?.text?.body || "";
-    const keyword = await prisma.keyword.findFirst({
-      where: {
-        value: {
-          equals: text,
-          mode: "insensitive",
-        },
-      },
-    });
+    
+    // Get all keywords to perform advanced matching
+    const allKeywords = await prisma.keyword.findMany();
+    
+    // Use the new matching logic to find the best matching keyword
+    const matchResult = findMatchingKeyword(text, allKeywords);
+    const keyword = matchResult?.keyword;
 
     if (!keyword) {
       return false;
@@ -1963,15 +1962,14 @@ export const getNextNodeIdFromQuestion = (
 };
 
 export const findChatbotIdByKeyword = async (text: string): Promise<number | null> => {
-  const keyword = await prisma.keyword.findFirst({
-    where: {
-      value: {
-        equals: text,
-        mode: "insensitive",
-      },
-    },
+  // Get all keywords to perform advanced matching
+  const allKeywords = await prisma.keyword.findMany({
     include: { chatbot: true },
   });
+  
+  // Use the new matching logic to find the best matching keyword
+  const matchResult = findMatchingKeyword(text, allKeywords);
+  const keyword = matchResult?.keyword;
 
   return keyword?.chatbot?.id || null;
 };
