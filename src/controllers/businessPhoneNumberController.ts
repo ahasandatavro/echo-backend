@@ -146,6 +146,10 @@ export const deleteBusinessPhoneNumber = async (req: Request, res: Response) => 
         where: { businessPhoneNumberId: businessPhoneNumber.id }
       });
 
+       await tx.roundRobinState.deleteMany({
+        where: { phoneNumberId: businessPhoneNumber.metaPhoneNumberId }
+       });
+
       // 4. Handle conversations and their related data
       const conversations = await tx.conversation.findMany({
         where: { businessPhoneNumberId: businessPhoneNumber.id },
