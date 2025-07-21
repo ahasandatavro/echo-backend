@@ -16,6 +16,7 @@ import { parse } from 'csv-parse/sync';
 import path from 'path';
 import { ProcessRulesForAttributes } from "../processors/contactProcessor/contactProcessor";
 import { checkContactLimit, checkChatAssignmentAccess } from "../utils/packageUtils";
+import { parsePhoneNumberFromString, getCountries, getCountryCallingCode, getCountryName } from 'libphonenumber-js';
 
 // Helper function to get user's phone number ID
 const getUserPhoneNumberId = async (userId: number): Promise<string | undefined> => {
@@ -1662,4 +1663,107 @@ export const importContacts = async (req: Request, res: Response) => {
       message: error instanceof Error ? error.message : "Unknown error"
     });
   }
+};
+
+export const getFilteredAttributesByKeyword = async (req: Request, res: Response) => {
+  try {
+    const user: any = req.user;
+    const keyword = (req.query.keyword as string || '').toLowerCase();
+    if (!keyword) {
+      return res.status(400).json({ error: 'Keyword query parameter is required' });
+    }
+    // Find all contacts created by this user
+    const contacts = await prisma.contact.findMany({
+      where: { createdById: user.userId },
+      select: { attributes: true },
+    });
+    // Collect all attribute keys
+    const allKeys = contacts.flatMap(contact =>
+      contact.attributes && typeof contact.attributes === 'object'
+        ? Object.keys(contact.attributes)
+        : []
+    );
+    // Filter and deduplicate keys
+    const filteredKeys = Array.from(new Set(
+      allKeys.filter(key => key.toLowerCase().includes(keyword))
+    ));
+    res.json(filteredKeys);
+  } catch (error) {
+    console.error('Error fetching filtered attributes:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+};
+
+export const getAttributeOptionsForUser = async (req: Request, res: Response) => {
+  try {
+    const user: any = req.user;
+    const attribute = req.query.attribute as string;
+    if (!attribute) {
+      return res.status(400).json({ error: 'Attribute query parameter is required' });
+    }
+    // Find all contacts created by this user
+    const contacts = await prisma.contact.findMany({
+      where: { createdById: user.userId },
+      select: { attributes: true },
+    });
+    // Collect all values for the exact attribute key
+    const values = contacts.flatMap(contact => {
+      if (contact.attributes && typeof contact.attributes === 'object' && attribute in contact.attributes) {
+        return [contact.attributes[attribute]];
+      }
+      return [];
+    });
+    // Filter and deduplicate values
+    const uniqueValues = Array.from(new Set(values));
+    res.json(uniqueValues);
+  } catch (error) {
+    console.error('Error fetching attribute options:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+};
+
+export const getCountriesByPhoneNumber = async (req: Request, res: Response) => {
+  try {
+    const user: any = req.user;
+    const keyword = (req.query.keyword as string || '').toLowerCase();
+    if (!keyword) {
+      return res.json([]);
+    }
+    // Find all contacts created by this user
+    const contacts = await prisma.contact.findMany({
+      where: { createdById: user.userId },
+      select: { phoneNumber: true },
+    });
+    // Use a Set to collect unique country names
+    const countrySet = new Set<string>();
+    for (const contact of contacts) {
+      if (contact.phoneNumber) {
+        let phone = contact.phoneNumber;
+        if (!phone.startsWith('+')) {
+          phone = '+' + phone;
+        }
+        try {
+          const phoneNumber = parsePhoneNumberFromString(phone);
+          if (phoneNumber && phoneNumber.country) {
+            const countryCode = phoneNumber.country;
+            const countryName = countryCodeToName[countryCode];
+            if (countryName && countryName.toLowerCase().includes(keyword)) {
+              countrySet.add(countryName);
+            }
+          }
+        } catch (e) {
+          // Ignore invalid phone numbers
+        }
+      }
+    }
+    res.json(Array.from(countrySet));
+  } catch (error) {
+    console.error('Error fetching countries by phone number:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+};
+
+// Static map for country code to country name
+const countryCodeToName: Record<string, string> = {
+  AF: 'Afghanistan', AL: 'Albania', DZ: 'Algeria', AS: 'American Samoa', AD: 'Andorra', AO: 'Angola', AI: 'Anguilla', AQ: 'Antarctica', AG: 'Antigua and Barbuda', AR: 'Argentina', AM: 'Armenia', AW: 'Aruba', AU: 'Australia', AT: 'Austria', AZ: 'Azerbaijan', BS: 'Bahamas', BH: 'Bahrain', BD: 'Bangladesh', BB: 'Barbados', BY: 'Belarus', BE: 'Belgium', BZ: 'Belize', BJ: 'Benin', BM: 'Bermuda', BT: 'Bhutan', BO: 'Bolivia', BA: 'Bosnia and Herzegovina', BW: 'Botswana', BR: 'Brazil', IO: 'British Indian Ocean Territory', VG: 'British Virgin Islands', BN: 'Brunei', BG: 'Bulgaria', BF: 'Burkina Faso', BI: 'Burundi', KH: 'Cambodia', CM: 'Cameroon', CA: 'Canada', CV: 'Cape Verde', KY: 'Cayman Islands', CF: 'Central African Republic', TD: 'Chad', CL: 'Chile', CN: 'China', CX: 'Christmas Island', CC: 'Cocos Islands', CO: 'Colombia', KM: 'Comoros', CK: 'Cook Islands', CR: 'Costa Rica', HR: 'Croatia', CU: 'Cuba', CW: 'Curacao', CY: 'Cyprus', CZ: 'Czech Republic', CD: 'Democratic Republic of the Congo', DK: 'Denmark', DJ: 'Djibouti', DM: 'Dominica', DO: 'Dominican Republic', TL: 'East Timor', EC: 'Ecuador', EG: 'Egypt', SV: 'El Salvador', GQ: 'Equatorial Guinea', ER: 'Eritrea', EE: 'Estonia', ET: 'Ethiopia', FK: 'Falkland Islands', FO: 'Faroe Islands', FJ: 'Fiji', FI: 'Finland', FR: 'France', PF: 'French Polynesia', GA: 'Gabon', GM: 'Gambia', GE: 'Georgia', DE: 'Germany', GH: 'Ghana', GI: 'Gibraltar', GR: 'Greece', GL: 'Greenland', GD: 'Grenada', GU: 'Guam', GT: 'Guatemala', GG: 'Guernsey', GN: 'Guinea', GW: 'Guinea-Bissau', GY: 'Guyana', HT: 'Haiti', HN: 'Honduras', HK: 'Hong Kong', HU: 'Hungary', IS: 'Iceland', IN: 'India', ID: 'Indonesia', IR: 'Iran', IQ: 'Iraq', IE: 'Ireland', IM: 'Isle of Man', IL: 'Israel', IT: 'Italy', CI: 'Ivory Coast', JM: 'Jamaica', JP: 'Japan', JE: 'Jersey', JO: 'Jordan', KZ: 'Kazakhstan', KE: 'Kenya', KI: 'Kiribati', XK: 'Kosovo', KW: 'Kuwait', KG: 'Kyrgyzstan', LA: 'Laos', LV: 'Latvia', LB: 'Lebanon', LS: 'Lesotho', LR: 'Liberia', LY: 'Libya', LI: 'Liechtenstein', LT: 'Lithuania', LU: 'Luxembourg', MO: 'Macau', MK: 'Macedonia', MG: 'Madagascar', MW: 'Malawi', MY: 'Malaysia', MV: 'Maldives', ML: 'Mali', MT: 'Malta', MH: 'Marshall Islands', MR: 'Mauritania', MU: 'Mauritius', YT: 'Mayotte', MX: 'Mexico', FM: 'Micronesia', MD: 'Moldova', MC: 'Monaco', MN: 'Mongolia', ME: 'Montenegro', MS: 'Montserrat', MA: 'Morocco', MZ: 'Mozambique', MM: 'Myanmar', NA: 'Namibia', NR: 'Nauru', NP: 'Nepal', NL: 'Netherlands', AN: 'Netherlands Antilles', NC: 'New Caledonia', NZ: 'New Zealand', NI: 'Nicaragua', NE: 'Niger', NG: 'Nigeria', NU: 'Niue', KP: 'North Korea', MP: 'Northern Mariana Islands', NO: 'Norway', OM: 'Oman', PK: 'Pakistan', PW: 'Palau', PS: 'Palestine', PA: 'Panama', PG: 'Papua New Guinea', PY: 'Paraguay', PE: 'Peru', PH: 'Philippines', PN: 'Pitcairn', PL: 'Poland', PT: 'Portugal', PR: 'Puerto Rico', QA: 'Qatar', CG: 'Republic of the Congo', RE: 'Reunion', RO: 'Romania', RU: 'Russia', RW: 'Rwanda', BL: 'Saint Barthelemy', SH: 'Saint Helena', KN: 'Saint Kitts and Nevis', LC: 'Saint Lucia', MF: 'Saint Martin', PM: 'Saint Pierre and Miquelon', VC: 'Saint Vincent and the Grenadines', WS: 'Samoa', SM: 'San Marino', ST: 'Sao Tome and Principe', SA: 'Saudi Arabia', SN: 'Senegal', RS: 'Serbia', SC: 'Seychelles', SL: 'Sierra Leone', SG: 'Singapore', SX: 'Sint Maarten', SK: 'Slovakia', SI: 'Slovenia', SB: 'Solomon Islands', SO: 'Somalia', ZA: 'South Africa', KR: 'South Korea', SS: 'South Sudan', ES: 'Spain', LK: 'Sri Lanka', SD: 'Sudan', SR: 'Suriname', SJ: 'Svalbard and Jan Mayen', SZ: 'Swaziland', SE: 'Sweden', CH: 'Switzerland', SY: 'Syria', TW: 'Taiwan', TJ: 'Tajikistan', TZ: 'Tanzania', TH: 'Thailand', TG: 'Togo', TK: 'Tokelau', TO: 'Tonga', TT: 'Trinidad and Tobago', TN: 'Tunisia', TR: 'Turkey', TM: 'Turkmenistan', TC: 'Turks and Caicos Islands', TV: 'Tuvalu', UG: 'Uganda', UA: 'Ukraine', AE: 'United Arab Emirates', GB: 'United Kingdom', US: 'United States', UY: 'Uruguay', UZ: 'Uzbekistan', VU: 'Vanuatu', VA: 'Vatican', VE: 'Venezuela', VN: 'Vietnam', VI: 'Virgin Islands', YE: 'Yemen', ZM: 'Zambia', ZW: 'Zimbabwe'
 };

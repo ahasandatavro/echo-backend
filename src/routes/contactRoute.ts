@@ -24,7 +24,10 @@ import {
   importContacts,
   triggerChatbotByPhoneNumber,
   getCurrentAssignments,
-  getContactStatus
+  getContactStatus,
+  getFilteredAttributesByKeyword,
+  getAttributeOptionsForUser,
+  getCountriesByPhoneNumber
 } from "../controllers/contactController";
 import { authenticateJWT } from '../middlewares/authMiddleware';
 const router = Router();
@@ -32,6 +35,9 @@ const upload = multer({ dest: "uploads/" });
 
 router.get("/", authenticateJWT, getAllContacts);
 router.get("/imported", authenticateJWT, getAllImportedContacts);
+router.get("/attributes", authenticateJWT, getFilteredAttributesByKeyword);
+router.get("/attribute-options", authenticateJWT, getAttributeOptionsForUser);
+router.get("/countries", authenticateJWT, getCountriesByPhoneNumber);
 router.get("/:id", authenticateJWT, getContactById);
 router.get("/:id/messages", authenticateJWT, getMessagesByContactId);
 router.post("/", authenticateJWT, createContact);
