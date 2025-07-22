@@ -340,6 +340,131 @@ const bp=await prisma.businessPhoneNumber.findFirst({
   }
 };
 
+/**
+ * Update timeout settings for the user's selected business phone number
+ * @param req - Express request object containing timeout settings in body
+ * @param res - Express response object
+ * @returns JSON response with success message and updated data
+ * 
+ * Request body should contain:
+ * - timeoutMinutes: number (default: 30)
+ * - enableExitNotification: boolean (default: false)
+ * - exitNotificationMessage: string (default: "Please type or select...")
+ * - exitNotificationLeadTime: number (default: 5)
+ */
+export const updateTimeoutSettings = async (req: Request, res: Response) => {
+  try {
+    const user: any = req.user;
+
+    // 1) Figure out which BusinessPhoneNumber the user has selected
+    const dbUser = await prisma.user.findUnique({
+      where: { id: user.userId },
+      select: { selectedPhoneNumberId: true },
+    });
+
+    if (!dbUser?.selectedPhoneNumberId) {
+      return res
+        .status(400)
+        .json({ message: "No phone number selected for this user." });
+    }
+
+    const metaId = dbUser.selectedPhoneNumberId;
+
+    // 2) Find the record by its string metaPhoneNumberId
+    const bp = await prisma.businessPhoneNumber.findFirst({
+      where: { metaPhoneNumberId: metaId },
+      select: { id: true },
+    });
+
+    if (!bp) {
+      return res
+        .status(404)
+        .json({ message: `No BusinessPhoneNumber found for metaId=${metaId}` });
+    }
+
+    // 3) Pull the payload
+    const { timeoutMinutes, enableExitNotification, exitNotificationMessage, exitNotificationLeadTime } = req.body as {
+      timeoutMinutes: number;
+      enableExitNotification: boolean;
+      exitNotificationMessage: string;
+      exitNotificationLeadTime: number;
+    };
+
+    // 4) Update by the numeric `id`
+    const updated = await prisma.businessPhoneNumber.update({
+      where: { id: bp.id },
+      data: {
+        timeoutMinutes,
+        enableExitNotification,
+        exitNotificationMessage,
+        exitNotificationLeadTime,
+      },
+    });
+
+    return res
+      .status(200)
+      .json({ message: "Timeout settings saved.", updated });
+  } catch (err) {
+    console.error("Error saving timeout settings:", err);
+    return res
+      .status(500)
+      .json({ message: "Unable to save timeout settings." });
+  }
+};
+
+/**
+ * Get timeout settings for the user's selected business phone number
+ * @param req - Express request object
+ * @param res - Express response object
+ * @returns JSON response with current timeout settings
+ * 
+ * Returns:
+ * - timeoutMinutes: number
+ * - enableExitNotification: boolean
+ * - exitNotificationMessage: string
+ * - exitNotificationLeadTime: number
+ */
+export const getTimeoutSettings = async (req: Request, res: Response) => {
+  try {
+    const userId = (req.user as any).userId;
+
+    // 1) find which BusinessPhoneNumber this user has selected
+    const dbUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { selectedPhoneNumberId: true },
+    });
+    if (!dbUser?.selectedPhoneNumberId) {
+      return res.status(400).json({ message: "No phone number selected." });
+    }
+    
+    const bp = await prisma.businessPhoneNumber.findFirst({
+      where: { metaPhoneNumberId: dbUser.selectedPhoneNumberId },
+      select: { id: true },
+    });
+
+    // 2) load its timeout settings
+    const phone = await prisma.businessPhoneNumber.findUnique({
+      where: { id: bp?.id },
+      select: {
+        timeoutMinutes: true,
+        enableExitNotification: true,
+        exitNotificationMessage: true,
+        exitNotificationLeadTime: true,
+      },
+    });
+
+    return res.json({
+      timeoutMinutes: phone?.timeoutMinutes ?? 30,
+      enableExitNotification: phone?.enableExitNotification ?? false,
+      exitNotificationMessage: phone?.exitNotificationMessage ?? "Please type or select from the options above if you would like to continue, else this conversation will reset and you may have to share your responses again.",
+      exitNotificationLeadTime: phone?.exitNotificationLeadTime ?? 5,
+    });
+  } catch (err) {
+    console.error("GET timeout settings error:", err);
+    return res.status(500).json({ message: "Failed to load timeout settings." });
+  }
+};
+
 //     // 1. Get the logged-in user
 //     const user: any = req.user;
 

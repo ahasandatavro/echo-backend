@@ -8,6 +8,8 @@ import {
   updateFallbackSettings,
   getFallbackSettings,
   getBusinessPhoneNumberDetails,
+  updateTimeoutSettings,
+  getTimeoutSettings,
 } from "../controllers/businessPhoneNumberController";
 
 const router = express.Router();
@@ -20,5 +22,7 @@ router.put("/:id", updateBusinessPhoneNumber);
 router.delete("/:id", deleteBusinessPhoneNumber);
 router.post("/chatbot/settings/fallback", updateFallbackSettings);
 router.get("/chatbot/settings/fallback", getFallbackSettings);
+router.post("/chatbot/settings/timeout", updateTimeoutSettings);
+router.get("/chatbot/settings/timeout", getTimeoutSettings);
 
 export default router; 
