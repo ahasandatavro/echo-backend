@@ -61,6 +61,7 @@ export const getUsers = async (req: Request, res: Response): Promise<void> => {
       firstName: user.firstName || "",
       lastName: user.lastName || "",
       email: user.email || "",
+      image: user.image || "",
       phoneNumber: user.phoneNumber || "",
       role: user.role || "USER",
       team: user.teams.map((team) => team.name).join(", "),

@@ -15,6 +15,7 @@ import fs from 'fs';
 import path from 'path';
 import { uploadMediaToDigitalOcean } from "../inboxProcessor";
 import { findMatchingKeyword } from "../../utils/keywordMatcher";
+import  {scheduleChatbotTimers}  from "../../utils/chatbotTimerUtils";
 
 export const processChatFlow = async (chatbotId: number, recipient: string, agentPhoneNumberId: string | undefined) => {
   try {
@@ -92,6 +93,17 @@ export const processNode = async (
       console.error(`Node with ID ${nodeId} not found.`);
       return;
     }
+    // Fetch conversation once at the root
+    const conversation = await prisma.conversation.findFirst({
+      where: {
+        recipient: recipient,
+        chatbotId: currentNode.chatId,
+      },
+      include: { businessPhoneNumber: true },
+    });
+    if (!conversation) {
+      throw new Error("Conversation not found");
+    }
     await bump(currentNode.chatId, "stepsFinished");
     if (currentNode.type === "start") {
       const outgoingEdge = edges.find(
@@ -118,6 +130,9 @@ export const processNode = async (
       if (messageData && messageData.length > 0) {
         for (const message of messageData) {
           await sendMessage(recipient, message, currentNode?.chatId, 1,false, agentPhoneNumberId);
+          // Reset timer after sending a message
+          await scheduleChatbotTimers(conversation);
+          
         }
       }
 
@@ -131,12 +146,10 @@ export const processNode = async (
         if (nextNodeId) {
           const conversation = await prisma.conversation.findFirst({
             where: {
-              recipient: recipient, // Matches the recipient
-              chatbotId: currentNode.chatbotId,    // Matches the chatbotId
+              recipient: recipient,
+              chatbotId: currentNode.chatbotId,
             },
           });
-          
-
           if (!conversation) {
             throw new Error("Conversation not found");
           }
@@ -289,6 +302,8 @@ export const processNode = async (
         buttonOptions: buttons.map((b:any) => ({ id: b.reply.id, title: b.reply.title })),
         //attachment: headerAttachmentUrl, 
       }, agentPhoneNumberId);
+      // Reset timer after sending buttons
+      await scheduleChatbotTimers(conversation);
     } catch (err) {
       console.error('Error sending button message:', err);
     }
@@ -308,6 +323,8 @@ export const processNode = async (
         try {
           // Send list message
           await sendMessageWithList(recipient, listMessage, currentNode.id, agentPhoneNumberId);
+          // Reset timer after sending list
+          await scheduleChatbotTimers(conversation);
     
           // Update the Variable table after successful message sending
           if (listData?.saveAnswerVariable) {
@@ -761,6 +778,7 @@ export const processNode = async (
           // Send question message
           console.log(`Sending question message:`, questionMessage);
           await sendQuestion(recipient, questionMessage, currentNode?.id, agentPhoneNumberId);
+          await scheduleChatbotTimers(conversation);
     
           // Update the Variable table after successful question message sending
           if (questionData.saveAnswerVariable) {
@@ -778,6 +796,7 @@ export const processNode = async (
             });
     
             if (conversation) {
+              await scheduleChatbotTimers(conversation);
               // Check if the variable already exists
               const existingVariable = await prisma.variable.findFirst({
                 where: {

@@ -2,6 +2,7 @@ import { Agenda, Job } from '@hokify/agenda';
 import { brodcastTemplate } from '../processors/template/templateProcessor';
 import { prisma } from '../models/prismaClient';
 import { syncTemplates } from '../services/templateService';
+import { registerChatbotTimerJobs } from '../utils/chatbotTimerUtils';
 
 if (!process.env.MONGODB_URI) {
   throw new Error('MONGODB_URI environment variable is not set. Please add it to your .env file.');
@@ -88,6 +89,7 @@ agenda.define<SendScheduledBroadcastData>('sendScheduledBroadcast', async (job: 
 export const initializeAgenda = async () => {
   try {
     await agenda.start();
+    registerChatbotTimerJobs();
     //make 1 minute interval
     //await agenda.every('1 minute', 'syncMetaTemplates');
     //await agenda.now('syncMetaTemplates');
