@@ -79,15 +79,8 @@ agenda.define<SendScheduledBroadcastData>('sendScheduledBroadcast', async (job: 
   }
 });
 
-// Define waiting message job processor
-console.log('📋 Registering waiting-message-job processor');
 agenda.define('waiting-message-job', processWaitingMessageJob);
-console.log('✅ waiting-message-job processor registered successfully');
-
-// Define 24-hour no response job processor
-console.log('📋 Registering no-response-24h-job processor');
 agenda.define('no-response-24h-job', processNoResponse24hJob);
-console.log('✅ no-response-24h-job processor registered successfully');
 
 // agenda.define('syncMetaTemplates', async (job: Job) => {
 //   try {
@@ -100,27 +93,10 @@ console.log('✅ no-response-24h-job processor registered successfully');
 
 export const initializeAgenda = async () => {
   try {
-    console.log('🚀 Starting Agenda...');
     await agenda.start();
-    console.log('✅ Agenda started successfully');
-    
     registerChatbotTimerJobs();
-    console.log('✅ Chatbot timer jobs registered');
-    
-    // Check if waiting-message-job is properly registered
-    const definedJobs = (agenda as any)._definitions;
-    if (definedJobs) {
-      console.log('📋 Defined jobs:', Object.keys(definedJobs));
-      console.log('🔍 waiting-message-job defined:', !!definedJobs['waiting-message-job']);
-    } else {
-      console.log('⚠️ Agenda definitions not available yet');
-    }
-    
-    //make 1 minute interval
-    //await agenda.every('1 minute', 'syncMetaTemplates');
-    //await agenda.now('syncMetaTemplates');
   } catch (error) {
-    console.error('❌ Failed to start Agenda:', error);
+    console.error('Failed to start Agenda:', error);
     throw error;
   }
 };

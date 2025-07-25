@@ -1391,46 +1391,42 @@ export const sendMessage = async (
     });
     await storeMessage({ recipient, chatbotId, messageType: message.type, text: messageBody }, agentPhoneNumberId);
     
-    // Update lastAgentMessageAt timestamp and schedule 24h job when agent sends a message
-    if (userId && userId > 1) { // userId > 1 indicates it's an agent (not system/bot)
-      try {
-        const businessPhoneNumber = await prisma.businessPhoneNumber.findFirst({
-          where: { metaPhoneNumberId: agentPhoneNumberId }
+      if (userId && userId > 1) {
+    try {
+      const businessPhoneNumber = await prisma.businessPhoneNumber.findFirst({
+        where: { metaPhoneNumberId: agentPhoneNumberId }
+      });
+
+      if (businessPhoneNumber) {
+        const conversation = await prisma.conversation.findFirst({
+          where: {
+            recipient,
+            businessPhoneNumberId: businessPhoneNumber.id
+          },
+          orderBy: { updatedAt: 'desc' }
         });
-        
-        if (businessPhoneNumber) {
-          const conversation = await prisma.conversation.findFirst({
-            where: { 
-              recipient,
-              businessPhoneNumberId: businessPhoneNumber.id 
-            },
-            orderBy: { updatedAt: 'desc' }
+
+        if (conversation) {
+          await prisma.conversation.update({
+            where: { id: conversation.id },
+            data: {
+              lastAgentMessageAt: new Date(),
+              waitingMessageSent: false
+            }
           });
-          
-          if (conversation) {
-            console.log(`💬 Agent sent message - updating lastAgentMessageAt for conversation ${conversation.id}`);
-            await prisma.conversation.update({
-              where: { id: conversation.id },
-              data: { 
-                lastAgentMessageAt: new Date(),
-                waitingMessageSent: false // Reset the flag so waiting message can be sent again if needed
-              }
-            });
-            
-            // Schedule 24-hour no response job when agent sends message
-            console.log(`📅 Agent sent message - scheduling 24h no response job for conversation ${conversation.id}`);
-            const { reschedule24hJobForConversation } = await import("../../utils/noResponse24hUtils");
-            await reschedule24hJobForConversation(
-              conversation.id,
-              recipient,
-              agentPhoneNumberId
-            );
-          }
+
+          const { reschedule24hJobForConversation } = await import("../../utils/noResponse24hUtils");
+          await reschedule24hJobForConversation(
+            conversation.id,
+            recipient,
+            agentPhoneNumberId
+          );
         }
-      } catch (waitingError) {
-        console.error("Error updating agent message timestamp:", waitingError);
       }
+    } catch (waitingError) {
+      console.error("Error updating agent message timestamp:", waitingError);
     }
+  }
   } catch (error) {
     console.error("Error sending message:", error);
   }
