@@ -301,6 +301,7 @@ model Contact {
   messages           Message[]
   notes              Note[]
   assignedTeams      Team[]               @relation("ContactTeams")
+  nodeVisits NodeVisit[] 
 }
 
 model Note {
@@ -348,6 +349,7 @@ model Node {
   edgesIn      Edge[]     @relation("TargetNode")
   chatbot      Chatbot    @relation("ChatbotNodes", fields: [chatId], references: [id])
   variables    Variable[]
+  nodeVisits NodeVisit[]
 }
 
 model Edge {
@@ -376,7 +378,17 @@ model Variable {
   conversation   Conversation? @relation(fields: [conversationId], references: [id])
   node           Node?         @relation(fields: [nodeId], references: [id])
 }
-
+model NodeVisit {
+  id             Int          @id @default(autoincrement())
+  conversationId Int
+  nodeId         Int
+  contactId      Int?
+  enteredAt      DateTime     @default(now())
+  leftAt         DateTime?
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  node           Node         @relation(fields: [nodeId], references: [id])
+  contact        Contact?     @relation(fields: [contactId], references: [id])
+}
 model Conversation {
   id                     Int                  @id @default(autoincrement())
   recipient              String
@@ -398,6 +410,7 @@ model Conversation {
   user                   User?                @relation(fields: [userId], references: [id])
   messages               Message[]
   variables              Variable[]
+  nodeVisits NodeVisit[]
 }
 
 model Keyword {

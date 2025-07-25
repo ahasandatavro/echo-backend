@@ -4,7 +4,7 @@ import { Request, Response } from "express";
 import axios from "axios";
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
 import { PrismaClient } from "@prisma/client";
-const prisma = new PrismaClient();
+import { prisma } from "../models/prismaClient";
 
 export const getAnalytics = async (req: Request, res: Response) => {
   try {
@@ -303,6 +303,172 @@ export const getUserAnalytics = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Error in getUserAnalytics:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+};
+
+export const getChatbotAnalytics = async (req: Request, res: Response) => {
+  try {
+    const { timeRange, chatbotId } = req.query;
+    // 1. Parse time range
+    const now = new Date();
+    let startDate: Date, endDate: Date;
+    if (timeRange === 'Last 6 months') {
+      startDate = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+      endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    } else if (timeRange === 'Last 30 days') {
+      startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      endDate = now;
+    } else if (timeRange === 'This month') {
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    } else {
+      return res.status(400).json({ error: 'Invalid timeRange' });
+    }
+    // 2. Get chatbots (filter by id if provided)
+    const chatbotWhere: any = chatbotId ? { id: parseInt(chatbotId as string, 10) } : {};
+    const chatbots = await prisma.chatbot.findMany({ where: chatbotWhere });
+    // 3. For each chatbot, calculate analytics
+    const analytics = await Promise.all(chatbots.map(async (chatbot) => {
+      // Get all nodes for this chatbot
+      const nodes = await prisma.node.findMany({ where: { chatId: chatbot.id } });
+      const totalNodes = nodes.length;
+      // Get all conversations for this chatbot in time range
+      const conversations = await prisma.conversation.findMany({
+        where: {
+          chatbotId: chatbot.id,
+          createdAt: { gte: startDate, lte: endDate },
+        },
+        include: { contact: true },
+      });
+      // Unique users (contacts)
+      const userMap = new Map();
+      conversations.forEach((conv) => {
+        if (conv.contactId) userMap.set(conv.contactId, conv);
+      });
+      const totalUsers = userMap.size;
+      // Completed users: those whose lastNodeId equals the last node in the flow
+      let completedUsers = 0;
+      let dropoffUsers = 0;
+      let lastNodeId: number | undefined = undefined;
+      if (nodes.length > 0) {
+        // Heuristic: last node = node with no outgoing edges
+        const nodeIds = nodes.map((n) => n.id);
+        const edges = await prisma.edge.findMany({ where: { chatId: chatbot.id } });
+        const sourceIds = new Set(edges.map((e) => e.sourceId));
+        const lastNodes = nodeIds.filter((id) => !sourceIds.has(id));
+        lastNodeId = lastNodes.length === 1 ? lastNodes[0] : undefined;
+      }
+      userMap.forEach((conv) => {
+        if (lastNodeId && conv.lastNodeId === lastNodeId) {
+          completedUsers++;
+        } else {
+          dropoffUsers++;
+        }
+      });
+      const completedPercentage = totalUsers > 0 ? Math.round((completedUsers / totalUsers) * 100) : 0;
+      const dropoffRate = totalUsers > 0 ? Math.round((dropoffUsers / totalUsers) * 100) : 0;
+      return {
+        id: chatbot.id.toString(),
+        name: chatbot.name,
+        totalNodes,
+        totalUsers,
+        completedUsers,
+        completedPercentage,
+        dropoffUsers,
+        dropoffRate,
+      };
+    }));
+    res.json({ analytics });
+  } catch (error) {
+    console.error('Error in getChatbotAnalytics:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+};
+
+export const getChatbotNodeAnalytics = async (req: Request, res: Response) => {
+  try {
+    const { chatbotId } = req.params;
+    const { timeRange } = req.query;
+    if (!chatbotId) {
+      return res.status(400).json({ error: 'Missing chatbotId parameter' });
+    }
+    // Parse time range
+    const now = new Date();
+    let startDate: Date, endDate: Date;
+    if (timeRange === 'Last 6 months') {
+      startDate = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+      endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    } else if (timeRange === 'Last 30 days') {
+      startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      endDate = now;
+    } else if (timeRange === 'This month') {
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    } else {
+      // Default: last 30 days
+      startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      endDate = now;
+    }
+    // Fetch chatbot and nodes
+    const chatbot = await prisma.chatbot.findUnique({ where: { id: parseInt(chatbotId, 10) } });
+    if (!chatbot) {
+      return res.status(404).json({ error: 'Chatbot not found' });
+    }
+    const nodes = await prisma.node.findMany({ where: { chatId: chatbot.id } });
+    // Fetch all NodeVisits for this chatbot in the time range
+    const nodeVisits = await prisma.nodeVisit.findMany({
+      where: {
+        node: { chatId: chatbot.id },
+        enteredAt: { gte: startDate, lte: endDate },
+      },
+      include: { node: true, conversation: true },
+    });
+    // Total unique users for this chatbot
+    const totalChatbotUsers = new Set(nodeVisits.map(v => v.contactId)).size;
+    // For each node, calculate analytics
+    const nodeAnalytics = await Promise.all(nodes.map(async (node) => {
+      // NodeVisits for this node
+      const visitsForNode = nodeVisits.filter(v => v.nodeId === node.id);
+      // Users who reached this node
+      const usersReached = new Set(visitsForNode.map(v => v.contactId));
+      const totalUsersReached = usersReached.size;
+      // Drop-off users: users whose last NodeVisit in their conversation is this node
+      const dropoffUsersSet = new Set();
+      const visitsByConversation = new Map();
+      visitsForNode.forEach(v => {
+        if (!visitsByConversation.has(v.conversationId)) visitsByConversation.set(v.conversationId, []);
+        visitsByConversation.get(v.conversationId).push(v);
+      });
+      for (const [conversationId, visits] of visitsByConversation.entries()) {
+        // Find all visits for this conversation
+        const allVisits = nodeVisits.filter(v => v.conversationId === conversationId);
+        // Find the last visit (by enteredAt)
+        const lastVisit = allVisits.reduce((a, b) => (a.enteredAt > b.enteredAt ? a : b));
+        if (lastVisit.nodeId === node.id && lastVisit.contactId) {
+          dropoffUsersSet.add(lastVisit.contactId);
+        }
+      }
+      const dropoffUsers = dropoffUsersSet.size;
+      const dropoffRate = totalUsersReached > 0 ? Math.round((dropoffUsers / totalUsersReached) * 100) : 0;
+      // Avg. time spent: average (leftAt - enteredAt) for this node
+      const timeDiffs = visitsForNode
+        .filter(v => v.leftAt !== null && v.enteredAt)
+        .map(v => v.leftAt && v.enteredAt ? (v.leftAt.getTime() - v.enteredAt.getTime()) / 1000 : 0); // seconds
+      const avgTimeSpent = timeDiffs.length > 0 ? (timeDiffs.reduce((a, b) => a + b, 0) / timeDiffs.length) : null;
+      return {
+        nodeId: node.id,
+        nodeData: node.data,
+        totalChatbotUsers,
+        totalUsersReached,
+        dropoffUsers,
+        dropoffRate,
+        avgTimeSpent,
+      };
+    }));
+    res.json({ nodes: nodeAnalytics });
+  } catch (error) {
+    console.error('Error in getChatbotNodeAnalytics:', error);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 };

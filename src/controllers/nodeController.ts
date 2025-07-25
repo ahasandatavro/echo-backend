@@ -177,7 +177,9 @@ export const deleteNodeByChatId = async (req: Request, res: Response) => {
     const deletedEdges = await prisma.edge.deleteMany({
       where: { chatId },
     });
-
+    await prisma.nodeVisit.deleteMany({
+     where: { chatId },
+    });
     // Delete nodes associated with the chatId
     const deletedNodes = await prisma.node.deleteMany({
       where: { chatId },
@@ -384,6 +386,9 @@ export const deleteNode = async (req: Request, res: Response) => {
   const { id } = req.params;
 
   try {
+    await prisma.nodeVisit.deleteMany({
+      where: { nodeId: parseInt(id) }
+    });
     await prisma.node.delete({
       where: { id: parseInt(id) },
     });
@@ -510,11 +515,14 @@ export const updateChatFlow = async (req: Request, res: Response) => {
       prisma.edge.deleteMany({
         where: { chatId: chatIdNumber },
       }),
-      // Delete existing nodes after edges have been removed
+      // Delete existing node visits for nodes in this chat flow
+      prisma.nodeVisit.deleteMany({
+        where: { node: { chatId: chatIdNumber } }
+      }),
+      // Delete existing nodes after edges and visits have been removed
       prisma.node.deleteMany({
         where: { chatId: chatIdNumber },
       }),
-
       // Create new nodes
       ...nodes.map((node: any) =>
         prisma.node.create({
