@@ -61,13 +61,13 @@ export const cancelWaitingMessageJob = async (jobId: string): Promise<boolean> =
   }
 };
 
-export const scheduleWaitingMessageIfNeeded = async (
+export const cancelAndRescheduleWaitingMessage = async (
   conversationId: number,
   recipient: string,
   agentPhoneNumberId: string | undefined
 ): Promise<void> => {
   try {
-    console.log(`🔄 scheduleWaitingMessageIfNeeded called for conversation ${conversationId}`);
+    console.log(`🔄 cancelAndRescheduleWaitingMessage called for conversation ${conversationId}`);
     
     // Get current conversation to check for existing job
     const conversation = await prisma.conversation.findUnique({
@@ -79,60 +79,68 @@ export const scheduleWaitingMessageIfNeeded = async (
     console.log(`   - waitingJobId: ${conversation?.waitingJobId || 'None'}`);
     console.log(`   - waitingMessageSent: ${conversation?.waitingMessageSent || false}`);
 
-    // Only schedule if no job is currently scheduled
-    if (!conversation?.waitingJobId) {
-      console.log(`⏰ No existing job found, scheduling new waiting message job...`);
-      const newJobId = await scheduleWaitingMessageJob(conversationId, recipient, agentPhoneNumberId);
-      console.log(`📝 New job ID received: ${newJobId}`);
+    // Cancel existing job if it exists
+    if (conversation?.waitingJobId) {
+      console.log(`🗑️ Cancelling existing waiting job: ${conversation.waitingJobId}`);
+      await cancelWaitingMessageJob(conversation.waitingJobId);
+    }
 
-      if (newJobId) {
-        console.log(`💾 Updating conversation ${conversationId} with new job ID: ${newJobId}`);
-        // Update conversation with new job ID and reset waiting message flag
-        await prisma.conversation.update({
-          where: { id: conversationId },
-          data: {
-            waitingJobId: newJobId,
-            waitingMessageSent: false
-          }
-        });
-        console.log(`✅ Conversation updated successfully`);
-      } else {
-        console.log(`❌ Failed to get new job ID - conversation not updated`);
-      }
+    // Always schedule a new job (whether there was an existing one or not)
+    console.log(`⏰ Scheduling new waiting message job...`);
+    const newJobId = await scheduleWaitingMessageJob(conversationId, recipient, agentPhoneNumberId);
+    console.log(`📝 New job ID received: ${newJobId}`);
+
+    if (newJobId) {
+      console.log(`💾 Updating conversation ${conversationId} with new job ID: ${newJobId}`);
+      // Update conversation with new job ID and reset waiting message flag
+      await prisma.conversation.update({
+        where: { id: conversationId },
+        data: {
+          waitingJobId: newJobId,
+          waitingMessageSent: false
+        }
+      });
+      console.log(`✅ Conversation updated successfully with new job`);
     } else {
-      console.log(`⏰ Job already exists (${conversation.waitingJobId}), skipping scheduling`);
+      console.log(`❌ Failed to get new job ID - conversation not updated`);
     }
   } catch (error) {
-    console.error('❌ Error in scheduleWaitingMessageIfNeeded:', error);
+    console.error('❌ Error in cancelAndRescheduleWaitingMessage:', error);
     console.error('Error stack:', (error as Error).stack);
   }
 };
 
-export const resetWaitingMessageState = async (conversationId: number): Promise<void> => {
+export const cancelWaitingMessageForConversation = async (conversationId: number): Promise<void> => {
   try {
+    console.log(`🗑️ cancelWaitingMessageForConversation called for conversation ${conversationId}`);
+    
     // Get current conversation to check for existing job
     const conversation = await prisma.conversation.findUnique({
       where: { id: conversationId },
       select: { waitingJobId: true }
     });
 
+    console.log(`📋 Current waitingJobId: ${conversation?.waitingJobId || 'None'}`);
+
     // Cancel existing job if it exists
     if (conversation?.waitingJobId) {
+      console.log(`🗑️ Cancelling waiting job: ${conversation.waitingJobId}`);
       await cancelWaitingMessageJob(conversation.waitingJobId);
+
+      // Clear the job ID from conversation
+      await prisma.conversation.update({
+        where: { id: conversationId },
+        data: {
+          waitingJobId: null,
+          waitingMessageSent: false
+        }
+      });
+      console.log(`✅ Waiting message job cancelled and cleared from conversation ${conversationId}`);
+    } else {
+      console.log(`✅ No waiting job to cancel for conversation ${conversationId}`);
     }
-
-    // Reset waiting message state
-    await prisma.conversation.update({
-      where: { id: conversationId },
-      data: {
-        waitingJobId: null,
-        waitingMessageSent: false,
-        lastAgentMessageAt: new Date()
-      }
-    });
-
-    console.log(`Reset waiting message state for conversation ${conversationId}`);
   } catch (error) {
-    console.error('Error resetting waiting message state:', error);
+    console.error('❌ Error cancelling waiting message for conversation:', error);
+    console.error('Error stack:', (error as Error).stack);
   }
 }; 

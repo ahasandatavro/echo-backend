@@ -6,7 +6,7 @@ import dayjs from 'dayjs';
 import { DefaultActionSettings } from '@prisma/client'; 
 import { bump } from "../../helpers";
 import { findMatchingKeyword } from "../../utils/keywordMatcher";
-import { scheduleWaitingMessageIfNeeded } from "../../utils/waitingMessageUtils";
+import { cancelAndRescheduleWaitingMessage, cancelWaitingMessageForConversation } from "../../utils/waitingMessageUtils";
 // Define types for the keyword query result
 type KeywordWithRelations = Keyword & {
   chatbot: Chatbot | null;
@@ -99,7 +99,22 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
 
     if (matchResult) {
       console.log(`Keyword matched: "${keyword?.value}" with ${matchResult.matchType} match (score: ${matchResult.matchScore?.toFixed(2)})`);
-      console.log(`✅ Keyword matched - waiting message job will be skipped during execution if it exists`);
+      
+      // Cancel any existing waiting message job since keyword was matched
+      const conversation = await prisma.conversation.findFirst({
+        where: { 
+          recipient: recipient as string,
+          businessPhoneNumberId: businessPhoneNumber?.id 
+        },
+        orderBy: { updatedAt: 'desc' }
+      });
+      
+      if (conversation) {
+        console.log(`🗑️ Keyword matched - cancelling any existing waiting job for conversation ${conversation.id}`);
+        await cancelWaitingMessageForConversation(conversation.id);
+      } else {
+        console.log(`⚠️ No conversation found to cancel waiting job`);
+      }
     }
 
     if (!keyword) {
@@ -145,8 +160,8 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
             console.log(`   - AgentPhoneNumberId: ${agentPhoneNumberId}`);
             console.log(`   - Duration: ${process.env.WAITING_MESSAGE_DURATION_MINUTES || '10'} minutes`);
             
-            // Schedule waiting message job
-            await scheduleWaitingMessageIfNeeded(
+            // Schedule/reschedule waiting message job
+            await cancelAndRescheduleWaitingMessage(
               conversation.id,
               recipient as string,
               agentPhoneNumberId
