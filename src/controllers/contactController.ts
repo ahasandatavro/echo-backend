@@ -1763,7 +1763,216 @@ export const getCountriesByPhoneNumber = async (req: Request, res: Response) => 
   }
 };
 
+/**
+ * GET /contacts/analytics
+ * Query params: chatbot, timeRange, countries, attributes, page, limit
+ * Returns: { contacts: [...], total, page, limit }
+ */
+export const getContactsAnalytics = async (req: Request, res: Response) => {
+  try {
+    const user: any = req.user;
+    const chatbotId = req.query.chatbot;
+    const timeRange = req.query.timeRange as string;
+    // Accept country names and convert to codes
+    let countries: string[] = [];
+    if (req.query.countries) {
+      countries = (req.query.countries as string)
+        .split(',')
+        .map(c => c.trim().toLowerCase())
+        .map(nameOrCode => countryNameToCode[nameOrCode] || nameOrCode.toUpperCase());
+    }
+    console.log('Processed countries array:', countries);
+    console.log('countryNameToCode[bangladesh]:', countryNameToCode['bangladesh']);
+    const attributes = req.query.attributes ? JSON.parse(req.query.attributes as string) : undefined;
+    const page = req.query.page ? parseInt(req.query.page as string) : 1;
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
+    if (!chatbotId || !timeRange) {
+      return res.status(400).json({ error: 'chatbot and timeRange are required' });
+    }
+
+    // 1. Determine allowed userIds (created by user or their agents)
+    const dbUser = await prisma.user.findFirst({
+      where: { id: user.userId },
+      select: { id: true, agent: true, createdById: true },
+    });
+    let userIdsToInclude: number[] = [];
+    if (dbUser.agent) {
+      const agents = await prisma.user.findMany({
+        where: { createdById: dbUser.createdById || undefined, agent: true },
+        select: { id: true },
+      });
+      userIdsToInclude = [
+        ...agents.map(a => a.id),
+        dbUser.createdById!,
+        dbUser.id,
+      ];
+    } else {
+      const agents = await prisma.user.findMany({
+        where: { createdById: dbUser.id, agent: true },
+        select: { id: true },
+      });
+      userIdsToInclude = [dbUser.id, ...agents.map(a => a.id)];
+    }
+
+    // 2. Time range filter
+    let fromDate: Date;
+    const now = new Date();
+    if (timeRange === 'Last 7 days') {
+      fromDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    } else if (timeRange === 'Last 30 days') {
+      fromDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    } else if (timeRange === 'Last 6 months') {
+      fromDate = new Date(now.getTime() - 183 * 24 * 60 * 60 * 1000);
+    } else {
+      return res.status(400).json({ error: 'Invalid timeRange' });
+    }
+
+    // 3. Find conversations for chatbotId, in time range, with allowed contacts
+    const conversations = await prisma.conversation.findMany({
+      where: {
+        chatbotId: Number(chatbotId),
+        createdAt: { gte: fromDate },
+        OR: [
+          { contact: { createdById: { in: userIdsToInclude } } },
+          { contactId: null }, // allow recipient fallback
+        ],
+      },
+      select: { contactId: true, recipient: true },
+    });
+    if (conversations.length === 0) {
+      return res.json({ contacts: [], total: 0, page, limit });
+    }
+
+    // 4. Resolve contacts: by contactId or by recipient (phoneNumber)
+    const contactIdSet = new Set<number>();
+    const recipientPhones: Set<string> = new Set();
+    for (const conv of conversations) {
+      if (conv.contactId) {
+        contactIdSet.add(conv.contactId);
+      } else if (conv.recipient) {
+        recipientPhones.add(conv.recipient);
+      }
+    }
+    // Fetch contacts by contactId
+    let contactsById = [];
+    if (contactIdSet.size > 0) {
+      contactsById = await prisma.contact.findMany({
+        where: { id: { in: Array.from(contactIdSet) } },
+        select: {
+          id: true,
+          name: true,
+          phoneNumber: true,
+          subscribed: true,
+          sendSMS: true,
+          source: true,
+          attributes: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+    }
+    // Fetch contacts by phoneNumber (recipient)
+    let contactsByPhone = [];
+    if (recipientPhones.size > 0) {
+      contactsByPhone = await prisma.contact.findMany({
+        where: { phoneNumber: { in: Array.from(recipientPhones) } },
+        select: {
+          id: true,
+          name: true,
+          phoneNumber: true,
+          subscribed: true,
+          sendSMS: true,
+          source: true,
+          attributes: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+    }
+    // Merge and deduplicate contacts
+    const allContactsMap = new Map<string, any>();
+    for (const c of [...contactsById, ...contactsByPhone]) {
+      allContactsMap.set(String(c.id), c);
+    }
+    let contacts = Array.from(allContactsMap.values());
+
+    // 5. Filter by country code if provided
+    if (countries.length > 0) {
+      contacts = contacts.filter(contact => {
+        if (!contact.phoneNumber) return false;
+        let phone = contact.phoneNumber;
+        if (!phone.startsWith('+')) phone = '+' + phone;
+        try {
+          const phoneNumber = parsePhoneNumberFromString(phone);
+          if (phoneNumber && phoneNumber.country) {
+            return countries.includes(phoneNumber.country);
+          }
+        } catch {}
+        return false;
+      });
+    }
+
+    // 6. Filter by attributes (all key-value pairs must match)
+    if (attributes && Object.keys(attributes).length > 0) {
+      contacts = contacts.filter(contact => {
+        const attr = contact.attributes || {};
+        return Object.entries(attributes).every(([key, values]) => {
+          if (!Array.isArray(values)) return false;
+          return values.includes(attr[key]);
+        });
+      });
+    }
+
+    // 7. Pagination
+    const total = contacts.length;
+    const pagedContacts = contacts.slice((page - 1) * limit, page * limit);
+
+    // 8. Format response
+    const formatted = pagedContacts.map(contact => {
+      let countryCode = undefined;
+      if (contact.phoneNumber) {
+        let phone = contact.phoneNumber;
+        if (!phone.startsWith('+')) phone = '+' + phone;
+        try {
+          const phoneNumber = parsePhoneNumberFromString(phone);
+          if (phoneNumber && phoneNumber.country) {
+            countryCode = phoneNumber.country;
+          }
+        } catch {}
+      }
+      return {
+        id: String(contact.id),
+        name: contact.name,
+        phoneNumber: contact.phoneNumber,
+        countryCode,
+        subscribed: contact.subscribed,
+        sendSMS: contact.sendSMS,
+        source: contact.source,
+        attributes: Array.isArray(contact.attributes)
+          ? contact.attributes
+          : Object.entries(contact.attributes || {}).map(([key, value]) => ({ key, value })),
+        createdAt: contact.createdAt,
+        updatedAt: contact.updatedAt,
+      };
+    });
+
+    res.json({
+      contacts: formatted,
+      total,
+      page,
+      limit,
+    });
+  } catch (error) {
+    console.error('Error in getContactsAnalytics:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+};
+
 // Static map for country code to country name
 const countryCodeToName: Record<string, string> = {
   AF: 'Afghanistan', AL: 'Albania', DZ: 'Algeria', AS: 'American Samoa', AD: 'Andorra', AO: 'Angola', AI: 'Anguilla', AQ: 'Antarctica', AG: 'Antigua and Barbuda', AR: 'Argentina', AM: 'Armenia', AW: 'Aruba', AU: 'Australia', AT: 'Austria', AZ: 'Azerbaijan', BS: 'Bahamas', BH: 'Bahrain', BD: 'Bangladesh', BB: 'Barbados', BY: 'Belarus', BE: 'Belgium', BZ: 'Belize', BJ: 'Benin', BM: 'Bermuda', BT: 'Bhutan', BO: 'Bolivia', BA: 'Bosnia and Herzegovina', BW: 'Botswana', BR: 'Brazil', IO: 'British Indian Ocean Territory', VG: 'British Virgin Islands', BN: 'Brunei', BG: 'Bulgaria', BF: 'Burkina Faso', BI: 'Burundi', KH: 'Cambodia', CM: 'Cameroon', CA: 'Canada', CV: 'Cape Verde', KY: 'Cayman Islands', CF: 'Central African Republic', TD: 'Chad', CL: 'Chile', CN: 'China', CX: 'Christmas Island', CC: 'Cocos Islands', CO: 'Colombia', KM: 'Comoros', CK: 'Cook Islands', CR: 'Costa Rica', HR: 'Croatia', CU: 'Cuba', CW: 'Curacao', CY: 'Cyprus', CZ: 'Czech Republic', CD: 'Democratic Republic of the Congo', DK: 'Denmark', DJ: 'Djibouti', DM: 'Dominica', DO: 'Dominican Republic', TL: 'East Timor', EC: 'Ecuador', EG: 'Egypt', SV: 'El Salvador', GQ: 'Equatorial Guinea', ER: 'Eritrea', EE: 'Estonia', ET: 'Ethiopia', FK: 'Falkland Islands', FO: 'Faroe Islands', FJ: 'Fiji', FI: 'Finland', FR: 'France', PF: 'French Polynesia', GA: 'Gabon', GM: 'Gambia', GE: 'Georgia', DE: 'Germany', GH: 'Ghana', GI: 'Gibraltar', GR: 'Greece', GL: 'Greenland', GD: 'Grenada', GU: 'Guam', GT: 'Guatemala', GG: 'Guernsey', GN: 'Guinea', GW: 'Guinea-Bissau', GY: 'Guyana', HT: 'Haiti', HN: 'Honduras', HK: 'Hong Kong', HU: 'Hungary', IS: 'Iceland', IN: 'India', ID: 'Indonesia', IR: 'Iran', IQ: 'Iraq', IE: 'Ireland', IM: 'Isle of Man', IL: 'Israel', IT: 'Italy', CI: 'Ivory Coast', JM: 'Jamaica', JP: 'Japan', JE: 'Jersey', JO: 'Jordan', KZ: 'Kazakhstan', KE: 'Kenya', KI: 'Kiribati', XK: 'Kosovo', KW: 'Kuwait', KG: 'Kyrgyzstan', LA: 'Laos', LV: 'Latvia', LB: 'Lebanon', LS: 'Lesotho', LR: 'Liberia', LY: 'Libya', LI: 'Liechtenstein', LT: 'Lithuania', LU: 'Luxembourg', MO: 'Macau', MK: 'Macedonia', MG: 'Madagascar', MW: 'Malawi', MY: 'Malaysia', MV: 'Maldives', ML: 'Mali', MT: 'Malta', MH: 'Marshall Islands', MR: 'Mauritania', MU: 'Mauritius', YT: 'Mayotte', MX: 'Mexico', FM: 'Micronesia', MD: 'Moldova', MC: 'Monaco', MN: 'Mongolia', ME: 'Montenegro', MS: 'Montserrat', MA: 'Morocco', MZ: 'Mozambique', MM: 'Myanmar', NA: 'Namibia', NR: 'Nauru', NP: 'Nepal', NL: 'Netherlands', AN: 'Netherlands Antilles', NC: 'New Caledonia', NZ: 'New Zealand', NI: 'Nicaragua', NE: 'Niger', NG: 'Nigeria', NU: 'Niue', KP: 'North Korea', MP: 'Northern Mariana Islands', NO: 'Norway', OM: 'Oman', PK: 'Pakistan', PW: 'Palau', PS: 'Palestine', PA: 'Panama', PG: 'Papua New Guinea', PY: 'Paraguay', PE: 'Peru', PH: 'Philippines', PN: 'Pitcairn', PL: 'Poland', PT: 'Portugal', PR: 'Puerto Rico', QA: 'Qatar', CG: 'Republic of the Congo', RE: 'Reunion', RO: 'Romania', RU: 'Russia', RW: 'Rwanda', BL: 'Saint Barthelemy', SH: 'Saint Helena', KN: 'Saint Kitts and Nevis', LC: 'Saint Lucia', MF: 'Saint Martin', PM: 'Saint Pierre and Miquelon', VC: 'Saint Vincent and the Grenadines', WS: 'Samoa', SM: 'San Marino', ST: 'Sao Tome and Principe', SA: 'Saudi Arabia', SN: 'Senegal', RS: 'Serbia', SC: 'Seychelles', SL: 'Sierra Leone', SG: 'Singapore', SX: 'Sint Maarten', SK: 'Slovakia', SI: 'Slovenia', SB: 'Solomon Islands', SO: 'Somalia', ZA: 'South Africa', KR: 'South Korea', SS: 'South Sudan', ES: 'Spain', LK: 'Sri Lanka', SD: 'Sudan', SR: 'Suriname', SJ: 'Svalbard and Jan Mayen', SZ: 'Swaziland', SE: 'Sweden', CH: 'Switzerland', SY: 'Syria', TW: 'Taiwan', TJ: 'Tajikistan', TZ: 'Tanzania', TH: 'Thailand', TG: 'Togo', TK: 'Tokelau', TO: 'Tonga', TT: 'Trinidad and Tobago', TN: 'Tunisia', TR: 'Turkey', TM: 'Turkmenistan', TC: 'Turks and Caicos Islands', TV: 'Tuvalu', UG: 'Uganda', UA: 'Ukraine', AE: 'United Arab Emirates', GB: 'United Kingdom', US: 'United States', UY: 'Uruguay', UZ: 'Uzbekistan', VU: 'Vanuatu', VA: 'Vatican', VE: 'Venezuela', VN: 'Vietnam', VI: 'Virgin Islands', YE: 'Yemen', ZM: 'Zambia', ZW: 'Zimbabwe'
 };
+// Reverse map: country name (lowercase) to code
+const countryNameToCode: Record<string, string> = Object.fromEntries(
+  Object.entries(countryCodeToName).map(([code, name]) => [name.toLowerCase(), code])
+);
