@@ -6,6 +6,7 @@ import dayjs from 'dayjs';
 import { DefaultActionSettings } from '@prisma/client'; 
 import { bump } from "../../helpers";
 import { findMatchingKeyword } from "../../utils/keywordMatcher";
+import { scheduleWaitingMessageIfNeeded } from "../../utils/waitingMessageUtils";
 // Define types for the keyword query result
 type KeywordWithRelations = Keyword & {
   chatbot: Chatbot | null;
@@ -38,6 +39,7 @@ type WorkingHours = {
 };
 
 export const processKeyword = async (text: string, recipient: String, agentPhoneNumberId: string | undefined): Promise<boolean> => {
+  console.log(`🎯 processKeyword called with text: "${text}", recipient: ${recipient}, agentPhoneNumberId: ${agentPhoneNumberId}`);
   if (!text) return false;
   const businessPhoneNumber = await prisma.businessPhoneNumber.findFirst({
     where: { metaPhoneNumberId: agentPhoneNumberId },
@@ -97,9 +99,70 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
 
     if (matchResult) {
       console.log(`Keyword matched: "${keyword?.value}" with ${matchResult.matchType} match (score: ${matchResult.matchScore?.toFixed(2)})`);
+      console.log(`✅ Keyword matched - waiting message job will be skipped during execution if it exists`);
     }
 
     if (!keyword) {
+      console.log(`🔍 No keyword matched for text: "${text}"`);
+      
+      // Check if we should schedule a waiting message (during working hours)
+      console.log(`📋 Checking waiting message conditions:`);
+      console.log(`  - workingHours exists: ${!!defaultActionSettings?.workingHours}`);
+      console.log(`  - waitingMessageEnabled: ${defaultActionSettings?.waitingMessageEnabled}`);
+      
+      if (defaultActionSettings?.workingHours) {
+        const isWithinHours = isWithinWorkingHours(defaultActionSettings.workingHours as WorkingHours);
+        console.log(`  - isWithinWorkingHours: ${isWithinHours}`);
+        
+        if (defaultActionSettings.waitingMessageEnabled && isWithinHours) {
+          console.log(`✅ All conditions met for waiting message scheduling`);
+          
+          // Find or create conversation for this recipient and business phone number
+          let conversation = await prisma.conversation.findFirst({
+            where: { 
+              recipient: recipient as string,
+              businessPhoneNumberId: businessPhoneNumber?.id
+            },
+            orderBy: { updatedAt: 'desc' }
+          });
+
+          console.log(`🔍 Found existing conversation: ${conversation ? `ID ${conversation.id}` : 'None'}`);
+
+          if (!conversation && businessPhoneNumber?.id) {
+            conversation = await prisma.conversation.create({
+              data: {
+                recipient: recipient as string,
+                businessPhoneNumberId: businessPhoneNumber.id,
+                answeringQuestion: false
+              }
+            });
+            console.log(`✅ Created new conversation with ID: ${conversation.id}`);
+          }
+
+          if (conversation) {
+            console.log(`⏰ Scheduling waiting message job for conversation ${conversation.id}`);
+            console.log(`   - Recipient: ${recipient}`);
+            console.log(`   - AgentPhoneNumberId: ${agentPhoneNumberId}`);
+            console.log(`   - Duration: ${process.env.WAITING_MESSAGE_DURATION_MINUTES || '10'} minutes`);
+            
+            // Schedule waiting message job
+            await scheduleWaitingMessageIfNeeded(
+              conversation.id,
+              recipient as string,
+              agentPhoneNumberId
+            );
+            console.log(`✅ Waiting message job scheduling completed`);
+          } else {
+            console.log(`❌ No conversation found or created - cannot schedule waiting message`);
+          }
+        } else {
+          console.log(`❌ Waiting message not scheduled - conditions not met`);
+        }
+      } else {
+        console.log(`❌ No working hours configured - cannot schedule waiting message`);
+      }
+
+      // Handle fallback message (waiting message takes priority over fallback)
       if(defaultActionSettings?.fallbackMessageEnabled){
         const type = defaultActionSettings.fallbackMessageMaterialType;
         const id = defaultActionSettings.fallbackMessageMaterialId;

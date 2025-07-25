@@ -3,6 +3,7 @@ import { brodcastTemplate } from '../processors/template/templateProcessor';
 import { prisma } from '../models/prismaClient';
 import { syncTemplates } from '../services/templateService';
 import { registerChatbotTimerJobs } from '../utils/chatbotTimerUtils';
+import { processWaitingMessageJob } from '../jobs/waitingMessageJob';
 
 if (!process.env.MONGODB_URI) {
   throw new Error('MONGODB_URI environment variable is not set. Please add it to your .env file.');
@@ -77,6 +78,11 @@ agenda.define<SendScheduledBroadcastData>('sendScheduledBroadcast', async (job: 
   }
 });
 
+// Define waiting message job processor
+console.log('📋 Registering waiting-message-job processor');
+agenda.define('waiting-message-job', processWaitingMessageJob);
+console.log('✅ waiting-message-job processor registered successfully');
+
 // agenda.define('syncMetaTemplates', async (job: Job) => {
 //   try {
 //     await syncTemplates()
@@ -88,14 +94,27 @@ agenda.define<SendScheduledBroadcastData>('sendScheduledBroadcast', async (job: 
 
 export const initializeAgenda = async () => {
   try {
+    console.log('🚀 Starting Agenda...');
     await agenda.start();
+    console.log('✅ Agenda started successfully');
+    
     registerChatbotTimerJobs();
+    console.log('✅ Chatbot timer jobs registered');
+    
+    // Check if waiting-message-job is properly registered
+    const definedJobs = (agenda as any)._definitions;
+    if (definedJobs) {
+      console.log('📋 Defined jobs:', Object.keys(definedJobs));
+      console.log('🔍 waiting-message-job defined:', !!definedJobs['waiting-message-job']);
+    } else {
+      console.log('⚠️ Agenda definitions not available yet');
+    }
+    
     //make 1 minute interval
     //await agenda.every('1 minute', 'syncMetaTemplates');
     //await agenda.now('syncMetaTemplates');
-    console.log('Agenda started successfully');
   } catch (error) {
-    console.error('Failed to start Agenda:', error);
+    console.error('❌ Failed to start Agenda:', error);
     throw error;
   }
 };
