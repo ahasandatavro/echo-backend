@@ -28,7 +28,8 @@ import {
   getFilteredAttributesByKeyword,
   getAttributeOptionsForUser,
   getCountriesByPhoneNumber,
-  getContactsAnalytics
+  getContactsAnalytics,
+  getUsersAnalytics
 } from "../controllers/contactController";
 import { authenticateJWT } from '../middlewares/authMiddleware';
 const router = Router();
@@ -40,6 +41,7 @@ router.get("/attributes", authenticateJWT, getFilteredAttributesByKeyword);
 router.get("/attribute-options", authenticateJWT, getAttributeOptionsForUser);
 router.get("/countries", authenticateJWT, getCountriesByPhoneNumber);
 router.get("/analytics", authenticateJWT, getContactsAnalytics);
+router.get("/analytics/users", authenticateJWT, getUsersAnalytics);
 router.get("/:id", authenticateJWT, getContactById);
 router.get("/:id/messages", authenticateJWT, getMessagesByContactId);
 router.post("/", authenticateJWT, createContact);

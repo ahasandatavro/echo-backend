@@ -1976,3 +1976,131 @@ const countryCodeToName: Record<string, string> = {
 const countryNameToCode: Record<string, string> = Object.fromEntries(
   Object.entries(countryCodeToName).map(([code, name]) => [name.toLowerCase(), code])
 );
+
+/**
+ * GET /analytics/users
+ * Query params: chatbot, timeRange
+ * Returns: { existingUsers, newUsers, otherUsers, totalUsers }
+ */
+export const getUsersAnalytics = async (req, res) => {
+  try {
+    const user = req.user;
+    const chatbotId = req.query.chatbot;
+    const timeRange = req.query.timeRange;
+    if (!chatbotId || !timeRange) {
+      return res.status(400).json({ error: 'chatbot and timeRange are required' });
+    }
+
+    // 1. Determine allowed userIds (created by user or their agents)
+    const dbUser = await prisma.user.findFirst({
+      where: { id: user.userId },
+      select: { id: true, agent: true, createdById: true },
+    });
+    let userIdsToInclude = [];
+    if (dbUser.agent) {
+      const agents = await prisma.user.findMany({
+        where: { createdById: dbUser.createdById || undefined, agent: true },
+        select: { id: true },
+      });
+      userIdsToInclude = [
+        ...agents.map(a => a.id),
+        dbUser.createdById,
+        dbUser.id,
+      ];
+    } else {
+      const agents = await prisma.user.findMany({
+        where: { createdById: dbUser.id, agent: true },
+        select: { id: true },
+      });
+      userIdsToInclude = [dbUser.id, ...agents.map(a => a.id)];
+    }
+
+    // 2. Time range filter
+    let fromDate;
+    const now = new Date();
+    if (timeRange === 'Last 7 days') {
+      fromDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    } else if (timeRange === 'Last 30 days') {
+      fromDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    } else if (timeRange === 'Last 6 months') {
+      fromDate = new Date(now.getTime() - 183 * 24 * 60 * 60 * 1000);
+    } else {
+      return res.status(400).json({ error: 'Invalid timeRange' });
+    }
+
+    // 3. Find all conversations for this chatbot, accessible contacts
+    const conversations = await prisma.conversation.findMany({
+      where: {
+        chatbotId: Number(chatbotId),
+        OR: [
+          { contact: { createdById: { in: userIdsToInclude } } },
+          { contactId: null },
+        ],
+      },
+      select: { contactId: true, recipient: true, createdAt: true },
+    });
+    // 4. Resolve contacts: by contactId or by recipient (phoneNumber)
+    const contactIdSet = new Set();
+    const recipientPhones = new Set();
+    for (const conv of conversations) {
+      if (conv.contactId) {
+        contactIdSet.add(conv.contactId);
+      } else if (conv.recipient) {
+        recipientPhones.add(conv.recipient);
+      }
+    }
+    // Fetch contacts by contactId
+    let contactsById = [];
+    if (contactIdSet.size > 0) {
+      contactsById = await prisma.contact.findMany({
+        where: { id: { in: Array.from(contactIdSet) } },
+        select: { id: true, phoneNumber: true },
+      });
+    }
+    // Fetch contacts by phoneNumber (recipient)
+    let contactsByPhone = [];
+    if (recipientPhones.size > 0) {
+      contactsByPhone = await prisma.contact.findMany({
+        where: { phoneNumber: { in: Array.from(recipientPhones) } },
+        select: { id: true, phoneNumber: true },
+      });
+    }
+    // Map phoneNumber to contactId for quick lookup
+    const phoneToContactId = new Map();
+    for (const c of [...contactsById, ...contactsByPhone]) {
+      if (c.phoneNumber) phoneToContactId.set(c.phoneNumber, c.id);
+    }
+    // Build a map: contactId -> all conversation dates
+    const contactConvoDates = {};
+    for (const conv of conversations) {
+      let cid = conv.contactId;
+      if (!cid && conv.recipient) {
+        cid = phoneToContactId.get(conv.recipient);
+      }
+      if (cid) {
+        if (!contactConvoDates[cid]) contactConvoDates[cid] = [];
+        contactConvoDates[cid].push(conv.createdAt);
+      }
+    }
+    // 5. Classify users
+    let newUsers = 0, existingUsers = 0, otherUsers = 0;
+    for (const convoDates of Object.values(contactConvoDates)) {
+      // Sort dates ascending
+      convoDates.sort((a, b) => a.getTime() - b.getTime());
+      const hasInRange = convoDates.some(d => d >= fromDate);
+      const hasBefore = convoDates.some(d => d < fromDate);
+      if (hasInRange && !hasBefore) {
+        newUsers++;
+      } else if (hasInRange && hasBefore) {
+        existingUsers++;
+      } else if (!hasInRange && hasBefore) {
+        otherUsers++;
+      }
+    }
+    const totalUsers = Object.keys(contactConvoDates).length;
+    res.json({ existingUsers, newUsers, otherUsers, totalUsers });
+  } catch (error) {
+    console.error('Error in getUsersAnalytics:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+};
