@@ -406,6 +406,9 @@ model Conversation {
   waitingJobId           String?              // Job ID for waiting message
   lastAgentMessageAt     DateTime?            // Timestamp of last agent message
   waitingMessageSent     Boolean              @default(false) // Flag to track if waiting message was sent
+  noResponse24hJobId     String?              // Job ID for 24-hour no response action
+  lastCustomerMessageAt  DateTime?            // Timestamp of last customer message
+  noResponse24hSent      Boolean              @default(false) // Flag to track if 24h action was sent
   ChatStatusHistory      ChatStatusHistory[]
   businessPhoneNumber    BusinessPhoneNumber? @relation(fields: [businessPhoneNumberId], references: [id])
   chatbot                Chatbot?             @relation(fields: [chatbotId], references: [id])

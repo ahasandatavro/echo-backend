@@ -52,11 +52,34 @@ export const scheduleWaitingMessageJob = async (
 
 export const cancelWaitingMessageJob = async (jobId: string): Promise<boolean> => {
   try {
-    const numRemoved = await agenda.cancel({ _id: jobId as any });
-    console.log(`Cancelled ${numRemoved} waiting message job(s) with ID: ${jobId}`);
+    console.log(`🔍 Attempting to cancel waiting job with ID: ${jobId}`);
+    
+    // Try multiple approaches to cancel the job
+    let numRemoved = 0;
+    
+    // Method 1: Cancel by _id as ObjectId
+    try {
+      const { ObjectId } = require('mongodb');
+      numRemoved = await agenda.cancel({ _id: new ObjectId(jobId) });
+      console.log(`📊 Method 1 (ObjectId): Cancelled ${numRemoved} job(s)`);
+    } catch (objectIdError) {
+      console.log(`⚠️ Method 1 failed:`, (objectIdError as Error).message);
+    }
+    
+    // Method 2: Cancel by _id as string (if method 1 failed)
+    if (numRemoved === 0) {
+      try {
+        numRemoved = await agenda.cancel({ _id: jobId as any });
+        console.log(`📊 Method 2 (String): Cancelled ${numRemoved} job(s)`);
+      } catch (stringError) {
+        console.log(`⚠️ Method 2 failed:`, (stringError as Error).message);
+      }
+    }
+    
+    console.log(`🗑️ Total cancelled waiting message job(s): ${numRemoved} with ID: ${jobId}`);
     return numRemoved > 0;
   } catch (error) {
-    console.error('Error cancelling waiting message job:', error);
+    console.error('❌ Error cancelling waiting message job:', error);
     return false;
   }
 };
@@ -97,12 +120,22 @@ export const cancelAndRescheduleWaitingMessage = async (
         where: { id: conversationId },
         data: {
           waitingJobId: newJobId,
-          waitingMessageSent: false
+          waitingMessageSent: false // Always reset this flag when scheduling new job
         }
       });
       console.log(`✅ Conversation updated successfully with new job`);
     } else {
       console.log(`❌ Failed to get new job ID - conversation not updated`);
+      
+      // Even if job scheduling failed, reset the flag so we can try again
+      await prisma.conversation.update({
+        where: { id: conversationId },
+        data: {
+          waitingJobId: null,
+          waitingMessageSent: false
+        }
+      });
+      console.log(`🔄 Reset waiting message flags after scheduling failure`);
     }
   } catch (error) {
     console.error('❌ Error in cancelAndRescheduleWaitingMessage:', error);

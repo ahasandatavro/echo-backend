@@ -1391,7 +1391,7 @@ export const sendMessage = async (
     });
     await storeMessage({ recipient, chatbotId, messageType: message.type, text: messageBody }, agentPhoneNumberId);
     
-    // Update lastAgentMessageAt timestamp when agent sends a message
+    // Update lastAgentMessageAt timestamp and schedule 24h job when agent sends a message
     if (userId && userId > 1) { // userId > 1 indicates it's an agent (not system/bot)
       try {
         const businessPhoneNumber = await prisma.businessPhoneNumber.findFirst({
@@ -1416,6 +1416,15 @@ export const sendMessage = async (
                 waitingMessageSent: false // Reset the flag so waiting message can be sent again if needed
               }
             });
+            
+            // Schedule 24-hour no response job when agent sends message
+            console.log(`📅 Agent sent message - scheduling 24h no response job for conversation ${conversation.id}`);
+            const { reschedule24hJobForConversation } = await import("../../utils/noResponse24hUtils");
+            await reschedule24hJobForConversation(
+              conversation.id,
+              recipient,
+              agentPhoneNumberId
+            );
           }
         }
       } catch (waitingError) {
@@ -1455,7 +1464,7 @@ export const sendTemplate = async (
     });
     await storeMessage({ recipient, chatbotId, messageType: "template", text: `Template: ${selectedTemplate}`,templateDetails:templateDetails }, agentPhoneNumberId);
     
-    // Update lastAgentMessageAt timestamp when agent sends template
+    // Update lastAgentMessageAt timestamp and schedule 24h job when agent sends template
     try {
       const businessPhoneNumber = await prisma.businessPhoneNumber.findFirst({
         where: { metaPhoneNumberId: agentPhoneNumberId }
@@ -1479,6 +1488,15 @@ export const sendTemplate = async (
               waitingMessageSent: false // Reset the flag so waiting message can be sent again if needed
             }
           });
+          
+          // Schedule 24-hour no response job when agent sends template
+          console.log(`📅 Agent sent template - scheduling 24h no response job for conversation ${conversation.id}`);
+          const { reschedule24hJobForConversation } = await import("../../utils/noResponse24hUtils");
+          await reschedule24hJobForConversation(
+            conversation.id,
+            recipient,
+            agentPhoneNumberId
+          );
         }
       }
     } catch (waitingError) {

@@ -4,6 +4,7 @@ import { prisma } from '../models/prismaClient';
 import { syncTemplates } from '../services/templateService';
 import { registerChatbotTimerJobs } from '../utils/chatbotTimerUtils';
 import { processWaitingMessageJob } from '../jobs/waitingMessageJob';
+import { processNoResponse24hJob } from '../jobs/noResponse24hJob';
 
 if (!process.env.MONGODB_URI) {
   throw new Error('MONGODB_URI environment variable is not set. Please add it to your .env file.');
@@ -82,6 +83,11 @@ agenda.define<SendScheduledBroadcastData>('sendScheduledBroadcast', async (job: 
 console.log('📋 Registering waiting-message-job processor');
 agenda.define('waiting-message-job', processWaitingMessageJob);
 console.log('✅ waiting-message-job processor registered successfully');
+
+// Define 24-hour no response job processor
+console.log('📋 Registering no-response-24h-job processor');
+agenda.define('no-response-24h-job', processNoResponse24hJob);
+console.log('✅ no-response-24h-job processor registered successfully');
 
 // agenda.define('syncMetaTemplates', async (job: Job) => {
 //   try {

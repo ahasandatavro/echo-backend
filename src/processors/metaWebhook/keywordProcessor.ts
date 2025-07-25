@@ -7,6 +7,7 @@ import { DefaultActionSettings } from '@prisma/client';
 import { bump } from "../../helpers";
 import { findMatchingKeyword } from "../../utils/keywordMatcher";
 import { cancelAndRescheduleWaitingMessage, cancelWaitingMessageForConversation } from "../../utils/waitingMessageUtils";
+import { updateCustomerMessageTimestamp, cancel24hJobForConversation } from "../../utils/noResponse24hUtils";
 // Define types for the keyword query result
 type KeywordWithRelations = Keyword & {
   chatbot: Chatbot | null;
@@ -41,6 +42,10 @@ type WorkingHours = {
 export const processKeyword = async (text: string, recipient: String, agentPhoneNumberId: string | undefined): Promise<boolean> => {
   console.log(`🎯 processKeyword called with text: "${text}", recipient: ${recipient}, agentPhoneNumberId: ${agentPhoneNumberId}`);
   if (!text) return false;
+  
+  // Update customer message timestamp for 24h tracking
+  console.log(`📨 Customer sent message - updating timestamp for 24h tracking`);
+  
   const businessPhoneNumber = await prisma.businessPhoneNumber.findFirst({
     where: { metaPhoneNumberId: agentPhoneNumberId },
     select: {
@@ -59,6 +64,20 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
       businessPhoneNumberId: businessPhoneNumber?.id,
     },
   });
+  
+  // Update customer message timestamp for 24h tracking
+  const conversation = await prisma.conversation.findFirst({
+    where: { 
+      recipient: recipient as string,
+      businessPhoneNumberId: businessPhoneNumber?.id 
+    },
+    orderBy: { updatedAt: 'desc' }
+  });
+  
+  if (conversation) {
+    await updateCustomerMessageTimestamp(conversation.id);
+  }
+  
   // Use the new helper function
   const defaultHandled = await checkAndSendDefaultMaterial(defaultActionSettings, recipient, agentPhoneNumberId,text);
   if (defaultHandled) return true;
@@ -112,8 +131,11 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
       if (conversation) {
         console.log(`🗑️ Keyword matched - cancelling any existing waiting job for conversation ${conversation.id}`);
         await cancelWaitingMessageForConversation(conversation.id);
+        
+        console.log(`🗑️ Keyword matched - cancelling any existing 24h job for conversation ${conversation.id}`);
+        await cancel24hJobForConversation(conversation.id);
       } else {
-        console.log(`⚠️ No conversation found to cancel waiting job`);
+        console.log(`⚠️ No conversation found to cancel jobs`);
       }
     }
 
@@ -143,16 +165,16 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
 
           console.log(`🔍 Found existing conversation: ${conversation ? `ID ${conversation.id}` : 'None'}`);
 
-          if (!conversation && businessPhoneNumber?.id) {
-            conversation = await prisma.conversation.create({
-              data: {
-                recipient: recipient as string,
-                businessPhoneNumberId: businessPhoneNumber.id,
-                answeringQuestion: false
-              }
-            });
-            console.log(`✅ Created new conversation with ID: ${conversation.id}`);
-          }
+                  if (!conversation && businessPhoneNumber?.id) {
+          conversation = await prisma.conversation.create({
+            data: {
+              recipient: recipient as string,
+              businessPhoneNumberId: businessPhoneNumber.id,
+              answeringQuestion: false
+            }
+          });
+          console.log(`✅ Created new conversation with ID: ${conversation.id}`);
+        }
 
           if (conversation) {
             console.log(`⏰ Scheduling waiting message job for conversation ${conversation.id}`);
