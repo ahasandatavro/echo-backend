@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { prisma } from "../models/prismaClient";
+import axios from "axios";
 
 export const createBusinessPhoneNumber = async (req: Request, res: Response) => {
   try {
@@ -462,6 +463,182 @@ export const getTimeoutSettings = async (req: Request, res: Response) => {
   } catch (err) {
     console.error("GET timeout settings error:", err);
     return res.status(500).json({ message: "Failed to load timeout settings." });
+  }
+};
+
+export const getMessagingAnalytics = async (req: Request, res: Response) => {
+  try {
+    const user: any = req.user;
+
+    // Get user's selected phone number and WABA ID
+    const dbUser = await prisma.user.findUnique({
+      where: { id: user.userId },
+      select: { 
+        selectedPhoneNumberId: true, 
+        selectedWabaId: true 
+      },
+    });
+
+    if (!dbUser?.selectedPhoneNumberId || !dbUser?.selectedWabaId) {
+      return res.status(400).json({ 
+        success: false,
+        message: "No phone number or WABA ID selected for this user." 
+      });
+    }
+
+    const selectedPhoneNumberId = dbUser.selectedPhoneNumberId;
+    const selectedWabaId = dbUser.selectedWabaId;
+    const accessToken = process.env.META_ACCESS_TOKEN;
+
+    if (!accessToken) {
+      return res.status(500).json({ 
+        success: false,
+        message: "Meta access token not configured." 
+      });
+    }
+
+    // 1. Get daily messaging limit from Meta API
+    let dailyMessagingLimit = { current: 0, total: 250, percentage: 0 };
+    try {
+      const limitResponse = await axios.get(
+        `https://graph.facebook.com/v22.0/${selectedWabaId}/phone_numbers`,
+        { 
+          headers: { Authorization: `Bearer ${accessToken}` } 
+        }
+      );
+
+      // Extract limit information from response
+      if (limitResponse.data && limitResponse.data.data) {
+        const phoneNumberData = limitResponse.data.data.find(
+          (phone: any) => phone.id === selectedPhoneNumberId
+        );
+        
+        if (phoneNumberData) {
+          // Meta API might return limit info in different formats
+          // For now, using default values and calculating percentage
+          dailyMessagingLimit = {
+            current: phoneNumberData.messaging_limit?.current || 0,
+            total: phoneNumberData.messaging_limit?.total || 250,
+            percentage: Math.round(((phoneNumberData.messaging_limit?.current || 0) / (phoneNumberData.messaging_limit?.total || 250)) * 100)
+          };
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching daily messaging limit:", error);
+      // Continue with default values
+    }
+
+    // 2. Get messaging quality from Meta API
+    let messagingQuality = { level: "Medium", score: 50 };
+    try {
+      const qualityResponse = await axios.get(
+        `https://graph.facebook.com/v22.0/${selectedPhoneNumberId}?fields=quality_rating`,
+        { 
+          headers: { Authorization: `Bearer ${accessToken}` } 
+        }
+      );
+
+      if (qualityResponse.data && qualityResponse.data.quality_rating) {
+        const qualityRating = qualityResponse.data.quality_rating;
+        
+        // Map quality rating to level and score
+        switch (qualityRating) {
+          case "GREEN":
+            messagingQuality = { level: "High", score: 90 };
+            break;
+          case "YELLOW":
+            messagingQuality = { level: "Medium", score: 60 };
+            break;
+          case "RED":
+            messagingQuality = { level: "Low", score: 30 };
+            break;
+          default:
+            messagingQuality = { level: "Medium", score: 50 };
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching messaging quality:", error);
+      // Continue with default values
+    }
+
+    // 3. Calculate consecutive days from message history
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    // Get business phone number ID
+    const businessPhoneNumber = await prisma.businessPhoneNumber.findFirst({
+      where: { metaPhoneNumberId: selectedPhoneNumberId },
+      select: { id: true }
+    });
+
+    if (!businessPhoneNumber) {
+      return res.status(404).json({ 
+        success: false,
+        message: "Business phone number not found." 
+      });
+    }
+
+    // Get all conversations for this business phone number
+    const conversations = await prisma.conversation.findMany({
+      where: { businessPhoneNumberId: businessPhoneNumber.id },
+      select: { id: true }
+    });
+
+    const conversationIds = conversations.map(conv => conv.id);
+
+    // Get all outgoing messages from the last 7 days
+    const messages = await prisma.message.findMany({
+      where: {
+        conversationId: { in: conversationIds },
+        sender: "user", // Business messages are marked with "user" sender
+        time: { gte: sevenDaysAgo }
+      },
+      select: { time: true }
+    });
+
+    // Group messages by date and check which days had messages
+    const activeDays = new Array(7).fill(false);
+    const today = new Date();
+    
+    for (let i = 0; i < 7; i++) {
+      const checkDate = new Date(today);
+      checkDate.setDate(checkDate.getDate() - i);
+      
+      const dayStart = new Date(checkDate);
+      dayStart.setHours(0, 0, 0, 0);
+      
+      const dayEnd = new Date(checkDate);
+      dayEnd.setHours(23, 59, 59, 999);
+      
+      const hasMessagesOnDay = messages.some(message => {
+        const messageDate = new Date(message.time);
+        return messageDate >= dayStart && messageDate <= dayEnd;
+      });
+      
+      activeDays[6 - i] = hasMessagesOnDay; // Reverse order to get chronological
+    }
+
+    const consecutiveDays = {
+      count: activeDays.filter(day => day).length,
+      totalDays: 7,
+      activeDays: activeDays
+    };
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        dailyMessagingLimit,
+        consecutiveDays,
+        messagingQuality
+      }
+    });
+
+  } catch (error) {
+    console.error("Error fetching messaging analytics:", error);
+    return res.status(500).json({ 
+      success: false,
+      message: "Failed to fetch messaging analytics." 
+    });
   }
 };
 

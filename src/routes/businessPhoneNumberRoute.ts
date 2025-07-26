@@ -10,6 +10,7 @@ import {
   getBusinessPhoneNumberDetails,
   updateTimeoutSettings,
   getTimeoutSettings,
+  getMessagingAnalytics,
 } from "../controllers/businessPhoneNumberController";
 
 const router = express.Router();
@@ -17,6 +18,7 @@ const router = express.Router();
 router.post("/", createBusinessPhoneNumber);
 router.get("/", getBusinessPhoneNumbers);
 router.get("/details", getBusinessPhoneNumberDetails);
+router.get("/analytics", getMessagingAnalytics);
 router.get("/:id", getBusinessPhoneNumber);
 router.put("/:id", updateBusinessPhoneNumber);
 router.delete("/:id", deleteBusinessPhoneNumber);
