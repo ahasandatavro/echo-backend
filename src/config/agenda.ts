@@ -3,6 +3,8 @@ import { brodcastTemplate } from '../processors/template/templateProcessor';
 import { prisma } from '../models/prismaClient';
 import { syncTemplates } from '../services/templateService';
 import { registerChatbotTimerJobs } from '../utils/chatbotTimerUtils';
+import { processWaitingMessageJob } from '../jobs/waitingMessageJob';
+import { processNoResponse24hJob } from '../jobs/noResponse24hJob';
 
 if (!process.env.MONGODB_URI) {
   throw new Error('MONGODB_URI environment variable is not set. Please add it to your .env file.');
@@ -77,6 +79,9 @@ agenda.define<SendScheduledBroadcastData>('sendScheduledBroadcast', async (job: 
   }
 });
 
+agenda.define('waiting-message-job', processWaitingMessageJob);
+agenda.define('no-response-24h-job', processNoResponse24hJob);
+
 // agenda.define('syncMetaTemplates', async (job: Job) => {
 //   try {
 //     await syncTemplates()
@@ -90,10 +95,6 @@ export const initializeAgenda = async () => {
   try {
     await agenda.start();
     registerChatbotTimerJobs();
-    //make 1 minute interval
-    //await agenda.every('1 minute', 'syncMetaTemplates');
-    //await agenda.now('syncMetaTemplates');
-    console.log('Agenda started successfully');
   } catch (error) {
     console.error('Failed to start Agenda:', error);
     throw error;

@@ -3,9 +3,11 @@ import { prisma } from "../../models/prismaClient";
 import { processChatFlow, sendMessage, sendTemplate } from "./webhookProcessor";
 import { Chatbot, Contact, Keyword, KeywordReplyMaterial, KeywordRoutingMaterial, KeywordTemplate, MaterialType, ReplyMaterial, RoutingMaterial, RoutingType, Team, Template, User } from "@prisma/client";
 import dayjs from 'dayjs';
-import { DefaultActionSettings } from '@prisma/client'; 
+import { DefaultActionSettings } from '@prisma/client';
 import { bump } from "../../helpers";
 import { findMatchingKeyword } from "../../utils/keywordMatcher";
+import { cancelAndRescheduleWaitingMessage, cancelWaitingMessageForConversation } from "../../utils/waitingMessageUtils";
+import { updateCustomerMessageTimestamp, cancel24hJobForConversation } from "../../utils/noResponse24hUtils";
 // Define types for the keyword query result
 type KeywordWithRelations = Keyword & {
   chatbot: Chatbot | null;
@@ -38,7 +40,9 @@ type WorkingHours = {
 };
 
 export const processKeyword = async (text: string, recipient: String, agentPhoneNumberId: string | undefined): Promise<boolean> => {
+
   if (!text) return false;
+
   const businessPhoneNumber = await prisma.businessPhoneNumber.findFirst({
     where: { metaPhoneNumberId: agentPhoneNumberId },
     select: {
@@ -57,6 +61,19 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
       businessPhoneNumberId: businessPhoneNumber?.id,
     },
   });
+
+    const conversation = await prisma.conversation.findFirst({
+    where: {
+      recipient: recipient as string,
+      businessPhoneNumberId: businessPhoneNumber?.id
+    },
+    orderBy: { updatedAt: 'desc' }
+  });
+
+  if (conversation) {
+    await updateCustomerMessageTimestamp(conversation.id);
+  }
+
   // Use the new helper function
   const defaultHandled = await checkAndSendDefaultMaterial(defaultActionSettings, recipient, agentPhoneNumberId,text);
   if (defaultHandled) return true;
@@ -66,7 +83,7 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
       where: {
         userId: dbUser?.id
       },
-      include: { 
+      include: {
         chatbot: true,
         keywordTemplates: {
           include: {
@@ -95,15 +112,59 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
     const matchResult = findMatchingKeyword(text, allKeywords);
     const keyword = matchResult?.keyword as KeywordWithRelations | null;
 
-    if (matchResult) {
-      console.log(`Keyword matched: "${keyword?.value}" with ${matchResult.matchType} match (score: ${matchResult.matchScore?.toFixed(2)})`);
+        if (matchResult) {
+      const conversation = await prisma.conversation.findFirst({
+        where: {
+          recipient: recipient as string,
+          businessPhoneNumberId: businessPhoneNumber?.id
+        },
+        orderBy: { updatedAt: 'desc' }
+      });
+
+      if (conversation) {
+        await cancelWaitingMessageForConversation(conversation.id);
+        await cancel24hJobForConversation(conversation.id);
+      }
     }
 
     if (!keyword) {
+      if (defaultActionSettings?.workingHours) {
+        const isWithinHours = isWithinWorkingHours(defaultActionSettings.workingHours as WorkingHours);
+
+        if (defaultActionSettings.waitingMessageEnabled && isWithinHours) {
+          let conversation = await prisma.conversation.findFirst({
+            where: {
+              recipient: recipient as string,
+              businessPhoneNumberId: businessPhoneNumber?.id
+            },
+            orderBy: { updatedAt: 'desc' }
+          });
+
+          if (!conversation && businessPhoneNumber?.id) {
+            conversation = await prisma.conversation.create({
+              data: {
+                recipient: recipient as string,
+                businessPhoneNumberId: businessPhoneNumber.id,
+                answeringQuestion: false
+              }
+            });
+          }
+
+          if (conversation) {
+            await cancelAndRescheduleWaitingMessage(
+              conversation.id,
+              recipient as string,
+              agentPhoneNumberId
+            );
+          }
+        }
+      }
+
+      // Handle fallback message (waiting message takes priority over fallback)
       if(defaultActionSettings?.fallbackMessageEnabled){
         const type = defaultActionSettings.fallbackMessageMaterialType;
         const id = defaultActionSettings.fallbackMessageMaterialId;
-  
+
         if (type && id) {
           const sent = await sendDefaultMaterial(type, id, recipient, 1, agentPhoneNumberId);
           if (sent) return true;
@@ -112,7 +173,7 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
       else return false;
 
     }
-    
+
     let actionsPerformed = false;
 
     // 1. Process chatbot if associated
@@ -120,11 +181,11 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
       console.log(`Triggering chatbot with ID: ${keyword.chatbot.id} for keyword "${keyword.value}"`);
       await bump(keyword.chatbot.id, "triggered");
       // Update conversation to not be answering a question anymore
-      const conversation = await prisma.conversation.findFirst({ 
+      const conversation = await prisma.conversation.findFirst({
         where: { recipient },
-        orderBy: { updatedAt: "desc" } 
+        orderBy: { updatedAt: "desc" }
       });
-      
+
       if (conversation) {
         await prisma.conversation.update({
           where: { id: conversation.id },
@@ -142,13 +203,13 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
       for (const keywordTemplate of keyword.keywordTemplates) {
         if (keywordTemplate.template) {
           console.log(`Sending template "${keywordTemplate.template.name}" for keyword "${keyword.value}"`);
-          
+
           // Use default chatbotId 1 if no chatbot is associated with the keyword
           const chatbotId = keyword.chatbot?.id || 1;
-          
+
           await sendTemplate(
-            recipient, 
-            keywordTemplate.template.name, 
+            recipient,
+            keywordTemplate.template.name,
             chatbotId,
             keywordTemplate.template,
             agentPhoneNumberId
@@ -164,15 +225,15 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
         const replyMaterial = keywordReplyMaterial.replyMaterial;
         if (replyMaterial) {
           console.log(`Sending reply material "${replyMaterial.name}" for keyword "${keyword.value}"`);
-          
+
           // Determine the message type and content based on material type
           let messageContent: any;
-          
+
           // Convert MaterialType to a format that sendMessage understands
           if (replyMaterial.type === "TEXT") {
             // Handle text type - simplest format
             messageContent = {
-              type: "text", 
+              type: "text",
               message: replyMaterial.content || replyMaterial.name
             };
           } else {
@@ -188,7 +249,7 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
 
           // Use default chatbotId 1 if no chatbot is associated with the keyword
           const chatbotId = keyword.chatbot?.id || 1;
-          
+
           await sendMessage(recipient, messageContent, chatbotId, dbUser?.id, true, agentPhoneNumberId);
           actionsPerformed = true;
         }
@@ -199,10 +260,10 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
     if (keyword?.routingMaterials && keyword.routingMaterials.length > 0) {
       for (const keywordRoutingMaterial of keyword.routingMaterials) {
         const routingMaterial = keywordRoutingMaterial.routingMaterial;
-        
+
         if (routingMaterial) {
           console.log(`Processing routing material "${routingMaterial.materialName}" for keyword "${keyword.value}"`);
-          
+
           // Perform actions based on routing type
           switch (routingMaterial.type) {
             case "AssignUser":
@@ -230,7 +291,7 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
                     contactId: contactRecord?.id||0,
                     newStatus: "Assigned",
                     type: "assignmentChanged",
-                    note: `Assigned to agent ${routingMaterial.assignedUser.email}`, 
+                    note: `Assigned to agent ${routingMaterial.assignedUser.email}`,
                     assignedToUserId: routingMaterial.assignedUserId,
                     changedById:  null,
                     changedAt: new Date(),
@@ -238,18 +299,18 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
                 });
               }
               break;
-              
+
             case "AssignTeam":
               if (routingMaterial.team && routingMaterial.teamId) {
                 const contact = await prisma.contact.findUnique({
                   where: { phoneNumber: recipient },
                   include: { assignedTeams: true }
                 }) as (Contact & { assignedTeams: Team[] }) | null;
-                
+
                 if (contact) {
                   // Add the team to contact's teams if not already assigned
                   const isTeamAssigned = contact.assignedTeams.some(t => t.id === routingMaterial.teamId);
-                  
+
                   if (!isTeamAssigned && routingMaterial.teamId) {
                     await prisma.contact.update({
                       where: { id: contact.id },
@@ -264,7 +325,7 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
                       where: { phoneNumber: recipient },
                       select: { id: true }
                     });
-                    if (!contactRecord) { 
+                    if (!contactRecord) {
                       throw new Error(`Contact with phoneNumber ${recipient} not found.`);
                     }
                     await prisma.chatStatusHistory.create({
@@ -296,14 +357,14 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
                 }
               }
               break;
-              
+
             case "Notification":
               // For Notification type, we don't need immediate action in the webhook,
               // as this would typically generate notifications elsewhere in the system
               console.log(`Notification routing triggered for ${recipient} with material ID ${routingMaterial.id}`);
               break;
           }
-          
+
           actionsPerformed = true;
         }
       }
@@ -314,7 +375,7 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
     console.error(`Error processing keyword "${text}":`, error);
     return false;
   }
-}; 
+};
 
 const checkAndSendDefaultMaterial = async (
   defaultActionSettings: any,
@@ -333,18 +394,18 @@ const checkAndSendDefaultMaterial = async (
     defaultActionSettings?.outsideWorkingHoursEnabled &&
     defaultActionSettings.workingHours
   ) {
-  
+
 
     if (!isWithinWorkingHours(workingHours)) {
       let dbUser = await prisma.user.findFirst({ where: { selectedPhoneNumberId: agentPhoneNumberId } });
-      
+
       // Get all keywords for the user to perform advanced matching
       const allKeywords = await prisma.keyword.findMany({
         where: {
           userId: dbUser?.id
         }
       });
-      
+
       // Use the new matching logic to find the best matching keyword
       const matchResult = findMatchingKeyword(text, allKeywords);
       const keyword = matchResult?.keyword;
@@ -362,7 +423,7 @@ const checkAndSendDefaultMaterial = async (
       if ( !keyword) {
         const type = defaultActionSettings.outsideWorkingHoursMaterialType;
         const id = defaultActionSettings.outsideWorkingHoursMaterialId;
-  
+
         if (type && id) {
           const sent = await sendDefaultMaterial(type, id, recipient, 1, agentPhoneNumberId);
           if (sent) return true;
@@ -372,7 +433,7 @@ const checkAndSendDefaultMaterial = async (
       return false;
     }
     }
-  
+
 
   // Check for no agents online
   if (workingHours && isWithinWorkingHours(workingHours) && defaultActionSettings?.noAgentOnlineEnabled && agentPhoneNumberId) {
@@ -406,7 +467,7 @@ const checkAndSendDefaultMaterial = async (
         businessPhoneNumberId: defaultActionSettings.businessPhoneNumberId,
       },
     });
-        
+
   const contact = await prisma.contact.findFirst({
     where: {
       phoneNumber: recipient,
@@ -436,12 +497,12 @@ const agents = await prisma.user.findMany({
           phoneNumberId: agentPhoneNumberId,
         },
       });
-  
+
       let nextIndex = 0;
-  
+
       if (rrState) {
         nextIndex = (rrState.lastAssignedIndex + 1) % agents.length;
-  
+
         await prisma.roundRobinState.update({
           where: { phoneNumberId: agentPhoneNumberId },
           data: {
@@ -457,7 +518,7 @@ const agents = await prisma.user.findMany({
           },
         });
       }
-  
+
       // Assign the selected agent to this contact
       const assignedAgent = agents[nextIndex];
       await prisma.contact.update({
@@ -487,17 +548,17 @@ const agents = await prisma.user.findMany({
         conversationId: existingConversation?.id,
       },
     });
-    if (messages.length < 2) {  
+    if (messages.length < 2) {
     // Check for keyword match (same logic as processKeyword)
     let dbUser = await prisma.user.findFirst({ where: { selectedPhoneNumberId: agentPhoneNumberId } });
-    
+
     // Get all keywords for the user to perform advanced matching
     const allKeywords = await prisma.keyword.findMany({
       where: {
         userId: dbUser?.id
       }
     });
-    
+
     // Use the new matching logic to find the best matching keyword
     const matchResult = findMatchingKeyword(text, allKeywords);
     const keyword = matchResult?.keyword;
@@ -512,7 +573,7 @@ const agents = await prisma.user.findMany({
       }
     }
 
-    
+
   }else{
     return false;
   }
@@ -625,7 +686,7 @@ export const handleFallbackMaterial = async (
 
       const sent = await sendDefaultMaterial(
         defaultActionSettings.fallbackMessageMaterialType,
-        defaultActionSettings.fallbackMessageMaterialId,    
+        defaultActionSettings.fallbackMessageMaterialId,
         recipient,
         1,
         agentPhoneNumberId
