@@ -1,7 +1,5 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from "../models/prismaClient";
 
 // Get all variables
 export const getVariables = async (req: Request, res: Response): Promise<void> => {
