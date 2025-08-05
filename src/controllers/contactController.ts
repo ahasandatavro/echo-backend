@@ -384,9 +384,21 @@ export const updateContact = async (req: Request, res: Response) => {
     let parsedAttributes = existingContact.attributes;
     if (attributes !== undefined) {
       try {
-        parsedAttributes = typeof attributes === 'string' 
+        let rawAttributes = typeof attributes === 'string' 
           ? JSON.parse(attributes) 
           : attributes;
+        
+        // Convert array format to object format if needed
+        if (Array.isArray(rawAttributes)) {
+          parsedAttributes = rawAttributes.reduce((obj, item) => {
+            if (item && typeof item === 'object' && item.key && item.value !== undefined) {
+              obj[item.key] = item.value;
+            }
+            return obj;
+          }, {});
+        } else {
+          parsedAttributes = rawAttributes;
+        }
          // await ProcessRulesForAttributes(existingContact.attributes, parsedAttributes, bp);
       } catch (error) {
         console.error("Error parsing attributes:", error);

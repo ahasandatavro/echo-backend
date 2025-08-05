@@ -515,7 +515,7 @@ export const handleChatbotTrigger=async(text:string, recipient:string, phoneNumb
     where: { metaPhoneNumberId: phoneNumberId },
   });
   let conversation = await prisma.conversation.findFirst({
-    where: { recipient, businessPhoneNumberId: bp?.id },
+    where: { recipient, businessPhoneNumberId: bp?.id, chatbotId: chatbot?.id },
     orderBy: {
       updatedAt: 'desc', // Orders by the most recently updated conversation
     },
@@ -527,6 +527,7 @@ export const handleChatbotTrigger=async(text:string, recipient:string, phoneNumb
                 recipient,
                 chatbotId:chatbot?.id,
                 answeringQuestion: true,
+                businessPhoneNumberId: bp?.id,
               },
             });
   

@@ -183,6 +183,9 @@ export const getUserAnalytics = async (req: Request, res: Response) => {
     } else if (timeRange === 'Last 30 days') {
       startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
       endDate = now;
+    } else if (timeRange === 'Last 7 days') {
+      startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      endDate = now;
     } else if (timeRange === 'This month') {
       startDate = new Date(now.getFullYear(), now.getMonth(), 1);
       endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
@@ -217,7 +220,10 @@ export const getUserAnalytics = async (req: Request, res: Response) => {
       where: {
         chatbotId,
         businessPhoneNumberId: businessPhoneNumberId,
-        createdAt: { gte: startDate, lte: endDate },
+        OR: [
+          { createdAt: { gte: startDate, lte: endDate } },
+          { updatedAt: { gte: startDate, lte: endDate } }
+        ],
       },
       // Remove include: { contact: true },
     });
@@ -258,26 +264,76 @@ export const getUserAnalytics = async (req: Request, res: Response) => {
     });
     // 7. User Type Filtering
     let finalConversations: typeof filteredConversations = [];
-    // Group conversations by contact.id
-    const convsByContact: Record<number, typeof filteredConversations> = {};
-    for (const conv of filteredConversations) {
-      if (conv.contact && typeof conv.contact.id === 'number') {
-        if (!convsByContact[conv.contact.id]) {
-          convsByContact[conv.contact.id] = [];
+    
+    if (userType === 'All Users') {
+      // Include all conversations
+      finalConversations = filteredConversations;
+    } else if (userType === 'New Users') {
+      // Get all conversations for this businessPhoneNumberId (across all chatbots)
+      const allConversationsForBusiness = await prisma.conversation.findMany({
+        where: {
+          businessPhoneNumberId: businessPhoneNumberId,
+          OR: [
+            { createdAt: { gte: startDate, lte: endDate } },
+            { updatedAt: { gte: startDate, lte: endDate } }
+          ],
+        },
+      });
+      
+      // Group conversations by contact phone number across all chatbots
+      const convsByContactPhone: Record<string, any[]> = {};
+      for (const conv of allConversationsForBusiness) {
+        if (!convsByContactPhone[conv.recipient]) {
+          convsByContactPhone[conv.recipient] = [];
         }
-        convsByContact[conv.contact.id].push(conv);
+        convsByContactPhone[conv.recipient].push(conv);
       }
-    }
-    if (userType === 'New Users') {
-      // Only contacts with exactly one conversation with this chatbot
-      finalConversations = Object.values(convsByContact)
-        .filter(convs => convs.length === 1)
-        .flat();
+      
+      // Get contacts who have conversations ONLY with this chatbot (no other chatbots)
+      const newUserContactPhones = Object.keys(convsByContactPhone).filter(phone => {
+        const convs = convsByContactPhone[phone];
+        // Check if this contact has conversations with ONLY this chatbot
+        const uniqueChatbotIds = [...new Set(convs.map(c => c.chatbotId))];
+        return uniqueChatbotIds.length === 1 && uniqueChatbotIds[0] === chatbotId;
+      });
+      
+      // Filter conversations to only include those from new users
+      finalConversations = filteredConversations.filter(conv => 
+        newUserContactPhones.includes(conv.recipient)
+      );
     } else if (userType === 'Returning Users') {
-      // Only contacts with more than one conversation with this chatbot
-      finalConversations = Object.values(convsByContact)
-        .filter(convs => convs.length > 1)
-        .flat();
+      // Get all conversations for this businessPhoneNumberId (across all chatbots)
+      const allConversationsForBusiness = await prisma.conversation.findMany({
+        where: {
+          businessPhoneNumberId: businessPhoneNumberId,
+          OR: [
+            { createdAt: { gte: startDate, lte: endDate } },
+            { updatedAt: { gte: startDate, lte: endDate } }
+          ],
+        },
+      });
+      
+      // Group conversations by contact phone number across all chatbots
+      const convsByContactPhone: Record<string, any[]> = {};
+      for (const conv of allConversationsForBusiness) {
+        if (!convsByContactPhone[conv.recipient]) {
+          convsByContactPhone[conv.recipient] = [];
+        }
+        convsByContactPhone[conv.recipient].push(conv);
+      }
+      
+      // Get contacts who have conversations with multiple chatbots (including current one)
+      const returningContactPhones = Object.keys(convsByContactPhone).filter(phone => {
+        const convs = convsByContactPhone[phone];
+        // Check if this contact has conversations with multiple chatbots
+        const uniqueChatbotIds = [...new Set(convs.map(c => c.chatbotId))];
+        return uniqueChatbotIds.length > 1;
+      });
+      
+      // Filter conversations to only include those from returning contacts
+      finalConversations = filteredConversations.filter(conv => 
+        returningContactPhones.includes(conv.recipient)
+      );
     } else {
       return res.status(400).json({ error: 'Invalid userType' });
     }
