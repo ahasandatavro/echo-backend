@@ -1996,7 +1996,7 @@ const countryNameToCode: Record<string, string> = Object.fromEntries(
  */
 export const getUsersAnalytics = async (req, res) => {
   try {
-    const user = req.user;
+    const user: any = req.user;
     const chatbotId = req.query.chatbot;
     const timeRange = req.query.timeRange;
     if (!chatbotId || !timeRange) {
@@ -2094,23 +2094,108 @@ export const getUsersAnalytics = async (req, res) => {
         contactConvoDates[cid].push(conv.createdAt);
       }
     }
-    // 5. Classify users
-    let newUsers = 0, existingUsers = 0, otherUsers = 0;
-    for (const convoDates of Object.values(contactConvoDates)) {
+    // 5. Get business account ID for the current chatbot
+    const chatbot = await prisma.chatbot.findUnique({
+      where: { id: Number(chatbotId) },
+      select: { ownerId: true },
+    });
+    
+    if (!chatbot) {
+      return res.status(404).json({ error: 'Chatbot not found' });
+    }
+    
+    const businessAccount = await prisma.businessAccount.findFirst({
+      where: { userId: chatbot.ownerId },
+      select: { id: true },
+    });
+    
+    if (!businessAccount) {
+      return res.status(404).json({ error: 'Business account not found' });
+    }
+    
+    const businessAccountId = businessAccount.id;
+    
+    // 6. Get all phone numbers for this business account
+    const businessPhoneNumbers = await prisma.businessPhoneNumber.findMany({
+      where: { businessAccountId },
+      select: { id: true },
+    });
+    
+    const businessPhoneNumberIds = businessPhoneNumbers.map(bp => bp.id);
+    
+    // 7. Classify users
+    let newUsers = 0, existingUsers = 0;
+    
+    for (const [contactId, convoDates] of Object.entries(contactConvoDates)) {
       // Sort dates ascending
       convoDates.sort((a, b) => a.getTime() - b.getTime());
       const hasInRange = convoDates.some(d => d >= fromDate);
-      const hasBefore = convoDates.some(d => d < fromDate);
-      if (hasInRange && !hasBefore) {
-        newUsers++;
-      } else if (hasInRange && hasBefore) {
-        existingUsers++;
-      } else if (!hasInRange && hasBefore) {
-        otherUsers++;
-      }
+      
+             if (hasInRange) {
+         // Check if this contact has communicated with other chatbots under the same business account within the current time range
+         const otherConversations = await prisma.conversation.findMany({
+           where: {
+             AND: [
+               { businessPhoneNumberId: { in: businessPhoneNumberIds } },
+               {
+                 OR: [
+                   { createdAt: { gte: fromDate } },
+                   { updatedAt: { gte: fromDate } }
+                 ]
+               },
+               {
+                 OR: [
+                   { contactId: parseInt(contactId) },
+                   { recipient: { in: contactsById.filter(c => c.id === parseInt(contactId)).map(c => c.phoneNumber).filter(Boolean) } }
+                 ]
+               }
+             ]
+           },
+           select: { createdAt: true },
+         });
+         
+         // Check if this contact has communicated with other chatbots before the current time range
+         const previousConversations = await prisma.conversation.findMany({
+           where: {
+             AND: [
+               { businessPhoneNumberId: { in: businessPhoneNumberIds } },
+               { chatbotId: { not: Number(chatbotId) } },
+               {
+                OR: [
+                  { createdAt: { gte: fromDate } },
+                  { updatedAt: { gte: fromDate } }
+                ]
+              },
+               {
+                 OR: [
+                   { contactId: parseInt(contactId) },
+                   { recipient: { in: contactsById.filter(c => c.id === parseInt(contactId)).map(c => c.phoneNumber).filter(Boolean) } }
+                 ]
+               }
+             ]
+           },
+           select: { createdAt: true },
+         });
+         
+         // If they have communicated with other chatbots before the time range, they are existing users
+         if (previousConversations.length > 0) {
+           existingUsers++;
+         } else {
+           newUsers++;
+         }
+       }
     }
     const totalUsers = Object.keys(contactConvoDates).length;
-    res.json({ existingUsers, newUsers, otherUsers, totalUsers });
+    
+    // Convert to percentages
+    const existingUsersPercentage = totalUsers > 0 ? Math.round((existingUsers / totalUsers) * 100) : 0;
+    const newUsersPercentage = totalUsers > 0 ? Math.round((newUsers / totalUsers) * 100) : 0;
+    
+    res.json({ 
+      existingUsers: existingUsersPercentage, 
+      newUsers: newUsersPercentage, 
+      totalUsers 
+    });
   } catch (error) {
     console.error('Error in getUsersAnalytics:', error);
     res.status(500).json({ error: 'Internal Server Error' });
