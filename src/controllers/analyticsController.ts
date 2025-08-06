@@ -375,15 +375,64 @@ export const getChatbotAnalytics = async (req: Request, res: Response) => {
     } else if (timeRange === 'Last 30 days') {
       startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
       endDate = now;
+    } else if (timeRange === 'Last 7 days') {
+      startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      endDate = now;
     } else if (timeRange === 'This month') {
       startDate = new Date(now.getFullYear(), now.getMonth(), 1);
       endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
     } else {
       return res.status(400).json({ error: 'Invalid timeRange' });
     }
-    // 2. Get chatbots (filter by id if provided)
-    const chatbotWhere: any = chatbotId ? { id: parseInt(chatbotId as string, 10) } : {};
-    const chatbots = await prisma.chatbot.findMany({ where: chatbotWhere });
+    
+    // 2. Get the current user's selectedPhoneNumberId from JWT
+    const user: any = req.user;
+    const dbUser = await prisma.user.findFirst({
+      where: { id: user.userId },
+      select: { id: true, selectedPhoneNumberId: true },
+    });
+    if (!dbUser || !dbUser.selectedPhoneNumberId) {
+      return res.status(400).json({ error: 'User does not have a selectedPhoneNumberId' });
+    }
+    
+    const selectedPhoneNumberId = (dbUser.selectedPhoneNumberId);
+    const bp = await prisma.businessPhoneNumber.findFirst({
+      where: { metaPhoneNumberId: selectedPhoneNumberId },
+      select: { id: true }
+    });
+    if (!bp) {
+      return res.status(404).json({ error: 'Business Phone Number not found' });
+    }
+    const businessPhoneNumberId = bp.id;
+    
+    // 3. Get chatbots that had conversations within the time range for this business phone number
+    let chatbotWhere: any = {};
+    if (chatbotId && chatbotId !== 'all') {
+      chatbotWhere = { id: parseInt(chatbotId as string, 10) };
+    }
+    
+    // Get chatbots owned by the user that have conversations in the time range
+    const chatbotsWithConversations = await prisma.chatbot.findMany({
+      where: {
+        ownerId: dbUser.id,
+        ...(chatbotId && chatbotId !== 'all' ? { id: parseInt(chatbotId as string, 10) } : {}),
+        conversations: {
+          some: {
+            businessPhoneNumberId: businessPhoneNumberId,
+            OR: [
+              { createdAt: { gte: startDate, lte: endDate } },
+              { updatedAt: { gte: startDate, lte: endDate } }
+            ]
+          }
+        }
+      },
+      select: {
+        id: true,
+        name: true
+      }
+    });
+    
+    const chatbots = chatbotsWithConversations;
     // 3. For each chatbot, calculate analytics
     const analytics = await Promise.all(chatbots.map(async (chatbot) => {
       // Get all nodes for this chatbot
@@ -458,6 +507,9 @@ export const getChatbotNodeAnalytics = async (req: Request, res: Response) => {
     } else if (timeRange === 'Last 30 days') {
       startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
       endDate = now;
+    } else if (timeRange === 'Last 7 days') {
+      startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      endDate = now;
     } else if (timeRange === 'This month') {
       startDate = new Date(now.getFullYear(), now.getMonth(), 1);
       endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
@@ -514,7 +566,10 @@ export const getChatbotNodeAnalytics = async (req: Request, res: Response) => {
       const avgTimeSpent = timeDiffs.length > 0 ? (timeDiffs.reduce((a, b) => a + b, 0) / timeDiffs.length) : null;
       return {
         nodeId: node.id,
+        nodeType: node.type,
         nodeData: node.data,
+        focusX: node.positionX,
+        focusY: node.positionY,
         totalChatbotUsers,
         totalUsersReached,
         dropoffUsers,
