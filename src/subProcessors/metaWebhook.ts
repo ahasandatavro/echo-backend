@@ -610,18 +610,66 @@ export async function processBroadcastStatus(statuses: any[]): Promise<void> {
         where: { id: broadcastId },
         data: { status: updatedStatus },
       });
-      await prisma.broadcastRecipient.updateMany({
+      
+      // Find the BroadcastRecipient record
+      const broadcastRecipient = await prisma.broadcastRecipient.findFirst({
         where: {
           broadcastId,
           contactId: dbContact.id,
         },
-        data: {
-          status: updatedStatus,
-          errorMessage: statusObj.errors?.[0]?.message,
-        },
       });
+      
+      if (broadcastRecipient) {
+        // Create history record for this status change
+        await prisma.broadcastRecipientHistory.create({
+          data: {
+            broadcastRecipientId: broadcastRecipient.id,
+            status: updatedStatus,
+            errorMessage: statusObj.errors?.[0]?.message,
+          },
+        });
+        
+        // Update the current status (existing functionality)
+        await prisma.broadcastRecipient.update({
+          where: { id: broadcastRecipient.id },
+          data: {
+            status: updatedStatus,
+            errorMessage: statusObj.errors?.[0]?.message,
+          },
+        });
+      }
     }
   }
+}
+
+export async function getBroadcastRecipientHistory(broadcastRecipientId: number) {
+  return await prisma.broadcastRecipientHistory.findMany({
+    where: { broadcastRecipientId },
+    orderBy: { createdAt: 'asc' },
+    include: {
+      broadcastRecipient: {
+        include: {
+          contact: true,
+          broadcast: true,
+        },
+      },
+    },
+  });
+}
+
+export async function getBroadcastRecipientHistoryByContact(broadcastId: number, contactId: number) {
+  const broadcastRecipient = await prisma.broadcastRecipient.findFirst({
+    where: {
+      broadcastId,
+      contactId,
+    },
+  });
+  
+  if (!broadcastRecipient) {
+    return null;
+  }
+  
+  return await getBroadcastRecipientHistory(broadcastRecipient.id);
 }
 
 export const isValidWebhookRequest = (entry: any): boolean => {
@@ -629,6 +677,8 @@ export const isValidWebhookRequest = (entry: any): boolean => {
 };
 
 export const processWebhookChange = async (change: any, io: any) => {
+  const statuses = change.value?.statuses;
+  if(statuses) await processBroadcastStatus(statuses);
   switch (change.field) {
     case "message_template_status_update":
       if (change.value.reason) {

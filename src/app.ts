@@ -28,6 +28,7 @@ import businessPhoneNumberRoutes from "./routes/businessPhoneNumberRoute";
 import paymentRoutes from "./routes/payment.routes";
 import packageRoutes from "./routes/packageRoute";
 import { Server } from "socket.io";
+import broadcastRoutes from "./routes/broadcastRoute";
 import { authenticateJWT, authenticateJWTWithoutSubscription } from "./middlewares/authMiddleware"
 import passport from "passport";
 import multer from "multer";
@@ -307,6 +308,7 @@ app.use("/defaultActionSettings",authenticateJWT, defaultActionSettingsRoutes)
 app.use('/keyword',authenticateJWT,keywordRoutes);
 app.use('/gdrive',authenticateJWT,gdriveRoutes);
 app.use('/contacts',authenticateJWT,contactRoutes);
+app.use("/broadcasts", authenticateJWT, broadcastRoutes);
 app.use("/conversations", authenticateJWT,conversationRoutes);
 app.use('/analytics', authenticateJWT,analyticsRoutes);
 app.use("/teams", authenticateJWT,teamRoutes);
