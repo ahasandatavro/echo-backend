@@ -1948,13 +1948,12 @@ export const getBroadcastStats = async (req: Request, res: Response) => {
     });
   }
 };
-
 export const getBroadcasts = async (
   req: Request,
   res: Response
 ): Promise<void> => {
   try {
-    const { startDate, endDate, dateRange, page = "1", limit = "10", search } = req.query;
+    const { startDate, endDate, dateRange, page = "1", limit = "10", search, sortBy = "Latest" } = req.query;
     const user: any = req.user;
     const dbUser = await prisma.user.findFirst({
       where: { id: user.userId },
@@ -2000,6 +1999,8 @@ export const getBroadcasts = async (
     }
     //send contact phoneNumber for those who have broadcasted
 
+    // Determine sort order based on sortBy parameter
+    const sortOrder = sortBy === "Oldest" ? 'asc' : 'desc';
 
     const [broadcasts, total] = await prisma.$transaction([
       prisma.broadcast.findMany({
@@ -2007,7 +2008,7 @@ export const getBroadcasts = async (
         include: { recipients: { include: { contact: { select: { phoneNumber: true } } } } },
         skip: offset,
         take: limitNum,
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: sortOrder },
       }),
       prisma.broadcast.count({
         where,
