@@ -261,8 +261,40 @@ model Broadcast {
   status            String               @default("PENDING")
   scheduledDateTime DateTime?
   recipients        BroadcastRecipient[]
+  
+  // MM Lite API Analytics Fields
+  totalSent         Int                  @default(0)
+  totalDelivered    Int                  @default(0)
+  totalRead         Int                  @default(0)
+  totalClicked      Int                  @default(0)
+  totalReplied      Int                  @default(0)
+  websiteClicks     Int                  @default(0)
+  buttonClicks      Json?                // Store button-wise click data
+  apiType           String               @default("CLOUD") // "CLOUD" or "MM_LITE"
+  templateId        String?              // Meta template ID for MM Lite tracking
+  
+  // Metrics tracking
+  metrics           BroadcastMetric[]
 }
-
+model BroadcastRecipientHistory {
+  id                    Int             @id @default(autoincrement())
+  broadcastRecipientId  Int
+  status                BroadcastStatus
+  errorMessage          String?
+  createdAt             DateTime        @default(now())
+  broadcastRecipient    BroadcastRecipient @relation(fields: [broadcastRecipientId], references: [id], onDelete: Cascade)
+  
+  @@index([broadcastRecipientId])
+  @@index([createdAt])
+}
+model TemplateClick {
+  id         Int      @id @default(autoincrement())
+  templateId Int      @unique
+  clickCount Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  template   Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+}
 model BroadcastRecipient {
   id           Int             @id @default(autoincrement())
   broadcastId  Int
@@ -272,6 +304,20 @@ model BroadcastRecipient {
   errorMessage String?
   broadcast    Broadcast       @relation(fields: [broadcastId], references: [id])
   contact      Contact         @relation(fields: [contactId], references: [id])
+  history      BroadcastRecipientHistory[]
+}
+
+model BroadcastMetric {
+  id          Int       @id @default(autoincrement())
+  broadcastId Int
+  metricType  String    // "sent", "delivered", "read", "clicked", "replied", "button_click"
+  metricValue Int       @default(1)
+  contactId   Int?      // Optional: track per contact
+  buttonId    String?   // For button click tracking
+  timestamp   DateTime  @default(now())
+  
+  broadcast   Broadcast @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+  contact     Contact?  @relation(fields: [contactId], references: [id])
 }
 
 model Contact {
@@ -294,6 +340,7 @@ model Contact {
   timerStartTime     DateTime?
   createdById        Int?
   broadcasts         BroadcastRecipient[]
+  broadcastMetrics   BroadcastMetric[]
   chatStatusHistory  ChatStatusHistory[]
   createdBy          User?                @relation("ContactCreatedBy", fields: [createdById], references: [id])
   user               User?                @relation(fields: [userId], references: [id])
@@ -471,6 +518,7 @@ model Template {
   messages         Message[]
   user             User              @relation(fields: [userId], references: [id])
   rejectionError   String?
+  templateClick    TemplateClick?
 }
 
 model KeywordTemplate {
