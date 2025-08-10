@@ -491,6 +491,177 @@ export const getChatbotAnalytics = async (req: Request, res: Response) => {
   }
 };
 
+export const getBroadcastAnalytics = async (req: Request, res: Response) => {
+  try {
+    const user: any = req.user;
+    const { phoneNumberId, broadcastId, timeRange } = req.query;
+
+    // Parse time range
+    const now = new Date();
+    let startDate: Date;
+    
+    switch (timeRange) {
+      case 'last_7_days':
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case 'last_30_days':
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        break;
+      case 'last_90_days':
+        startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+        break;
+      default:
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    }
+
+    // Build filter conditions
+    const whereConditions: any = {
+      userId: user.userId,
+      createdAt: {
+        gte: startDate,
+        lte: now
+      }
+    };
+
+    if (phoneNumberId) {
+      whereConditions.phoneNumberId = phoneNumberId as string;
+    }
+
+    if (broadcastId) {
+      whereConditions.id = parseInt(broadcastId as string);
+    }
+
+    // Get broadcasts with metrics
+    const broadcasts = await prisma.broadcast.findMany({
+      where: whereConditions,
+      include: {
+        recipients: {
+          include: {
+            contact: {
+              select: { name: true, phoneNumber: true }
+            }
+          }
+        },
+        metrics: {
+          select: {
+            metricType: true,
+            metricValue: true,
+            timestamp: true,
+            contactId: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    // Process broadcast analytics
+    const broadcastAnalytics = broadcasts.map(broadcast => {
+      // Calculate metrics from the metrics table
+      const metricsData = broadcast.metrics.reduce((acc: any, metric) => {
+        if (!acc[metric.metricType]) {
+          acc[metric.metricType] = 0;
+        }
+        acc[metric.metricType] += metric.metricValue;
+        return acc;
+      }, {});
+
+      // Calculate rates
+      const totalSent = broadcast.totalSent || metricsData.sent || broadcast.recipients.length;
+      const totalDelivered = broadcast.totalDelivered || metricsData.delivered || 0;
+      const totalRead = broadcast.totalRead || metricsData.read || 0;
+      const totalClicked = broadcast.totalClicked || metricsData.clicked || 0;
+      const totalReplied = broadcast.totalReplied || metricsData.replied || 0;
+      const websiteClicks = broadcast.websiteClicks || 0;
+
+      const deliveryRate = totalSent > 0 ? ((totalDelivered / totalSent) * 100).toFixed(2) : '0.00';
+      const readRate = totalDelivered > 0 ? ((totalRead / totalDelivered) * 100).toFixed(2) : '0.00';
+      const clickRate = totalDelivered > 0 ? ((totalClicked / totalDelivered) * 100).toFixed(2) : '0.00';
+      const replyRate = totalDelivered > 0 ? ((totalReplied / totalDelivered) * 100).toFixed(2) : '0.00';
+
+      return {
+        id: broadcast.id,
+        name: broadcast.name,
+        templateName: broadcast.templateName,
+        phoneNumberId: broadcast.phoneNumberId,
+        apiType: broadcast.apiType,
+        status: broadcast.status,
+        createdAt: broadcast.createdAt,
+        sentAt: broadcast.sentAt,
+        recipients: broadcast.recipients.length,
+        metrics: {
+          totalSent,
+          totalDelivered,
+          totalRead,
+          totalClicked,
+          totalReplied,
+          websiteClicks,
+          deliveryRate: parseFloat(deliveryRate),
+          readRate: parseFloat(readRate),
+          clickRate: parseFloat(clickRate),
+          replyRate: parseFloat(replyRate)
+        },
+        buttonClicks: broadcast.buttonClicks || {},
+        recipientDetails: broadcast.recipients.map(recipient => ({
+          contactId: recipient.contactId,
+          name: recipient.contact.name,
+          phoneNumber: recipient.contact.phoneNumber,
+          status: recipient.status,
+          errorMessage: recipient.errorMessage
+        }))
+      };
+    });
+
+    // Calculate summary metrics
+    const summary = {
+      totalBroadcasts: broadcasts.length,
+      totalRecipients: broadcasts.reduce((sum, b) => sum + b.recipients.length, 0),
+      totalSent: broadcasts.reduce((sum, b) => sum + (b.totalSent || 0), 0),
+      totalDelivered: broadcasts.reduce((sum, b) => sum + (b.totalDelivered || 0), 0),
+      totalRead: broadcasts.reduce((sum, b) => sum + (b.totalRead || 0), 0),
+      totalClicked: broadcasts.reduce((sum, b) => sum + (b.totalClicked || 0), 0),
+      totalReplied: broadcasts.reduce((sum, b) => sum + (b.totalReplied || 0), 0),
+      totalWebsiteClicks: broadcasts.reduce((sum, b) => sum + (b.websiteClicks || 0), 0),
+      avgDeliveryRate: 0,
+      avgReadRate: 0,
+      avgClickRate: 0,
+      avgReplyRate: 0,
+    };
+
+    // Calculate overall rates
+    summary.avgDeliveryRate = summary.totalSent > 0 
+      ? parseFloat(((summary.totalDelivered / summary.totalSent) * 100).toFixed(2))
+      : 0;
+    
+    summary.avgReadRate = summary.totalDelivered > 0 
+      ? parseFloat(((summary.totalRead / summary.totalDelivered) * 100).toFixed(2))
+      : 0;
+    
+    summary.avgClickRate = summary.totalDelivered > 0 
+      ? parseFloat(((summary.totalClicked / summary.totalDelivered) * 100).toFixed(2))
+      : 0;
+    
+    summary.avgReplyRate = summary.totalDelivered > 0 
+      ? parseFloat(((summary.totalReplied / summary.totalDelivered) * 100).toFixed(2))
+      : 0;
+
+    res.json({
+      success: true,
+      summary,
+      broadcasts: broadcastAnalytics,
+      timeRange,
+      phoneNumberId: phoneNumberId || 'all'
+    });
+
+  } catch (error) {
+    console.error('Error in getBroadcastAnalytics:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Internal Server Error',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+};
+
 export const getChatbotNodeAnalytics = async (req: Request, res: Response) => {
   try {
     const { chatbotId } = req.params;
@@ -582,6 +753,352 @@ export const getChatbotNodeAnalytics = async (req: Request, res: Response) => {
     console.error('Error in getChatbotNodeAnalytics:', error);
     res.status(500).json({ error: 'Internal Server Error' });
   }
+};
+
+export const getTemplatePerformanceTrend = async (req: Request, res: Response) => {
+  try {
+    const { templateId, date } = req.query;
+    
+    // Validate required parameters
+    if (!templateId || !date) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "templateId and date are required" 
+      });
+    }
+
+    // Get user's selected WABA ID from JWT
+    const user: any = req.user;
+    const dbUser = await prisma.user.findFirst({
+      where: { id: user.userId },
+      select: { selectedWabaId: true },
+    });
+
+    if (!dbUser?.selectedWabaId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "No WABA ID selected for this user" 
+      });
+    }
+
+    // Fetch the template from database to get the WhatsApp template ID
+    const template = await prisma.template.findFirst({
+      where: { 
+        id: parseInt(templateId as string),
+        userId: user.userId,
+        wabaId: dbUser.selectedWabaId
+      },
+      select: { content: true }
+    });
+
+    if (!template) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Template not found" 
+      });
+    }
+
+    // Parse the content to get the WhatsApp template ID
+    let whatsappTemplateId: string;
+    try {
+      if (!template.content) {
+        return res.status(400).json({ 
+          success: false, 
+          message: "Template content is missing" 
+        });
+      }
+      
+      const templateContent = JSON.parse(template.content);
+      whatsappTemplateId = templateContent.id;
+      
+      if (!whatsappTemplateId) {
+        return res.status(400).json({ 
+          success: false, 
+          message: "Template does not have a valid WhatsApp template ID" 
+        });
+      }
+    } catch (error) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Invalid template content format" 
+      });
+    }
+
+    // Parse the date and calculate ±5 minutes range
+    const targetDate = new Date(date as string);
+    
+    // Check if the date is valid
+    if (isNaN(targetDate.getTime())) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Invalid date format" 
+      });
+    }
+    
+    // Check if the date is in the future (Meta API doesn't accept future dates)
+    const now = new Date();
+    if (targetDate > now) {
+      console.log('Future date detected, using current date instead');
+      // Use current date instead of future date
+      targetDate.setTime(now.getTime());
+    }
+    
+    // For daily granularity, Meta API automatically corrects to 0:00 UTC
+    // So we need to use the start and end of the target date in UTC
+    const targetDateUTC = new Date(targetDate.getTime());
+    targetDateUTC.setUTCHours(0, 0, 0, 0); // Set to 00:00:00 UTC
+    
+    const startDate = new Date(targetDateUTC.getTime());
+    const endDate = new Date(targetDateUTC.getTime() + 24 * 60 * 60 * 1000); // Next day 00:00:00 UTC
+    
+    const startTimestamp = Math.floor(startDate.getTime() / 1000);
+    const endTimestamp = Math.floor(endDate.getTime() / 1000);
+    
+    console.log('Date Debug:', {
+      originalDate: date,
+      targetDate: targetDate.toISOString(),
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString(),
+      startTimestamp,
+      endTimestamp
+    });
+
+    const selectedWabaId = dbUser.selectedWabaId;
+    const accessToken = process.env.META_ACCESS_TOKEN;
+
+    if (!accessToken) {
+      return res.status(500).json({ 
+        success: false, 
+        message: "Meta access token not configured" 
+      });
+    }
+
+    // Call Meta API for template analytics
+    const templateAnalyticsUrl = `https://graph.facebook.com/v23.0/${selectedWabaId}/template_analytics?start=${startTimestamp}&end=${endTimestamp}&granularity=daily&metric_types=cost,clicked,delivered,read,sent&template_ids=[${whatsappTemplateId}]`;
+
+    const response = await axios.get(templateAnalyticsUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+
+    const templateData = response.data?.data[0]?.data_points || [];
+    
+    if (templateData.length === 0) {
+      return res.json({
+        success: true,
+        data: {
+          financialMetrics: {
+            amountSpent: 0,
+            costPerMessageDelivered: 0,
+            costPerWebsiteButtonClick: 0,
+            currency: "INR"
+          },
+          performanceMetrics: {
+            messagesSent: 0,
+            messagesDelivered: 0,
+            messagesRead: 0,
+            replies: 0,
+            readPercentage: 0
+          },
+          performanceTrend: {
+            labels: [],
+            datasets: []
+          },
+          buttonClicks: {
+            summary: {},
+            tableData: {
+              total: [],
+              unique: []
+            },
+            graphData: {
+              labels: [],
+              datasets: []
+            }
+          }
+        }
+      });
+    }
+
+    // Process the data
+    const processedData = processTemplateAnalyticsData(templateData, targetDate);
+
+    res.json({
+      success: true,
+      data: processedData
+    });
+
+  } catch (error: any) {
+    console.error("Error fetching template analytics:", error?.response?.data || error.message);
+    res.status(500).json({ 
+      success: false, 
+      message: "Error fetching template analytics from Meta API" 
+    });
+  }
+};
+
+const processTemplateAnalyticsData = (templateData: any[], targetDate: Date) => {
+  // Initialize metrics
+  let totalSent = 0;
+  let totalDelivered = 0;
+  let totalRead = 0;
+  let totalReplies = 0;
+  let amountSpent = 0;
+  let costPerDelivered = 0;
+  let costPerUrlButtonClick = 0;
+  let currency = "INR";
+  
+  const buttonClicks: Record<string, any> = {};
+  const dailyData: Record<string, any> = {};
+
+  // Process each data point
+  templateData.forEach((entry: any) => {
+    // Aggregate basic metrics
+    totalSent += entry.sent || 0;
+    totalDelivered += entry.delivered || 0;
+    totalRead += entry.read || 0;
+
+    // Process cost metrics
+    if (Array.isArray(entry.cost)) {
+      entry.cost.forEach((costItem: any) => {
+        if (costItem.type === "amount_spent") {
+          amountSpent += costItem.value || 0;
+        } else if (costItem.type === "cost_per_delivered") {
+          costPerDelivered += costItem.value || 0;
+        } else if (costItem.type === "cost_per_url_button_click") {
+          costPerUrlButtonClick += costItem.value || 0;
+        }
+      });
+    }
+
+    // Process button clicks
+    if (Array.isArray(entry.clicked)) {
+      entry.clicked.forEach((clickItem: any) => {
+        const buttonLabel = clickItem.button_content || "Unknown";
+        const clickType = clickItem.type === "unique_url_button" ? "unique" : "total";
+        
+        if (!buttonClicks[buttonLabel]) {
+          buttonClicks[buttonLabel] = { total: 0, unique: 0 };
+        }
+        
+        if (clickType === "unique") {
+          buttonClicks[buttonLabel].unique += clickItem.count || 0;
+        } else {
+          buttonClicks[buttonLabel].total += clickItem.count || 0;
+        }
+      });
+    }
+
+    // Store daily data for trend analysis
+    const dateKey = new Date(entry.start * 1000).toISOString().split('T')[0];
+    if (!dailyData[dateKey]) {
+      dailyData[dateKey] = { sent: 0, delivered: 0, read: 0, replies: 0 };
+    }
+    dailyData[dateKey].sent += entry.sent || 0;
+    dailyData[dateKey].delivered += entry.delivered || 0;
+    dailyData[dateKey].read += entry.read || 0;
+  });
+
+  // Generate date labels for the last 9 days
+  const labels: string[] = [];
+  const datasets = [
+    { label: "Messages sent", data: [] as number[], borderColor: "#dc2626", backgroundColor: "rgba(220, 38, 38, 0.1)" },
+    { label: "Messages delivered", data: [] as number[], borderColor: "#7c3aed", backgroundColor: "rgba(124, 58, 237, 0.1)" },
+    { label: "Messages read", data: [] as number[], borderColor: "#0d9488", backgroundColor: "rgba(13, 148, 136, 0.1)" },
+    { label: "Replies", data: [] as number[], borderColor: "#166534", backgroundColor: "rgba(22, 101, 52, 0.1)" }
+  ];
+
+  for (let i = 8; i >= 0; i--) {
+    const date = new Date(targetDate);
+    date.setDate(date.getDate() - i);
+    const dateKey = date.toISOString().split('T')[0];
+    const label = date.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+    
+    labels.push(label);
+    
+    const dayData = dailyData[dateKey] || { sent: 0, delivered: 0, read: 0, replies: 0 };
+    datasets[0].data.push(dayData.sent);
+    datasets[1].data.push(dayData.delivered);
+    datasets[2].data.push(dayData.read);
+    datasets[3].data.push(dayData.replies);
+  }
+
+  // Process button clicks data
+  const buttonSummary: Record<string, any> = {};
+  const buttonTableData = { total: [] as any[], unique: [] as any[] };
+  const buttonGraphData = {
+    labels,
+    datasets: [] as any[]
+  };
+
+  Object.entries(buttonClicks).forEach(([label, clicks]: [string, any]) => {
+    const totalClicks = clicks.total;
+    const uniqueClicks = clicks.unique;
+    const clickRate = totalDelivered > 0 ? ((totalClicks / totalDelivered) * 100).toFixed(0) + "%" : "0%";
+    const uniqueClickRate = totalDelivered > 0 ? ((uniqueClicks / totalDelivered) * 100).toFixed(0) + "%" : "0%";
+
+    buttonSummary[label] = {
+      label,
+      type: "Website click",
+      totalClicks,
+      uniqueClicks,
+      clickRate,
+      uniqueClickRate
+    };
+
+    buttonTableData.total.push({
+      label,
+      type: "Website click",
+      totalClicks,
+      clicksVsPreviousPeriod: "--",
+      clickRate
+    });
+
+    buttonTableData.unique.push({
+      label,
+      type: "Website click",
+      totalClicks: uniqueClicks,
+      clicksVsPreviousPeriod: "--",
+      clickRate: uniqueClickRate
+    });
+
+    // Generate button click trend data
+    const buttonTrendData: number[] = [];
+    for (let i = 8; i >= 0; i--) {
+      buttonTrendData.push(0); // Default to 0 for now, could be enhanced with actual daily data
+    }
+
+    buttonGraphData.datasets.push({
+      label,
+      totalData: buttonTrendData,
+      uniqueData: buttonTrendData,
+      borderColor: "#60a5fa",
+      backgroundColor: "rgba(96, 165, 250, 0.1)"
+    });
+  });
+
+  return {
+    financialMetrics: {
+      amountSpent: parseFloat(amountSpent.toFixed(2)),
+      costPerMessageDelivered: parseFloat(costPerDelivered.toFixed(2)),
+      costPerWebsiteButtonClick: parseFloat(costPerUrlButtonClick.toFixed(2)),
+      currency
+    },
+    performanceMetrics: {
+      messagesSent: totalSent,
+      messagesDelivered: totalDelivered,
+      messagesRead: totalRead,
+      replies: totalReplies,
+      readPercentage: totalDelivered > 0 ? Math.round((totalRead / totalDelivered) * 100) : 0
+    },
+    performanceTrend: {
+      labels,
+      datasets
+    },
+    buttonClicks: {
+      summary: buttonSummary,
+      tableData: buttonTableData,
+      graphData: buttonGraphData
+    }
+  };
 };
 
 // Static map for country code to country name
