@@ -874,7 +874,7 @@ export const getTemplatePerformanceTrend = async (req: Request, res: Response) =
     }
 
     // Call Meta API for template analytics
-    const templateAnalyticsUrl = `https://graph.facebook.com/v23.0/${selectedWabaId}/template_analytics?start=${startTimestamp}&end=${endTimestamp}&granularity=daily&metric_types=cost,clicked,delivered,read,sent&template_ids=[${whatsappTemplateId}]`;
+    const templateAnalyticsUrl = `https://graph.facebook.com/v23.0/${selectedWabaId}/template_analytics?start=${startTimestamp}&end=${startTimestamp}&granularity=daily&metric_types=cost,clicked,delivered,read,sent&template_ids=[${whatsappTemplateId}]`;
 
     const response = await axios.get(templateAnalyticsUrl, {
       headers: { Authorization: `Bearer ${accessToken}` }
