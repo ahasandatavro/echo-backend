@@ -89,6 +89,13 @@ export const getDefaultActionSettings = async (req: Request, res: Response) => {
               materialType: settings.welcomeMessageMaterialType,
             }
           : null,
+
+        cb9: settings.waitingMessageMaterialId
+          ? {
+              materialId: settings.waitingMessageMaterialId.toString(),
+              materialType: settings.waitingMessageMaterialType,
+            }
+          : null,
       },
     };
 
