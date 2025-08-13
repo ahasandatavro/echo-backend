@@ -45,6 +45,34 @@ export const logWebhookCall = async (
     return null;
   }
 };
+export async function getBroadcastRecipientHistory(broadcastRecipientId: number) {
+  return await prisma.broadcastRecipientHistory.findMany({
+    where: { broadcastRecipientId },
+    orderBy: { createdAt: 'asc' },
+    include: {
+      broadcastRecipient: {
+        include: {
+          contact: true,
+          broadcast: true,
+        },
+      },
+    },
+  });
+}
+export async function getBroadcastRecipientHistoryByContact(broadcastId: number, contactId: number) {
+  const broadcastRecipient = await prisma.broadcastRecipient.findFirst({
+    where: {
+      broadcastId,
+      contactId,
+    },
+  });
+  
+  if (!broadcastRecipient) {
+    return null;
+  }
+  
+  return await getBroadcastRecipientHistory(broadcastRecipient.id);
+}
 
 export const updateWebhookLog = async (
   logId: number,
