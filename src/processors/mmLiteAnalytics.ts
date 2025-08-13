@@ -158,26 +158,38 @@ export const processBroadcastInteraction = async (messageData: any) => {
             });
 
             if (recentBroadcast) {
-              // Record reply metric
-              await prisma.broadcastMetric.create({
-                data: {
+              // Check if this reply metric already exists for this broadcast and contact
+              const existingReplyMetric = await prisma.broadcastMetric.findFirst({
+                where: {
                   broadcastId: recentBroadcast.broadcastId,
-                  metricType: "replied",
-                  metricValue: 1,
                   contactId: contact.id,
-                  timestamp: new Date()
+                  metricType: "replied"
                 }
               });
 
-              // Update broadcast reply count
-              await prisma.broadcast.update({
-                where: { id: recentBroadcast.broadcastId },
-                data: {
-                  totalReplied: {
-                    increment: 1
+              // Only create metric if it doesn't already exist
+              if (!existingReplyMetric) {
+                // Record reply metric
+                await prisma.broadcastMetric.create({
+                  data: {
+                    broadcastId: recentBroadcast.broadcastId,
+                    metricType: "replied",
+                    metricValue: 1,
+                    contactId: contact.id,
+                    timestamp: new Date()
                   }
-                }
-              });
+                });
+
+                // Update broadcast reply count
+                await prisma.broadcast.update({
+                  where: { id: recentBroadcast.broadcastId },
+                  data: {
+                    totalReplied: {
+                      increment: 1
+                    }
+                  }
+                });
+              }
             }
           }
         }
@@ -208,6 +220,9 @@ export const processBroadcastInteraction = async (messageData: any) => {
           if (recentBroadcast) {
             let metricType = "";
             switch (messageStatus) {
+              case "sent":
+                metricType = "sent";
+                break;
               case "delivered":
                 metricType = "delivered";
                 break;
@@ -218,29 +233,43 @@ export const processBroadcastInteraction = async (messageData: any) => {
                 continue;
             }
 
-            // Record status metric
-            await prisma.broadcastMetric.create({
-              data: {
+            // Check if this metric already exists for this broadcast, contact, and metric type
+            const existingMetric = await prisma.broadcastMetric.findFirst({
+              where: {
                 broadcastId: recentBroadcast.broadcastId,
-                metricType,
-                metricValue: 1,
                 contactId: contact.id,
-                timestamp: new Date()
+                metricType
               }
             });
 
-            // Update broadcast counts
-            const updateData: any = {};
-            if (metricType === "delivered") {
-              updateData.totalDelivered = { increment: 1 };
-            } else if (metricType === "read") {
-              updateData.totalRead = { increment: 1 };
-            }
+            // Only create metric if it doesn't already exist
+            if (!existingMetric) {
+              // Record status metric
+              await prisma.broadcastMetric.create({
+                data: {
+                  broadcastId: recentBroadcast.broadcastId,
+                  metricType,
+                  metricValue: 1,
+                  contactId: contact.id,
+                  timestamp: new Date()
+                }
+              });
 
-            await prisma.broadcast.update({
-              where: { id: recentBroadcast.broadcastId },
-              data: updateData
-            });
+              // Update broadcast counts
+              const updateData: any = {};
+              if (metricType === "sent") {
+                updateData.totalSent = { increment: 1 };
+              } else if (metricType === "delivered") {
+                updateData.totalDelivered = { increment: 1 };
+              } else if (metricType === "read") {
+                updateData.totalRead = { increment: 1 };
+              }
+
+              await prisma.broadcast.update({
+                where: { id: recentBroadcast.broadcastId },
+                data: updateData
+              });
+            }
           }
         }
       }
