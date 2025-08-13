@@ -17,6 +17,7 @@ import { validateUserResponse } from "../helpers/validation";
 import { findMatchingKeyword } from "../utils/keywordMatcher";
 import axios from "axios";
 import { bump } from "../helpers";
+import { processBroadcastInteraction, processTemplateAnalytics } from "../processors/mmLiteAnalytics";
 
 // Webhook Logging Functions
 export const logWebhookCall = async (
@@ -686,9 +687,13 @@ export const processWebhookChange = async (change: any, io: any) => {
       }
       await updateTemplateInDb(change.value,change.value.reason);
       break;
-
+        // case "template_analytics":
+        //   // Handle MM Lite template analytics events
+       
+        //   break;
     case "messages":
       await processMessageUpdate(change.value, io);
+      await processBroadcastInteraction(change.value);
       break;
 
     case "account_update":
