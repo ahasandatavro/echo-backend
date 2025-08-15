@@ -1,8 +1,6 @@
 import { Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
 import { checkFeatureAccess } from '../utils/packageUtils';
-
-const prisma = new PrismaClient();
+import { prisma } from "../models/prismaClient";
 
 /**
  * ✅ Get Default Action Settings for a specific BusinessPhoneNumber

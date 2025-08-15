@@ -1,6 +1,6 @@
 //@ts-nocheck
 import { Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from '../models/prismaClient';
 import fs from "fs";
 import csvParser from "csv-parser";
 import { processWebhookMessage } from "../processors/inboxProcessor";
@@ -9,7 +9,6 @@ import {
   sendTemplate,
 } from "../processors/metaWebhook/webhookProcessor";
 import { handleChatbotTrigger, checkRulesForNodeAction } from "../subProcessors/metaWebhook";
-const prisma = new PrismaClient();
 import FormData from "form-data";
 import axios from "axios";
 import { parse } from 'csv-parse/sync';

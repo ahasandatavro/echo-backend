@@ -1,10 +1,9 @@
-import { PrismaClient } from "@prisma/client";
+import { prisma } from '../models/prismaClient';
 import { Request, Response } from "express";
 import bcrypt from 'bcrypt';
 import { sendWelcomeEmail, generateVerificationToken } from "../services/emailService";
 import { getAgentLimits } from "../utils/packageUtils";
 import crypto from 'crypto';
-const prisma = new PrismaClient();
 
 // Create Agent
 export const createAgent = async (req: Request, res: Response) => {

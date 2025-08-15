@@ -1,8 +1,6 @@
 import { Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
 import { billingInformationValidation } from "../utils/joiSchemas";
-
-const prisma = new PrismaClient();
+import { prisma } from "../models/prismaClient";
 
 // Get billing information for the authenticated user
 export const getBillingInformation = async (req: Request, res: Response): Promise<void> => {

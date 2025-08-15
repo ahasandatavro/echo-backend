@@ -1,12 +1,11 @@
 import {  Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
+
 import { s3 } from "../config/s3Config";
 import { handleChatbotTrigger } from "../subProcessors/metaWebhook";
 import { sendMessage, sendTemplate } from "../processors/metaWebhook/webhookProcessor";
 import { brodcastTemplate } from "../processors/template/templateProcessor";
 import { notifyAgent } from "../helpers";
-
-const prisma = new PrismaClient();
+import { prisma } from "../models/prismaClient";
 
 // Helper to parse date as UTC if no timezone is present
 function parseAsUTC(dateStr: string): Date {

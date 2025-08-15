@@ -365,7 +365,7 @@ export const googleCallbackSheets = [
   },
 ];
 
-
+//get metaToken
 export const getAccessToken = async (
   req: Request,
   res: Response
@@ -551,6 +551,91 @@ export const getAccessToken = async (
     return res; // Ensure a valid Response is returned
   }
 };
+
+// GET /api/auth/google-token
+// GET /api/auth/google-token
+// GET /api/auth/google-token
+export const getGoogleToken = async (req: any, res: Response) => {
+  try {
+    const userId = req.user.userId; // From your JWT middleware
+    
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user || !user.accessToken) {
+      return res.status(403).json({ 
+        message: "No Google access token found. Please sign in with Google again.",
+        success: false 
+      });
+    }
+
+    // Check if token is expired (accessTokenExpiresAt is Unix timestamp)
+    const currentTimestamp = Math.floor(Date.now() / 1000);
+    if (user.accessTokenExpiresAt && currentTimestamp > user.accessTokenExpiresAt) {
+      // Token is expired, need to refresh
+      try {
+        const newTokens:any = await refreshGoogleToken(user.refreshToken!);
+        
+        // Update user with new tokens
+        await prisma.user.update({
+          where: { id: userId },
+          data: {
+            accessToken: newTokens.access_token,
+            refreshToken: newTokens.refresh_token || user.refreshToken,
+            accessTokenExpiresAt: Math.floor(Date.now() / 1000) + newTokens.expires_in
+          }
+        });
+        
+        return res.status(200).json({ 
+          accessToken: newTokens.access_token,
+          success: true 
+        });
+      } catch (refreshError) {
+        console.error('Token refresh failed:', refreshError);
+        return res.status(403).json({ 
+          message: "Google token expired. Please sign in again.",
+          success: false 
+        });
+      }
+    }
+
+    return res.status(200).json({ 
+      accessToken: user.accessToken,
+      success: true 
+    });
+  } catch (error) {
+    console.error("Error fetching Google token:", error);
+    return res.status(500).json({ 
+      message: "Failed to fetch Google token", 
+      success: false 
+    });
+  }
+};
+
+// Helper function to refresh Google tokens
+async function refreshGoogleToken(refreshToken: string) {
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({
+      client_id: process.env.GOOGLE_CLIENT_ID!,
+      client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+      refresh_token: refreshToken,
+      grant_type: 'refresh_token',
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Token refresh error:', errorText);
+    throw new Error('Failed to refresh token');
+  }
+
+  return response.json();
+}
 
 export const requestPasswordReset = async (req: Request, res: Response) => {
   const { email } = req.body;

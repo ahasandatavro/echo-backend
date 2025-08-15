@@ -1,10 +1,9 @@
 import { Request, Response } from 'express';
 import axios from 'axios';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from "../models/prismaClient";
 import * as dotenv from 'dotenv';
 
 dotenv.config();
-const prisma = new PrismaClient();
 
 // Function to get HubSpot access configuration from environment variables
 const getHubSpotAccessConfig = () => {

@@ -3,7 +3,6 @@
 import { Request, Response } from "express";
 import axios from "axios";
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
-import { PrismaClient } from "@prisma/client";
 import { prisma } from "../models/prismaClient";
 
 export const getAnalytics = async (req: Request, res: Response) => {

@@ -1,9 +1,7 @@
 import { Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
 import { uploadFileToDigitalOceanHelper } from "../helpers";
 import { checkMediaUploadLimit } from "../utils/packageUtils";
-
-const prisma = new PrismaClient();
+import { prisma } from "../models/prismaClient";
 
 // Get all media files
 export const getAllMedia = async (req: Request, res: Response): Promise<void> => {

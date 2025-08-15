@@ -1,8 +1,7 @@
 import { Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../models/prismaClient";
 import { checkFeatureAccess } from "../utils/packageUtils";
 
-const prisma = new PrismaClient();
 
 // ✅ Create Routing Material
 export const createRoutingMaterial = async (req: Request, res: Response): Promise<void> => {

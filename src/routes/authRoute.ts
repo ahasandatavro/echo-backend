@@ -11,7 +11,8 @@ import {
   refreshToken,
   resendVerificationEmail,
   logout,
-  googleCallbackSheets
+  googleCallbackSheets,
+  getGoogleToken
 } from '../controllers/authController';
 import { authenticateJWT, authenticateJWTWithoutSubscription } from '../middlewares/authMiddleware';
 const router = express.Router();
@@ -22,6 +23,7 @@ router.post('/refresh-token', refreshToken);
 router.post('/logout', logout);
 router.get('/google', googleAuth);
 router.get('/google-callback', googleCallback);
+router.get('/google-token',authenticateJWT,getGoogleToken);
 router.get('/google-callback-sheets',authenticateJWTWithoutSubscription, googleCallbackSheets);
 router.post("/get-access-token", authenticateJWT, getAccessToken);//for whatsapp embedded signUp
 router.post("/verify-email", verifyEmail);

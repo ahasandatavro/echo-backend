@@ -1,5 +1,4 @@
 import { Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
 import bcrypt from 'bcrypt';
 import axios from "axios";
 import fs from "fs";
@@ -7,7 +6,7 @@ import FormData from "form-data";
 import { json } from "body-parser";
 import jwt from "jsonwebtoken";
 import { uploadFileToDigitalOceanHelper } from "../helpers";
-const prisma = new PrismaClient();
+import { prisma } from "../models/prismaClient";
 interface UserResponse {
   id: number;
   firstName?: string;

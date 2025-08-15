@@ -1,8 +1,6 @@
 import { IQuestion } from "../../interphases";
 type IQuestionValidation = IQuestion["validation"];
-import { Prisma } from "@prisma/client";
-import { PrismaClient } from '@prisma/client';
-const prisma = new PrismaClient();
+import { prisma } from "../../models/prismaClient";
 export const validateUserResponse = (
   userResponse: string,
   validation?: IQuestionValidation,
