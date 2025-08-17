@@ -32,7 +32,7 @@ export const syncTemplatesWithWhatsApp = async () => {
 
 
 
-export async function syncTemplates(wabaId: string) {
+export async function syncTemplates(wabaId: string, reqUserId:number) {
   try {
     let after: string | undefined = undefined;
 
@@ -78,7 +78,7 @@ export async function syncTemplates(wabaId: string) {
         };
 
         const user = await prisma.user.findFirst({
-          where: { selectedWabaId: wabaId },
+          where: { selectedWabaId: wabaId, id: reqUserId },
         });
 
         const data: any = {

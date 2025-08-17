@@ -23,7 +23,7 @@ const upload = multer({ storage });
 const router: Router = Router();
 
 router.get("/", authenticateJWT, getAllTemplates);
-router.get("/sync", syncTemplatesController);
+router.get("/sync", authenticateJWT, syncTemplatesController);
 router.get("/approved", authenticateJWT, getAllApprovedTemplates);
 router.get("/library", authenticateJWT, getTemplatesLibrary);
 router.post("/",authenticateJWT, upload.fields([

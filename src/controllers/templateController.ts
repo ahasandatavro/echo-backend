@@ -787,13 +787,20 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
             };
 
           case "Visit Website": {
-            const urlTemplate = url || "";
+            let urlTemplate = url || "";
             const buttonText = label || "Visit us";
 
             // Validate button text length (Meta API limit is 25 characters)
             if (buttonText.length > 25) {
               throw new Error(`Button text "${buttonText}" is too long. Maximum 25 characters allowed.`);
             }
+
+            // Replace templateId=pending with actual template ID if it exists in the URL
+            // if (urlTemplate.includes('templateId=pending')) {
+            //   // We'll replace this after the template is created and we have the actual ID
+            //   urlTemplate = urlTemplate.replace('templateId=pending', 'templateId={{TEMPLATE_ID}}');
+            // }
+
             // Extract variable numbers from URL
             const matches = urlTemplate.match(/\{\{(\d+)\}\}/g);
             const variableNumbers = matches ? matches.map((match: string) => match.replace(/\{\{(\d+)\}\}/, '$1')) : [];
@@ -965,7 +972,7 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
             timeout: 20000,
           }
         );
-        console.log("Template created successfully:\n", JSON.stringify(response.data, null, 2));
+       console.log("Template created successfully:\n", JSON.stringify(response.data, null, 2));
       }
       catch (err: any) {
         console.error("Meta API call failed:");
@@ -1076,6 +1083,22 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
         wabaId: selectedWabaId,
       },
     });
+
+    // Replace templateId placeholder with actual template ID in the content
+    // if (dbTemplate && dbTemplate.content) {
+    //   let updatedContent = dbTemplate.content;
+    //   if (updatedContent.includes('templateId=pending')) {
+    //     updatedContent = updatedContent.replace(/templateId=pending/g, `templateId=${dbTemplate.id}`);
+        
+    //     // Update the template with the corrected content
+    //     dbTemplate = await prisma.template.update({
+    //       where: { id: dbTemplate.id },
+    //       data: {
+    //         content: updatedContent
+    //       }
+    //     });
+    //   }
+    // }
 //  }
   // else{
   //   const dbTemplate = await prisma.template.update({
@@ -1782,11 +1805,11 @@ export const updateBroadcast = async (req: Request, res: Response) => {
       });
     }
 
-    const { broadcastId } = req.params;
-    const { scheduledDateTime } = req.body;
+    const { id } = req.params;
+    const { scheduledDateTime, name } = req.body;
 
   const broadcast = await prisma.broadcast.findUnique({
-    where: { id: parseInt(broadcastId) },
+    where: { id: parseInt(id) },
   });
   if (!broadcast) {
     return res.status(404).json({ message: "Broadcast not found." });
@@ -1836,11 +1859,19 @@ if (job) {
         scheduledFor: scheduledDate
       });
     }
+    else {
+      if (name) {
+      await prisma.broadcast.update({
+        where: { id: broadcast.id },
+          data: { name }
+        });
+      }
+    }
   } catch (error: any) {
-    console.error("Error creating broadcast:", error);
+    console.error("Error updating broadcast:", error);
     res.status(500).json({
       success: false,
-      message: "Failed to create broadcast",
+      message: "Failed to update broadcast",
       error: error.message,
     });
   }
@@ -1981,6 +2012,10 @@ export const getBroadcasts = async (
         start = new Date(today);
         start.setDate(today.getDate() - 30);
       }
+      else if (dateRange === "Last6months") {
+        start = new Date(today);
+        start.setMonth(today.getMonth() - 6);
+      }
       if (start) {
         where.createdAt = { gte: start, lte: today };
       } else if (startDate && endDate) {
@@ -2096,7 +2131,7 @@ export const syncTemplatesController = async (req: Request, res: Response) => {
       select: { id: true, selectedWabaId: true },
     });
     const wabaId = dbUser?.selectedWabaId;
-    await syncTemplatesService(wabaId as string);
+    await syncTemplatesService(wabaId as string, dbUser?.id as number);
     res.status(200).json({
       success: true,
       message: "Templates synchronized successfully"
@@ -2107,6 +2142,66 @@ export const syncTemplatesController = async (req: Request, res: Response) => {
       success: false,
       message: "Failed to sync templates",
       error: error.message
+    });
+  }
+};
+
+export const trackTemplateClick = async (req: Request, res: Response) => {
+  try {
+    const { templateId, url } = req.query;
+
+    if (!templateId || !url) {
+      return res.status(400).json({
+        error: "Missing required parameters",
+        details: "templateId and url are required"
+      });
+    }
+
+    const templateIdNum = parseInt(templateId as string, 10);
+    if (isNaN(templateIdNum)) {
+      return res.status(400).json({
+        error: "Invalid template ID",
+        details: "templateId must be a valid number"
+      });
+    }
+
+    // Check if template exists
+    const template = await prisma.template.findUnique({
+      where: { id: templateIdNum }
+    });
+
+    if (!template) {
+      return res.status(404).json({
+        error: "Template not found",
+        details: `Template with ID ${templateIdNum} does not exist`
+      });
+    }
+
+    // Increment click count
+    await prisma.templateClick.upsert({
+      where: { templateId: templateIdNum },
+      update: {
+        clickCount: {
+          increment: 1
+        }
+      },
+      create: {
+        templateId: templateIdNum,
+        clickCount: 1
+      }
+    });
+
+    // Decode the URL and redirect
+    const decodedUrl = decodeURIComponent(url as string);
+    
+    // Redirect to the original URL
+    res.redirect(decodedUrl);
+
+  } catch (error: any) {
+    console.error("Error tracking template click:", error);
+    res.status(500).json({
+      error: "Failed to track template click",
+      details: error.message
     });
   }
 };
