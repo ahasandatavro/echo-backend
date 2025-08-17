@@ -1089,7 +1089,7 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
     //   let updatedContent = dbTemplate.content;
     //   if (updatedContent.includes('templateId=pending')) {
     //     updatedContent = updatedContent.replace(/templateId=pending/g, `templateId=${dbTemplate.id}`);
-        
+
     //     // Update the template with the corrected content
     //     dbTemplate = await prisma.template.update({
     //       where: { id: dbTemplate.id },
@@ -1984,7 +1984,7 @@ export const getBroadcasts = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { startDate, endDate, dateRange, page = "1", limit = "10", search, sortBy = "Latest" } = req.query;
+    const { startDate, endDate, dateRange, page = "1", limit = "10", search, sortBy = "Latest", status } = req.query;
     const user: any = req.user;
     const dbUser = await prisma.user.findFirst({
       where: { id: user.userId },
@@ -1999,7 +1999,8 @@ export const getBroadcasts = async (
     let where: any = {
       phoneNumberId: selectedPhoneNumberId,
       userId: user.userId,
-      ...(searchTerm ? { name: { contains: searchTerm, mode: 'insensitive' } } : {})
+      ...(searchTerm ? { name: { contains: searchTerm, mode: 'insensitive' } } : {}),
+      ...(status ? { status } : {})
     };
 
     if (dateRange && dateRange !== "customRange") {
@@ -2193,7 +2194,7 @@ export const trackTemplateClick = async (req: Request, res: Response) => {
 
     // Decode the URL and redirect
     const decodedUrl = decodeURIComponent(url as string);
-    
+
     // Redirect to the original URL
     res.redirect(decodedUrl);
 
