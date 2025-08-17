@@ -20,7 +20,7 @@ export const uploadFileToDigitalOcean = async (file: Express.Multer.File): Promi
 
   // Use an internal URL (adjust port/hostname as needed or use an env variable)
   const uploadUrl =  'http://localhost:5000/upload';
-  
+
   const response = await axios.post(uploadUrl, formData, {
     headers: formData.getHeaders(),
   });
@@ -109,7 +109,7 @@ router.post('/', upload.single('file'), async (req: Request, res: Response) => {
     // ✅ Check package access - only Pro and Business packages can create reply materials
     const accessCheck = await checkFeatureAccess((req.user as any).userId, 'replyMaterials');
     if (!accessCheck.allowed) {
-      return res.status(403).json({ 
+      return res.status(403).json({
         error: "Package access denied",
         message: accessCheck.message,
         packageName: accessCheck.packageName
@@ -162,7 +162,7 @@ router.put('/:id', upload.single('file'), async (req: Request, res: Response) =>
     // ✅ Check package access - only Pro and Business packages can update reply materials
     const accessCheck = await checkFeatureAccess((req.user as any).userId, 'replyMaterials');
     if (!accessCheck.allowed) {
-      return res.status(403).json({ 
+      return res.status(403).json({
         error: "Package access denied",
         message: accessCheck.message,
         packageName: accessCheck.packageName
@@ -196,7 +196,7 @@ router.put('/:id', upload.single('file'), async (req: Request, res: Response) =>
           type === MaterialType.CONTACT_ATTRIBUTES ||
           type === "CONTACT_ATTRIBUTES"
         ) ? content : null,
-        
+
         ...(fileUrl && { fileUrl }),
       },
     });
@@ -216,7 +216,13 @@ router.delete('/:id', async (req: Request, res: Response) => {
     res.json({ message: 'Reply material deleted successfully' });
   } catch (error) {
     console.error('Error deleting material:', error);
-    res.status(500).json({ message: 'Failed to delete reply material', error });
+
+    // @ts-ignore
+    if (error?.meta?.constraint === 'KeywordReplyMaterial_replyMaterialId_fkey') {
+      return res.status(500).json({ message: 'Reply material cannot be deleted because it is used by a keyword. Please delete the keyword first.'});
+    }
+
+    res.status(500).json({ message: 'Failed to delete reply material'});
   }
 });
 
