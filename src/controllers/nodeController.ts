@@ -86,7 +86,11 @@ export const getChatbotLibrary = async (req: Request, res: Response) => {
 
 
     const chatbots = await  prisma.chatbot.findMany({
-      where:   {ownerId: null}
+      where:   {ownerId: null},
+      include: {
+        nodes: true,
+        edges: true
+      }
     })
 
     res.status(200).json({
