@@ -469,7 +469,7 @@ model Conversation {
 
 model Keyword {
   id               Int                      @id @default(autoincrement())
-  value            String                   @unique
+  value            String
   chatbotId        Int?
   textId           Int?
   matchType        MatchType
@@ -482,6 +482,8 @@ model Keyword {
   replyMaterials   KeywordReplyMaterial[]
   routingMaterials KeywordRoutingMaterial[]
   keywordTemplates KeywordTemplate[]
+
+  @@unique([value, userId])
 }
 
 model KeywordReplyMaterial {
