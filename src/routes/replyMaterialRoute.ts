@@ -4,6 +4,7 @@ import axios from 'axios';
 import FormData from 'form-data';
 import { PrismaClient, MaterialType } from '@prisma/client';
 import { checkFeatureAccess } from '../utils/packageUtils';
+import { uploadFileToDigitalOceanHelper } from '../helpers';
 
 const prisma = new PrismaClient();
 const router = express.Router();
@@ -19,7 +20,7 @@ export const uploadFileToDigitalOcean = async (file: Express.Multer.File): Promi
   formData.append('file', file.buffer, file.originalname);
 
   // Use an internal URL (adjust port/hostname as needed or use an env variable)
-  const uploadUrl =  'http://localhost:5000/upload';
+  const uploadUrl =  'https://localhost:5000/upload';
 
   const response = await axios.post(uploadUrl, formData, {
     headers: formData.getHeaders(),
@@ -125,7 +126,8 @@ router.post('/', upload.single('file'), async (req: Request, res: Response) => {
     // For file-based types, automatically use the file's name and upload it to DO Spaces
     if (type !== MaterialType.TEXT && type !== "CONTACT_ATTRIBUTES" && req.file) {
       name = req.file.originalname;
-      fileUrl = await uploadFileToDigitalOcean(req.file);
+      //fileUrl = await uploadFileToDigitalOcean(req.file);
+      fileUrl = await uploadFileToDigitalOceanHelper(req.file);
     }
     if (type === "CONTACT_ATTRIBUTES") {
       // Assume req.body.contactAttributes contains your attribute data (as JSON or a string)
