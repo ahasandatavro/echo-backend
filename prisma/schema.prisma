@@ -333,6 +333,7 @@ model Contact {
   updatedAt          DateTime             @updatedAt
   sendSMS            Boolean?             @default(false)
   subscribed         Boolean?             @default(false)
+  favorite           Boolean?             @default(false)
   latestChatStatusId Int?                 @unique
   lastMessageTime    DateTime?
   ticketStatus       String?

@@ -29,7 +29,8 @@ import {
   getAttributeOptionsForUser,
   getCountriesByPhoneNumber,
   getContactsAnalytics,
-  getUsersAnalytics
+  getUsersAnalytics,
+  toggleContactFavorite
 } from "../controllers/contactController";
 import { authenticateJWT } from '../middlewares/authMiddleware';
 const router = Router();
@@ -59,6 +60,7 @@ router.get("/:id/status", getContactStatus);
 router.get("/:id/tags", authenticateJWT, getTags);
 router.post("/:id/tags", authenticateJWT, addTag);
 router.delete("/:id/tags/:tag", authenticateJWT, removeTag);
+router.patch("/:id/favorite", authenticateJWT, toggleContactFavorite);
 
 router.post("/upload", authenticateJWT, upload.single("file"), uploadContacts);
 router.post("/upload-csv", authenticateJWT, upload.single("file"), uploadCSV);

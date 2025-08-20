@@ -97,10 +97,22 @@ export const getAllContacts = async (req: Request, res: Response) => {
       return res.json([]); // No contacts found
     }
 
+    // Get favorite filter from query parameters
+    const { favorite } = req.query;
+    let favoriteFilter = {};
+    
+    if (favorite !== undefined) {
+      const isFavorite = favorite === 'true';
+      favoriteFilter = { favorite: isFavorite };
+    }
+
     // Step 3: Fetch only the contacts that are linked via conversations
    // console.log('🔍 Fetching contact details...');
     const contacts = await prisma.contact.findMany({
-      where: { id: { in: contactIds } },
+      where: { 
+        id: { in: contactIds },
+        ...favoriteFilter
+      },
       select: {
         id: true,
         name: true,
@@ -109,6 +121,7 @@ export const getAllContacts = async (req: Request, res: Response) => {
         subscribed: true,
         sendSMS: true,
         ticketStatus: true,
+        favorite: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -181,12 +194,22 @@ export const getAllImportedContacts = async (req: Request, res: Response) => {
       userIdsToInclude = [dbUser.id, ...agents.map((a) => a.id)];
     }
 
+    // Get favorite filter from query parameters
+    const { favorite } = req.query;
+    let favoriteFilter = {};
+    
+    if (favorite !== undefined) {
+      const isFavorite = favorite === 'true';
+      favoriteFilter = { favorite: isFavorite };
+    }
+
     // ✅ Fetch all contacts created by any of the users in the set
     const contacts = await prisma.contact.findMany({
       where: {
         createdById: {
           in: userIdsToInclude,
         },
+        ...favoriteFilter,
       },
       select: {
         id: true,
@@ -196,6 +219,7 @@ export const getAllImportedContacts = async (req: Request, res: Response) => {
         subscribed: true,
         sendSMS: true,
         ticketStatus: true,
+        favorite: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -226,6 +250,28 @@ export const getContactById = async (req: Request, res: Response) => {
     const contact = await prisma.contact.findUnique({
       where: { id: parseInt(id) },
       include: { conversations: true },
+      select: {
+        id: true,
+        name: true,
+        phoneNumber: true,
+        email: true,
+        source: true,
+        userId: true,
+        tags: true,
+        attributes: true,
+        createdAt: true,
+        updatedAt: true,
+        sendSMS: true,
+        subscribed: true,
+        favorite: true,
+        latestChatStatusId: true,
+        lastMessageTime: true,
+        ticketStatus: true,
+        timerEndTime: true,
+        timerStartTime: true,
+        createdById: true,
+        conversations: true,
+      },
     });
 
     if (!contact) {
@@ -2198,5 +2244,56 @@ export const getUsersAnalytics = async (req, res) => {
   } catch (error) {
     console.error('Error in getUsersAnalytics:', error);
     res.status(500).json({ error: 'Internal Server Error' });
+  }
+};
+
+export const toggleContactFavorite = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const user: any = req.user;
+
+    // Check if contact exists and user has access
+    const contact = await prisma.contact.findFirst({
+      where: { id: parseInt(id) },
+      select: { id: true, favorite: true },
+    });
+
+    if (!contact) {
+      return res.status(404).json({ error: "Contact not found" });
+    }
+
+    // Toggle the favorite status
+    const updatedContact = await prisma.contact.update({
+      where: { id: parseInt(id) },
+      data: { favorite: !contact.favorite },
+      select: {
+        id: true,
+        name: true,
+        phoneNumber: true,
+        attributes: true,
+        subscribed: true,
+        sendSMS: true,
+        ticketStatus: true,
+        favorite: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    // Format attributes
+    const formattedContact = {
+      ...updatedContact,
+      attributes: Array.isArray(updatedContact.attributes)
+        ? updatedContact.attributes
+        : Object.entries(updatedContact.attributes || {}).map(([key, value]) => ({
+            key,
+            value,
+          })),
+    };
+
+    res.json(formattedContact);
+  } catch (error) {
+    console.error('Error in toggleContactFavorite:', error);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };
