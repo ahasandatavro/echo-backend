@@ -177,9 +177,14 @@ export const deleteNodeByChatId = async (req: Request, res: Response) => {
     const deletedEdges = await prisma.edge.deleteMany({
       where: { chatId },
     });
-    await prisma.nodeVisit.deleteMany({
-     where: { chatId },
-    });
+    
+    if (nodes.length > 0) {
+      const nodeIds = nodes.map(node => node.id);
+      await prisma.nodeVisit.deleteMany({
+        where: { nodeId: { in: nodeIds } },
+      });
+    }
+    
     // Delete nodes associated with the chatId
     const deletedNodes = await prisma.node.deleteMany({
       where: { chatId },
