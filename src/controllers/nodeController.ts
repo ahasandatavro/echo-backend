@@ -586,3 +586,148 @@ export const updateChatFlow = async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to update chat flow' });
   }
 };
+
+export const copyChatFlowFromLibrary = async (req: Request, res: Response) => {
+  const { chatId: chatIdParam } = req.params;
+  const chatIdNumber = parseInt(chatIdParam, 10);
+
+  if (isNaN(chatIdNumber)) {
+    return res.status(400).json({ error: 'Invalid chatId parameter. Must be a number.' });
+  }
+
+  try {
+    // Validate if the source chatbot exists
+    const sourceChatbot = await prisma.chatbot.findUnique({
+      where: { id: chatIdNumber },
+      include: {
+        nodes: true,
+        edges: {
+          include: {
+            source: true,
+            target: true
+          }
+        }
+      }
+    });
+
+    if (!sourceChatbot) {
+      return res.status(404).json({ error: 'Source chatbot not found' });
+    }
+
+    // Get user information for package validation
+    const user: any = req.user;
+    const dbUser = await prisma.user.findFirst({
+      where: { id: user.userId },
+    });
+
+    if (!dbUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Check user's package subscription
+    const dbUserPackage = await prisma.packageSubscription.findFirst({
+      where: { userId: dbUser?.id, isActive: true },
+    });
+    const userPackage = dbUserPackage?.packageName;
+    
+    if (!userPackage) {
+      return res.status(403).json({ 
+        error: "No active subscription found. Please upgrade your plan to create chatbots." 
+      });
+    }
+
+    // Check node length limits based on package
+    const nodeCount = sourceChatbot.nodes?.length || 0;
+    
+    const nodeLimitError = checkNodeLengthLimit(nodeCount, userPackage);
+    if (nodeLimitError) {
+      return res.status(403).json(nodeLimitError);
+    }
+
+    // Check if user can create more chatbots based on their package
+    try {
+      await checkChatbotCreationLimit(dbUser.id, userPackage);
+    } catch (limitError) {
+      return res.status(403).json({ 
+        error: limitError instanceof Error ? limitError.message : "Failed to check chatbot limits" 
+      });
+    }
+
+    // Get chatbot name from request body or use source chatbot name with copy suffix
+    const { chatBotName } = req.body;
+    const baseName = chatBotName || sourceChatbot.name;
+    let uniqueChatBotName = `${baseName}_copy`;
+    let suffix = 1;
+
+    // Check for existing chatbot names and append a unique suffix if necessary
+    while (await prisma.chatbot.findFirst({ where: { name: uniqueChatBotName } })) {
+      uniqueChatBotName = `${baseName}_copy_${suffix}`;
+      suffix++;
+    }
+
+    // Create the new chatbot
+    const newChatbot = await prisma.chatbot.create({
+      data: {
+        name: uniqueChatBotName,
+        description: sourceChatbot.description || "Copied from library",
+        status: "ACTIVE",
+        ownerId: dbUser?.id
+      },
+    });
+
+    // Create nodes for the new chatbot
+    const createdNodes = await prisma.$transaction(
+      sourceChatbot.nodes.map((node: any) =>
+        prisma.node.create({
+          data: {
+            chatId: newChatbot.id,
+            nodeId: node.nodeId,
+            type: node.type,
+            data: node.data,
+            positionX: node.positionX,
+            positionY: node.positionY,
+          },
+        })
+      )
+    );
+
+    // Create edges for the new chatbot
+    const createdEdges = await prisma.$transaction(
+      sourceChatbot.edges.map((edge: any) => {
+        // Find the corresponding nodes in the newly created nodes
+        const sourceNode = createdNodes.find((n) => n.nodeId === edge.source.nodeId);
+        const targetNode = createdNodes.find((n) => n.nodeId === edge.target.nodeId);
+
+        if (!sourceNode || !targetNode) {
+          throw new Error(
+            `Invalid edge connection: source or target node not found. Source nodeId: ${edge.source.nodeId}, Target nodeId: ${edge.target.nodeId}`
+          );
+        }
+
+        return prisma.edge.create({
+          data: {
+            chatId: newChatbot.id,
+            sourceId: sourceNode.id,
+            targetId: targetNode.id,
+            sourceHandle: edge.sourceHandle || null,
+          },
+        });
+      })
+    );
+
+    res.status(201).json({
+      message: 'Chatbot copied successfully from library',
+      chatbot: newChatbot,
+      nodes: createdNodes,
+      edges: createdEdges,
+    });
+  } catch (error: unknown) {
+    console.error(error);
+
+    if (error instanceof Error) {
+      return res.status(500).json({ error: error.message });
+    }
+
+    res.status(500).json({ error: 'Failed to copy chatbot from library' });
+  }
+};
