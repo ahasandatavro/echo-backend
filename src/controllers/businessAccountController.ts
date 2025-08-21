@@ -117,3 +117,127 @@ export const getBusinessSettings = async (req: Request, res: Response) => {
     res.status(500).json({ error: "Internal server error" });
   }
 };
+
+export const saveAccountDetails = async (req: Request, res: Response) => {
+  try {
+    const user: any = req.user;
+    const { timeZone, contentDirection, language } = req.body;
+
+    // Validate required fields
+    if (!timeZone || !contentDirection || !language) {
+      return res.status(400).json({ 
+        error: "Missing required fields", 
+        required: ["timeZone", "contentDirection", "language"] 
+      });
+    }
+
+    // Validate content direction
+    const validContentDirections = ["ltr", "rtl"];
+    if (!validContentDirections.includes(contentDirection)) {
+      return res.status(400).json({ 
+        error: "Invalid content direction. Must be 'ltr' or 'rtl'" 
+      });
+    }
+
+    // Validate timezone format (basic validation)
+    if (typeof timeZone !== "string" || timeZone.length === 0) {
+      return res.status(400).json({ 
+        error: "Invalid timezone format" 
+      });
+    }
+
+    // Validate language format (basic validation)
+    if (typeof language !== "string" || language.length === 0) {
+      return res.status(400).json({ 
+        error: "Invalid language format" 
+      });
+    }
+
+    // First, try to find existing business account for the user
+    let businessAccount = await prisma.businessAccount.findFirst({
+      where: { userId: user.userId },
+    });
+
+    if (businessAccount) {
+      // Update existing business account
+      const updatedBusinessAccount = await prisma.businessAccount.update({
+        where: { id: businessAccount.id },
+        data: {
+          timeZone,
+          contentDirection,
+          language,
+          updatedAt: new Date(),
+        },
+      });
+
+      return res.json({
+        message: "Account details updated successfully",
+        accountDetails: {
+          timeZone: updatedBusinessAccount.timeZone,
+          contentDirection: updatedBusinessAccount.contentDirection,
+          language: updatedBusinessAccount.language,
+        },
+      });
+    } else {
+      // Create new business account for the user
+      const newBusinessAccount = await prisma.businessAccount.create({
+        data: {
+          userId: user.userId,
+          timeZone,
+          contentDirection,
+          language,
+        },
+      });
+
+      return res.status(201).json({
+        message: "Account details created successfully",
+        accountDetails: {
+          timeZone: newBusinessAccount.timeZone,
+          contentDirection: newBusinessAccount.contentDirection,
+          language: newBusinessAccount.language,
+        },
+      });
+    }
+  } catch (error: any) {
+    console.error("Error saving account details:", error);
+    res.status(500).json({ 
+      error: "Internal server error", 
+      details: error.message 
+    });
+  }
+};
+
+export const getAccountDetails = async (req: Request, res: Response) => {
+  try {
+    const user: any = req.user;
+
+    // Find the business account for the user
+    const businessAccount = await prisma.businessAccount.findFirst({
+      where: { userId: user.userId },
+      select: {
+        id: true,
+        timeZone: true,
+        contentDirection: true,
+        language: true,
+        businessName: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!businessAccount) {
+      return res.status(404).json({ 
+        error: "Account details not found",
+        message: "No account details have been set for this user" 
+      });
+    }
+
+    res.json({
+      message: "Account details retrieved successfully",
+      accountDetails: businessAccount,
+    });
+  } catch (error) {
+    console.error("Error fetching account details:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};

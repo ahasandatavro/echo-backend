@@ -1,6 +1,12 @@
 import { Request, Response } from "express";
 import { checkFeatureAccess } from '../utils/packageUtils';
 import { prisma } from "../models/prismaClient";
+import { 
+  convertWorkingHoursToUTC, 
+  convertWorkingHoursFromUTC, 
+  getUserTimezone,
+  WorkingHours 
+} from '../utils/timezoneUtils';
 
 /**
  * ✅ Get Default Action Settings for a specific BusinessPhoneNumber
@@ -8,14 +14,26 @@ import { prisma } from "../models/prismaClient";
 
 export const getDefaultActionSettings = async (req: Request, res: Response) => {
   const { businessPhoneNumberId } = req.params;
-  const bp=await prisma.businessPhoneNumber.findFirst({
-    where: { metaPhoneNumberId: businessPhoneNumberId},
-    select: { id: true },
-  });
-  if (!bp){
-    return res.status(400).json({ message: "Business PhoneNumber not found" });
-  }
+  
   try {
+    // Get the authenticated user
+    const user: any = req.user;
+    if (!user || !user.userId) {
+      return res.status(401).json({ error: "Unauthorized. User not found." });
+    }
+
+    // Get user's timezone
+    const userTimezone = await getUserTimezone(user.userId);
+
+    const bp = await prisma.businessPhoneNumber.findFirst({
+      where: { metaPhoneNumberId: businessPhoneNumberId },
+      select: { id: true },
+    });
+    
+    if (!bp) {
+      return res.status(400).json({ message: "Business PhoneNumber not found" });
+    }
+
     const settings = await prisma.defaultActionSettings.findUnique({
       where: { businessPhoneNumberId: bp?.id },
     });
@@ -24,21 +42,29 @@ export const getDefaultActionSettings = async (req: Request, res: Response) => {
       return res.status(200).json({ message: "Settings not created yet" });
     }
 
-    // ✅ Ensure workingHours is always returned in the correct format
-    const formattedWorkingHours = settings.workingHours || {
-      Monday: { open: false, times: [] },
-      Tuesday: { open: false, times: [] },
-      Wednesday: { open: false, times: [] },
-      Thursday: { open: false, times: [] },
-      Friday: { open: false, times: [] },
-      Saturday: { open: false, times: [] },
-      Sunday: { open: false, times: [] },
-    };
+    // ✅ Convert working hours from UTC back to user's timezone for display
+    let formattedWorkingHours: WorkingHours;
+    if (settings.workingHours && userTimezone !== 'UTC') {
+      // Type assertion for Prisma Json type
+      const storedWorkingHours = settings.workingHours as any;
+      formattedWorkingHours = convertWorkingHoursFromUTC(storedWorkingHours, userTimezone);
+    } else {
+      formattedWorkingHours = (settings.workingHours as any) || {
+        Monday: { open: false, times: [] },
+        Tuesday: { open: false, times: [] },
+        Wednesday: { open: false, times: [] },
+        Thursday: { open: false, times: [] },
+        Friday: { open: false, times: [] },
+        Saturday: { open: false, times: [] },
+        Sunday: { open: false, times: [] },
+      };
+    }
 
     // ✅ Format response properly
     const responsePayload = {
       businessPhoneNumberId: businessPhoneNumberId,
-      workingHours: formattedWorkingHours, // Ensure working hours are always structured properly
+      workingHours: formattedWorkingHours, // Working hours in user's timezone
+      userTimezone: userTimezone, // Include user's timezone in response
 
       // ✅ Checkbox states mapped correctly
       cb1: settings.outsideWorkingHoursEnabled || false,
@@ -104,7 +130,6 @@ export const getDefaultActionSettings = async (req: Request, res: Response) => {
   }
 };
 
-
 /**
  * ✅ Create or Update Default Action Settings for a specific BusinessPhoneNumber
  */
@@ -113,7 +138,7 @@ export const createOrUpdateDefaultActionSettings = async (req: Request, res: Res
     businessPhoneNumberId,
     workingHours,
     selectedMaterials, // ✅ Contains cb1, cb2, etc. with materialId & materialType
-    cb1, cb2, cb3, cb4, cb5, cb6, cb7, cb8,cb9 // ✅ Extract checkboxes
+    cb1, cb2, cb3, cb4, cb5, cb6, cb7, cb8, cb9 // ✅ Extract checkboxes
   } = req.body;
 
   try {
@@ -122,8 +147,10 @@ export const createOrUpdateDefaultActionSettings = async (req: Request, res: Res
       return res.status(401).json({ error: "Unauthorized. User not found." });
     }
 
+    const userId = (req.user as any).userId;
+
     // ✅ Check package access - only Business package can create/update default action settings
-    const accessCheck = await checkFeatureAccess((req.user as any).userId, 'defaultActionSettings');
+    const accessCheck = await checkFeatureAccess(userId, 'defaultActionSettings');
     if (!accessCheck.allowed) {
       return res.status(403).json({ 
         error: "Package access denied",
@@ -132,17 +159,28 @@ export const createOrUpdateDefaultActionSettings = async (req: Request, res: Res
       });
     }
 
+    // ✅ Get user's timezone for working hours conversion
+    const userTimezone = await getUserTimezone(userId);
+
+    // ✅ Convert working hours from user's timezone to UTC for storage
+    let utcWorkingHours = workingHours;
+    if (workingHours && userTimezone !== 'UTC') {
+      utcWorkingHours = convertWorkingHoursToUTC(workingHours as WorkingHours, userTimezone);
+    }
+
     // ✅ Mapping checkboxes to Prisma fields
-    const bp=await prisma.businessPhoneNumber.findFirst({
-      where: { metaPhoneNumberId: businessPhoneNumberId},
+    const bp = await prisma.businessPhoneNumber.findFirst({
+      where: { metaPhoneNumberId: businessPhoneNumberId },
       select: { id: true },
     });
-    if (!bp){
+    
+    if (!bp) {
       return res.status(400).json({ message: "Business PhoneNumber not found" });
     }
+
     const updateData = {
       businessPhoneNumberId: bp?.id,
-      workingHours,
+      workingHours: utcWorkingHours as any, // Store in UTC, cast to any for Prisma Json type
 
       // ✅ Map checkbox flags to Prisma fields
       outsideWorkingHoursEnabled: cb1 || false,
@@ -183,20 +221,38 @@ export const createOrUpdateDefaultActionSettings = async (req: Request, res: Res
     if (existingSettings) {
       // ✅ Update existing settings
       const updatedSettings = await prisma.defaultActionSettings.update({
-        where: { businessPhoneNumberId: bp?.id},
+        where: { businessPhoneNumberId: bp?.id },
         data: updateData,
       });
 
+      // ✅ Convert working hours back to user's timezone for response
+      let responseWorkingHours: any = updatedSettings.workingHours;
+      if (responseWorkingHours && userTimezone !== 'UTC') {
+        responseWorkingHours = convertWorkingHoursFromUTC(responseWorkingHours as any, userTimezone);
+      }
 
-
-      return res.status(200).json(updatedSettings);
+      return res.status(200).json({
+        ...updatedSettings,
+        workingHours: responseWorkingHours,
+        userTimezone: userTimezone
+      });
     } else {
       // ✅ Create new settings
       const newSettings = await prisma.defaultActionSettings.create({
         data: updateData,
       });
 
-      return res.status(201).json(newSettings);
+      // ✅ Convert working hours back to user's timezone for response
+      let responseWorkingHours: any = newSettings.workingHours;
+      if (responseWorkingHours && userTimezone !== 'UTC') {
+        responseWorkingHours = convertWorkingHoursFromUTC(responseWorkingHours as any, userTimezone);
+      }
+
+      return res.status(201).json({
+        ...newSettings,
+        workingHours: responseWorkingHours,
+        userTimezone: userTimezone
+      });
     }
   } catch (error) {
     console.error("Error updating settings:", error);
