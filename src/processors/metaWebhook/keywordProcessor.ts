@@ -688,6 +688,10 @@ export const sendDefaultMaterial = async (
         await processChatFlow(id, recipient, agentPhoneNumberId);
         return true;
       }
+      case 'chatbots': {
+        await processChatFlow(id, recipient, agentPhoneNumberId);
+        return true;
+      }
 
       default:
         console.warn(`Unsupported default material type: ${type}`);
