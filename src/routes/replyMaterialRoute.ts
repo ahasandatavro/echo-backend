@@ -35,7 +35,7 @@ export const uploadFileToDigitalOcean = async (file: Express.Multer.File): Promi
 };
 
 router.get('/', async (req: Request, res: Response) => {
-  const { type } = req.query;
+  const { type, search } = req.query;
 
   try {
     if (!type) {
@@ -46,8 +46,18 @@ router.get('/', async (req: Request, res: Response) => {
 
     if (type === "Notification" || type === "AssignUser" || type === "AssignTeam") {
       // ✅ Fetch from `RoutingMaterial`
+      const whereClause: any = { type: type as any };
+      
+      // Add search filter if search parameter is provided
+      if (search && typeof search === 'string') {
+        whereClause.name = {
+          contains: search,
+          mode: 'insensitive' // Case-insensitive search
+        };
+      }
+
       materials = await prisma.routingMaterial.findMany({
-        where: { type: type as any },
+        where: whereClause,
         include: {
           users: {
             select: {               // ✅ Select only required user fields
@@ -70,8 +80,18 @@ router.get('/', async (req: Request, res: Response) => {
       });
     } else {
       // ✅ Fetch from `ReplyMaterial`
+      const whereClause: any = { type: type as MaterialType };
+      
+      // Add search filter if search parameter is provided
+      if (search && typeof search === 'string') {
+        whereClause.name = {
+          contains: search,
+          mode: 'insensitive' // Case-insensitive search
+        };
+      }
+
       materials = await prisma.replyMaterial.findMany({
-        where: { type: type as MaterialType },
+        where: whereClause,
       });
     }
 
