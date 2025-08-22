@@ -1352,6 +1352,8 @@ const evaluateRuleConditions = async (
 
       const workingHours: any = defaultActionSettings?.workingHours || {};
 
+      console.log(`🕐 Rule processing: Checking working hours for timezone filter...`);
+
       // Get user's timezone for working hours check
       const user = await prisma.user.findFirst({
         where: { selectedPhoneNumberId: phoneNumberId },
@@ -1359,8 +1361,18 @@ const evaluateRuleConditions = async (
       });
       const userTimezone = user?.businessAccount?.[0]?.timeZone || 'UTC';
 
+      console.log(`🌍 Rule timezone information:`);
+      console.log(`   - User ID: ${user?.id || 'NOT FOUND'}`);
+      console.log(`   - Business Account ID: ${user?.businessAccount?.[0]?.id || 'NOT FOUND'}`);
+      console.log(`   - User Timezone: ${userTimezone}`);
+      console.log(`   - Rule Operator: ${operator}`);
+      console.log(`   - Working Hours:`, JSON.stringify(workingHours, null, 2));
+
       // Use the enhanced isWithinWorkingHours function with timezone support
+      const { isWithinWorkingHours } = await import('../processors/metaWebhook/keywordProcessor');
       const isWithin = isWithinWorkingHours(workingHours, userTimezone);
+
+      console.log(`📊 Rule working hours check result: ${isWithin ? 'WITHIN HOURS' : 'OUTSIDE HOURS'}`);
 
       if (operator === "is_within" && !isWithin) return false;
       if (operator === "not_within" && isWithin) return false;

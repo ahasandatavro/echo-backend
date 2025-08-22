@@ -60,6 +60,9 @@ export interface WorkingHours {
  * @returns Working hours converted to UTC
  */
 export function convertWorkingHoursToUTC(workingHours: WorkingHours, userTimezone: string): WorkingHours {
+  console.log(`🔄 Converting working hours from ${userTimezone} to UTC for storage`);
+  console.log(`   - Original working hours:`, JSON.stringify(workingHours, null, 2));
+  
   const utcWorkingHours: WorkingHours = {};
   
   for (const [day, dayData] of Object.entries(workingHours)) {
@@ -70,6 +73,8 @@ export function convertWorkingHoursToUTC(workingHours: WorkingHours, userTimezon
           // Convert from user's timezone to UTC
           const fromTime = convertTimeToUTC(time.from, userTimezone);
           const toTime = convertTimeToUTC(time.to, userTimezone);
+          
+          console.log(`   - ${day} ${time.from}-${time.to} ${userTimezone} → ${fromTime}-${toTime} UTC`);
           
           return {
             from: fromTime,
@@ -82,6 +87,7 @@ export function convertWorkingHoursToUTC(workingHours: WorkingHours, userTimezon
     }
   }
   
+  console.log(`   - Converted to UTC:`, JSON.stringify(utcWorkingHours, null, 2));
   return utcWorkingHours;
 }
 
@@ -92,6 +98,9 @@ export function convertWorkingHoursToUTC(workingHours: WorkingHours, userTimezon
  * @returns Working hours converted to user's timezone
  */
 export function convertWorkingHoursFromUTC(workingHours: WorkingHours, userTimezone: string): WorkingHours {
+  console.log(`🔄 Converting working hours from UTC to ${userTimezone} for display`);
+  console.log(`   - UTC working hours:`, JSON.stringify(workingHours, null, 2));
+  
   const localWorkingHours: WorkingHours = {};
   
   for (const [day, dayData] of Object.entries(workingHours)) {
@@ -102,6 +111,8 @@ export function convertWorkingHoursFromUTC(workingHours: WorkingHours, userTimez
           // Convert from UTC to user's timezone
           const fromTime = convertTimeFromUTC(time.from, userTimezone);
           const toTime = convertTimeFromUTC(time.to, userTimezone);
+          
+          console.log(`   - ${day} ${time.from}-${time.to} UTC → ${fromTime}-${toTime} ${userTimezone}`);
           
           return {
             from: fromTime,
@@ -114,6 +125,7 @@ export function convertWorkingHoursFromUTC(workingHours: WorkingHours, userTimez
     }
   }
   
+  console.log(`   - Converted to ${userTimezone}:`, JSON.stringify(localWorkingHours, null, 2));
   return localWorkingHours;
 }
 
@@ -259,6 +271,8 @@ function getTimezoneOffsetHours(timezone: string): number {
  * @returns User's timezone or default to UTC
  */
 export async function getUserTimezone(userId: number): Promise<string> {
+  console.log(`🌍 Getting timezone for user ID: ${userId}`);
+  
   try {
     const { prisma } = await import('../models/prismaClient');
     
@@ -267,9 +281,14 @@ export async function getUserTimezone(userId: number): Promise<string> {
       select: { timeZone: true }
     });
     
-    return businessAccount?.timeZone || 'UTC';
+    const timezone = businessAccount?.timeZone || 'UTC';
+    console.log(`   - Business Account found: ${!!businessAccount}`);
+    console.log(`   - User timezone: ${timezone}`);
+    
+    return timezone;
   } catch (error) {
-    console.error('Error getting user timezone:', error);
+    console.error('❌ Error getting user timezone:', error);
+    console.log(`   - Falling back to UTC`);
     return 'UTC';
   }
 }

@@ -149,6 +149,8 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
 
     if (!keyword) {
       if (defaultActionSettings?.workingHours) {
+        console.log(`🕐 Checking working hours for waiting message scheduling...`);
+
         // Get user's timezone for working hours check
         const user = await prisma.user.findFirst({
           where: {selectedPhoneNumberId: agentPhoneNumberId},
@@ -156,7 +158,17 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
         });
         const userTimezone = user?.businessAccount?.[0]?.timeZone || 'UTC';
 
-        if (defaultActionSettings.waitingMessageEnabled && isWithinWorkingHours(defaultActionSettings.workingHours as WorkingHours, userTimezone)) {
+        console.log(`🌍 Timezone information:`);
+        console.log(`   - User ID: ${user?.id || 'NOT FOUND'}`);
+        console.log(`   - Business Account ID: ${user?.businessAccount?.[0]?.id || 'NOT FOUND'}`);
+        console.log(`   - User Timezone: ${userTimezone}`);
+        console.log(`   - Working Hours Enabled: ${defaultActionSettings.waitingMessageEnabled}`);
+
+        const isWithinHours = isWithinWorkingHours(defaultActionSettings.workingHours as WorkingHours, userTimezone);
+
+        console.log(`📊 Working hours check result: ${isWithinHours ? 'WITHIN HOURS' : 'OUTSIDE HOURS'}`);
+
+        if (defaultActionSettings.waitingMessageEnabled && isWithinHours) {
           let conversation = await prisma.conversation.findFirst({
             where: {
               recipient: recipient as string,
@@ -202,6 +214,7 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
 
     // 1. Process chatbot if associated
     if (keyword?.chatbot) {
+      console.log(`Triggering chatbot with ID: ${keyword.chatbot.id} for keyword "${keyword.value}"`);
       await bump(keyword.chatbot.id, "triggered");
       // Update conversation to not be answering a question anymore
       const conversation = await prisma.conversation.findFirst({
@@ -225,6 +238,8 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
     if (keyword?.keywordTemplates && keyword.keywordTemplates.length > 0) {
       for (const keywordTemplate of keyword.keywordTemplates) {
         if (keywordTemplate.template) {
+          console.log(`Sending template "${keywordTemplate.template.name}" for keyword "${keyword.value}"`);
+
           // Use default chatbotId 1 if no chatbot is associated with the keyword
           const chatbotId = keyword.chatbot?.id || 1;
 
@@ -245,6 +260,8 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
       for (const keywordReplyMaterial of keyword.replyMaterials) {
         const replyMaterial = keywordReplyMaterial.replyMaterial;
         if (replyMaterial) {
+          console.log(`Sending reply material "${replyMaterial.name}" for keyword "${keyword.value}"`);
+
           // Determine the message type and content based on material type
           let messageContent: any;
 
@@ -281,6 +298,8 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
         const routingMaterial = keywordRoutingMaterial.routingMaterial;
 
         if (routingMaterial) {
+          console.log(`Processing routing material "${routingMaterial.materialName}" for keyword "${keyword.value}"`);
+
           // Perform actions based on routing type
           switch (routingMaterial.type) {
             case "AssignUser":
@@ -295,6 +314,7 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
                     userId: routingMaterial.assignedUserId,
                   }
                 });
+                console.log(`Assigned user ID ${routingMaterial.assignedUserId} to contact ${recipient}`);
                 const contactRecord = await prisma.contact.findUnique({
                   where: {phoneNumber: recipient},
                   select: {id: true}
@@ -336,6 +356,7 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
                         }
                       }
                     });
+                    console.log(`Assigned team ID ${routingMaterial.teamId} to contact ${recipient}`);
                     const contactRecord = await prisma.contact.findUnique({
                       where: {phoneNumber: recipient},
                       select: {id: true}
@@ -367,6 +388,7 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
                         }
                       }
                     });
+                    console.log(`Created contact ${recipient} with team ID ${routingMaterial.teamId}`);
                   }
                 }
               }
@@ -375,6 +397,7 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
             case "Notification":
               // For Notification type, we don't need immediate action in the webhook,
               // as this would typically generate notifications elsewhere in the system
+              console.log(`Notification routing triggered for ${recipient} with material ID ${routingMaterial.id}`);
               break;
           }
 
@@ -404,6 +427,8 @@ const checkAndSendDefaultMaterial = async (
   const workingHours = defaultActionSettings.workingHours as WorkingHours;
   // Check for outside working hours
 
+  console.log(`🕐 Checking outside working hours conditions...`);
+
   // Get user's timezone for working hours check
   const user = await prisma.user.findFirst({
     where: {selectedPhoneNumberId: agentPhoneNumberId},
@@ -416,6 +441,12 @@ const checkAndSendDefaultMaterial = async (
     defaultActionSettings?.outsideWorkingHoursEnabled &&
     defaultActionSettings.workingHours
   ) {
+
+    console.log(`🌍 Outside working hours check:`);
+    console.log(`   - User ID: ${user?.id || 'NOT FOUND'}`);
+    console.log(`   - Business Account ID: ${user?.businessAccount?.[0]?.id || 'NOT FOUND'}`);
+    console.log(`   - User Timezone: ${userTimezone}`);
+    console.log(`   - Outside Working Hours Enabled: ${defaultActionSettings.outsideWorkingHoursEnabled}`);
 
     if (!isWithinWorkingHours(workingHours, userTimezone)) {
       let dbUser = await prisma.user.findFirst({where: {selectedPhoneNumberId: agentPhoneNumberId}});
@@ -669,13 +700,24 @@ export const sendDefaultMaterial = async (
 };
 
 export const isWithinWorkingHours = (workingHours: WorkingHours, userTimezone?: string): boolean => {
+  console.log(`🕐 isWithinWorkingHours called:`);
+  console.log(`   - userTimezone: ${userTimezone || 'NOT SPECIFIED'}`);
+  console.log(`   - workingHours:`, JSON.stringify(workingHours, null, 2));
+
   // If no timezone specified, use server timezone (backward compatibility)
   if (!userTimezone || userTimezone === 'UTC') {
+    console.log(`🌍 No timezone specified or UTC - using server timezone`);
     const now = dayjs();
     const currentDay = now.format('dddd'); // e.g., "Thursday"
     const todaySchedule = workingHours[currentDay];
 
+    console.log(`📅 Server timezone check:`);
+    console.log(`   - Current server time: ${now.format('YYYY-MM-DD HH:mm:ss')}`);
+    console.log(`   - Current day: ${currentDay}`);
+    console.log(`   - Today's schedule:`, todaySchedule);
+
     if (!todaySchedule?.open || !Array.isArray(todaySchedule.times)) {
+      console.log(`❌ No schedule for today or schedule is closed`);
       return false;
     }
 
@@ -686,23 +728,44 @@ export const isWithinWorkingHours = (workingHours: WorkingHours, userTimezone?: 
       // Handle overnight shift: e.g., from 23:00 to 06:00
       if (to.isBefore(from)) {
         to = to.add(1, 'day');
+        console.log(`🌙 Overnight shift detected: ${timeSlot.from} to ${timeSlot.to} (next day)`);
       }
 
+      console.log(`⏰ Checking time slot: ${timeSlot.from} - ${timeSlot.to}`);
+      console.log(`   - From: ${from.format('YYYY-MM-DD HH:mm:ss')}`);
+      console.log(`   - To: ${to.format('YYYY-MM-DD HH:mm:ss')}`);
+      console.log(`   - Current: ${now.format('YYYY-MM-DD HH:mm:ss')}`);
+
       if (now.isAfter(from) && now.isBefore(to)) {
+        console.log(`✅ Current time is within this slot`);
         return true;
+      } else {
+        console.log(`❌ Current time is outside this slot`);
       }
     }
+    console.log(`❌ Current time is not within any working hours slot`);
     return false;
   }
 
   // Timezone-aware working hours checking
+  console.log(`🌍 Timezone-aware working hours check for: ${userTimezone}`);
+  console.log(`   - NOTE: Working hours are stored in UTC in database`);
+  console.log(`   - Converting current time to user timezone for comparison`);
+  
   try {
     // Get current time in user's timezone
     const now = dayjs().tz(userTimezone);
     const currentDay = now.format('dddd'); // e.g., "Thursday"
     const todaySchedule = workingHours[currentDay];
 
+    console.log(`📅 User timezone check:`);
+    console.log(`   - Server UTC time: ${dayjs().format('YYYY-MM-DD HH:mm:ss')} UTC`);
+    console.log(`   - User local time: ${now.format('YYYY-MM-DD HH:mm:ss')} ${userTimezone}`);
+    console.log(`   - Current day: ${currentDay}`);
+    console.log(`   - Today's schedule (stored in UTC):`, todaySchedule);
+
     if (!todaySchedule?.open || !Array.isArray(todaySchedule.times)) {
+      console.log(`❌ No schedule for today or schedule is closed`);
       return false;
     }
 
@@ -729,6 +792,7 @@ export const isWithinWorkingHours = (workingHours: WorkingHours, userTimezone?: 
       // Check if the time slot spans to the next day in the local timezone
       if (toLocal.isBefore(fromLocal)) {
         toLocal = toLocal.add(1, 'day');
+        console.log(`🌙 Overnight shift detected: ${timeSlot.from}-${timeSlot.to} UTC → ${fromLocal.format('HH:mm')}-${toLocal.format('HH:mm')} ${userTimezone} (next day)`);
       }
 
       // Check if current time falls within this slot
@@ -747,6 +811,7 @@ export const isWithinWorkingHours = (workingHours: WorkingHours, userTimezone?: 
 
       // If not within current date slot, try previous date slot
       if (!isWithinSlot) {
+        console.log(`🔄 Trying previous day slot for overnight working hours...`);
         
         // Try with previous date as base
         fromUTC = dayjs.utc(`${previousDate} ${timeSlot.from}`);
@@ -772,17 +837,30 @@ export const isWithinWorkingHours = (workingHours: WorkingHours, userTimezone?: 
         }
         
         if (isWithinSlot) {
-          return true;
+          console.log(`✅ Current time is within previous day's working hours slot`);
         }
       }
       
+      console.log(`⏰ Checking time slot: ${timeSlot.from}-${timeSlot.to} UTC → ${fromLocal.format('HH:mm')}-${toLocal.format('HH:mm')} ${userTimezone}`);
+      console.log(`   - From (UTC): ${fromUTC.format('YYYY-MM-DD HH:mm:ss')} UTC`);
+      console.log(`   - From (local): ${fromLocal.format('YYYY-MM-DD HH:mm:ss')} ${userTimezone}`);
+      console.log(`   - To (UTC): ${toUTC.format('YYYY-MM-DD HH:mm:ss')} UTC`);
+      console.log(`   - To (local): ${toLocal.format('YYYY-MM-DD HH:mm:ss')} ${userTimezone}`);
+      console.log(`   - Current (local): ${now.format('YYYY-MM-DD HH:mm:ss')} ${userTimezone}`);
+      console.log(`   - Date comparison: ${fromLocalDate} to ${toLocalDate} vs current ${currentDate}`);
+
       if (isWithinSlot) {
+        console.log(`✅ Current time is within this slot`);
         return true;
+      } else {
+        console.log(`❌ Current time is outside this slot`);
       }
     }
+    console.log(`❌ Current time is not within any working hours slot`);
     return false;
   } catch (error) {
     console.error(`❌ Error checking working hours for timezone ${userTimezone}:`, error);
+    console.log(`🔄 Falling back to server timezone check`);
     // Fallback to server timezone if timezone processing fails
     return isWithinWorkingHours(workingHours);
   }
@@ -799,6 +877,8 @@ export const handleFallbackMaterial = async (
       defaultActionSettings.fallbackMessageMaterialType &&
       defaultActionSettings.fallbackMessageMaterialId
     ) {
+      console.log(`No keyword matched. Sending fallback material of type "${defaultActionSettings.fallbackMessageMaterialType}"`);
+
       const sent = await sendDefaultMaterial(
         defaultActionSettings.fallbackMessageMaterialType,
         defaultActionSettings.fallbackMessageMaterialId,
@@ -810,6 +890,7 @@ export const handleFallbackMaterial = async (
       return sent;
     }
 
+    console.log(`No keyword matched and fallback is disabled or incomplete.`);
     return false;
   } catch (error) {
     console.error('Error handling fallback material:', error);

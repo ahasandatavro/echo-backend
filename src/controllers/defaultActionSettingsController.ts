@@ -163,9 +163,22 @@ export const createOrUpdateDefaultActionSettings = async (req: Request, res: Res
     const userTimezone = await getUserTimezone(userId);
 
     // ✅ Convert working hours from user's timezone to UTC for storage
+    // IMPORTANT: This ensures working hours are stored in UTC in the database
+    // When checking later, we'll convert current time to user's timezone and compare
+    // against the UTC-stored working hours
     let utcWorkingHours = workingHours;
     if (workingHours && userTimezone !== 'UTC') {
+      console.log(`🔄 Converting working hours for storage:`);
+      console.log(`   - User timezone: ${userTimezone}`);
+      console.log(`   - Original working hours:`, JSON.stringify(workingHours, null, 2));
+      
       utcWorkingHours = convertWorkingHoursToUTC(workingHours as WorkingHours, userTimezone);
+      
+      console.log(`   - Converted to UTC for storage:`, JSON.stringify(utcWorkingHours, null, 2));
+    } else {
+      console.log(`🔄 Working hours storage:`);
+      console.log(`   - User timezone: ${userTimezone}`);
+      console.log(`   - No conversion needed, storing as-is:`, JSON.stringify(workingHours, null, 2));
     }
 
     // ✅ Mapping checkboxes to Prisma fields
