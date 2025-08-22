@@ -1,9 +1,9 @@
-import { google } from "googleapis";
-import { prisma } from '../models/prismaClient';
-import { BroadcastStatus } from "@prisma/client";
-import { resolveContactAttributes, resolveVariables } from "../helpers/validation";
-import { Rule } from "@prisma/client";
-import { Prisma } from "@prisma/client";
+import {google} from "googleapis";
+import {prisma} from '../models/prismaClient';
+import {BroadcastStatus} from "@prisma/client";
+import {resolveContactAttributes, resolveVariables} from "../helpers/validation";
+import {Rule} from "@prisma/client";
+import {Prisma} from "@prisma/client";
 import {processBroadcastInteraction} from "../processors/mmLiteAnalytics"
 import {
   processChatFlow,
@@ -12,12 +12,17 @@ import {
   sendMessageWithButtons,
   sendTemplate,
 } from "../processors/metaWebhook/webhookProcessor";
-import { processWebhookMessage } from "../processors/inboxProcessor";
-import { handleFallbackMaterial, isWithinWorkingHours, processKeyword, sendDefaultMaterial } from "../processors/metaWebhook/keywordProcessor";
-import { validateUserResponse } from "../helpers/validation";
-import { findMatchingKeyword } from "../utils/keywordMatcher";
+import {processWebhookMessage} from "../processors/inboxProcessor";
+import {
+  handleFallbackMaterial,
+  isWithinWorkingHours,
+  processKeyword,
+  sendDefaultMaterial
+} from "../processors/metaWebhook/keywordProcessor";
+import {validateUserResponse} from "../helpers/validation";
+import {findMatchingKeyword} from "../utils/keywordMatcher";
 import axios from "axios";
-import { bump } from "../helpers";
+import {bump} from "../helpers";
 
 // Webhook Logging Functions
 export const logWebhookCall = async (
@@ -45,10 +50,11 @@ export const logWebhookCall = async (
     return null;
   }
 };
+
 export async function getBroadcastRecipientHistory(broadcastRecipientId: number) {
   return await prisma.broadcastRecipientHistory.findMany({
-    where: { broadcastRecipientId },
-    orderBy: { createdAt: 'asc' },
+    where: {broadcastRecipientId},
+    orderBy: {createdAt: 'asc'},
     include: {
       broadcastRecipient: {
         include: {
@@ -59,6 +65,7 @@ export async function getBroadcastRecipientHistory(broadcastRecipientId: number)
     },
   });
 }
+
 export async function getBroadcastRecipientHistoryByContact(broadcastId: number, contactId: number) {
   const broadcastRecipient = await prisma.broadcastRecipient.findFirst({
     where: {
@@ -66,11 +73,11 @@ export async function getBroadcastRecipientHistoryByContact(broadcastId: number,
       contactId,
     },
   });
-  
+
   if (!broadcastRecipient) {
     return null;
   }
-  
+
   return await getBroadcastRecipientHistory(broadcastRecipient.id);
 }
 
@@ -89,7 +96,7 @@ export const updateWebhookLog = async (
 ) => {
   try {
     await prisma.webhookLog.update({
-      where: { id: logId },
+      where: {id: logId},
       data: updateData
     });
   } catch (error) {
@@ -106,7 +113,7 @@ export const executeWebhookWithLogging = async (
 ) => {
   // Create initial log entry
   const logEntry = await logWebhookCall(webhook, payload, eventType, businessPhoneNumberId);
-  
+
   if (!logEntry) {
     console.error('Failed to create webhook log entry for webhook:', webhook.id);
     return;
@@ -146,10 +153,10 @@ export const executeWebhookWithLogging = async (
           try {
             responseBodyToStore = JSON.parse(response.data);
           } catch {
-            responseBodyToStore = { raw: response.data };
+            responseBodyToStore = {raw: response.data};
           }
         }
-        
+
         await updateWebhookLog(logEntry.id, {
           status: 'SUCCESS',
           responseStatus: response.status,
@@ -173,7 +180,7 @@ export const executeWebhookWithLogging = async (
           try {
             responseBodyToStore = JSON.parse(response.data);
           } catch {
-            responseBodyToStore = { raw: response.data };
+            responseBodyToStore = {raw: response.data};
           }
         }
 
@@ -222,7 +229,7 @@ export const executeWebhookWithLogging = async (
       } else if (error.response) {
         // This handles cases where we get a response but it's an error
         errorType = `HTTP_${error.response.status}`;
-        
+
         // Store the error response details
         let responseBodyToStore: any;
         if (typeof error.response.data === 'object') {
@@ -231,7 +238,7 @@ export const executeWebhookWithLogging = async (
           try {
             responseBodyToStore = JSON.parse(error.response.data);
           } catch {
-            responseBodyToStore = { raw: error.response.data };
+            responseBodyToStore = {raw: error.response.data};
           }
         }
 
@@ -275,16 +282,16 @@ export const performGoogleSheetAction = async (
     sheetName: string;
     updateInAndBy?: any[];
     referenceColumn?: { name: string; value: string };
-    variables:any[]
+    variables: any[]
   },
-  currentNode:any,
-  recipient:string
+  currentNode: any,
+  recipient: string
 ): Promise<any> => {
   try {
     // Step 1: Find the chatbot and its owner
     const chatbot = await prisma.chatbot.findUnique({
-      where: { id: currentNode.chatId },
-      include: { owner: true }, // Include the owner relation
+      where: {id: currentNode.chatId},
+      include: {owner: true}, // Include the owner relation
     });
 
     if (!chatbot) {
@@ -296,18 +303,18 @@ export const performGoogleSheetAction = async (
       throw new Error("Chatbot owner does not have a valid access token.");
     }
 
-    const sheetOwner =  await prisma.user.findUnique({
-      where: { id: ownerId },
+    const sheetOwner = await prisma.user.findUnique({
+      where: {id: ownerId},
     });
     const ownerAccessToken = await ensureValidAccessToken(sheetOwner);
 
     // Step 2: Authenticate with Google Sheets API
     const auth = new google.auth.OAuth2();
-    auth.setCredentials({ access_token: ownerAccessToken });
+    auth.setCredentials({access_token: ownerAccessToken});
 
-    const sheets = google.sheets({ version: "v4", auth });
+    const sheets = google.sheets({version: "v4", auth});
 
-    const { action, spreadsheetId, sheetName, updateInAndBy, referenceColumn, variables } = payload;
+    const {action, spreadsheetId, sheetName, updateInAndBy, referenceColumn, variables} = payload;
 
     // Step 3: Perform the specified action
     switch (action) {
@@ -315,25 +322,25 @@ export const performGoogleSheetAction = async (
         if (!variables || variables.length === 0) {
           throw new Error("Invalid payload: No data provided for adding rows.");
         }
-    
+
         // Read existing header row to match columns
         const readHeaderResponse = await sheets.spreadsheets.values.get({
           spreadsheetId: spreadsheetId.id,
           range: `${spreadsheetId.sheetName}!A1:Z1`, // Fetch the header row
         });
-    
+
         let headerRow = readHeaderResponse.data.values?.[0]; // Get the header row
-    
+
         if (!headerRow) {
           throw new Error("Sheet is missing a header row.");
         }
-    
+
         const newRow = await Promise.all(
           headerRow.map(async (columnName: string) => {
             const variable = variables.find((v: any) => v.name === columnName);
-        
+
             if (!variable) return ""; // If no matching variable, leave blank
-        
+
             // Resolve variable if it contains "@"
             if (typeof variable.value === "string" && variable.value.includes("@")) {
               try {
@@ -343,21 +350,18 @@ export const performGoogleSheetAction = async (
                 console.error("Error resolving variable:", error);
                 return ""; // Default to empty string on error
               }
+            } else if (variable.value.includes("{{")) {
+              const resolvedValue = await resolveContactAttributes(variable.value, recipient);
+              return resolvedValue || ""; // Ensure resolvedValue is a valid string
             }
-        else if(variable.value.includes("{{")) {
-          const resolvedValue = await resolveContactAttributes(variable.value, recipient);
-          return resolvedValue || ""; // Ensure resolvedValue is a valid string
-        }
             // Ensure variable.value is a string or valid primitive
             return typeof variable.value === "string" || typeof variable.value === "number"
               ? variable.value
               : ""; // Default to empty string for invalid values
           })
         );
-        
-        
-        
-    
+
+
         // Append the new row to the sheet
         await sheets.spreadsheets.values.append({
           spreadsheetId: spreadsheetId.id,
@@ -367,72 +371,72 @@ export const performGoogleSheetAction = async (
             values: [newRow], // Wrap the new row in an array to match API format
           },
         });
-    
+
         console.log("Row successfully added.");
         return true;
 
-        case "update":
-          if (!referenceColumn || !referenceColumn.name || !referenceColumn.value) {
-            console.error("Invalid payload: Reference column data is missing.");
-            return false;
-          }
-        
-          // Read existing rows
-          const readResponse = await sheets.spreadsheets.values.get({
-            spreadsheetId: spreadsheetId.id,
-            range: spreadsheetId.sheetName,
-          });
-        
-          const rows = readResponse.data.values || [];
-          headerRow = rows[0];
-          let refColumnIndex = headerRow.indexOf(referenceColumn.name);
-        
-          if (refColumnIndex === -1) {
-            console.error("Reference column not found in the sheet.");
-            return false;
-          }
-        
-          // Find the row to update
-          const rowIndex = rows.findIndex(
-            (row: any) => row[refColumnIndex] === referenceColumn.value
-          );
-        
-          if (rowIndex === -1) {
-            console.error("Row not found for the reference column value.");
-            return false;
-          }
-        
-          // Update the row with resolved variables
-          for (const update of updateInAndBy || []) {
-            const updateIndex = headerRow.indexOf(update.name);
-            if (updateIndex !== -1) {
-              if (update.value.startsWith("@")) {
-                // Resolve variable if it starts with '@'
-                try {
-                  const resolvedValue = await resolveVariables(update.value, currentNode.chatId);
-                  rows[rowIndex][updateIndex] = resolvedValue || ""; // Replace with resolved value or empty string
-                } catch (error) {
-                  console.error("Error resolving variable:", error);
-                  rows[rowIndex][updateIndex] = ""; // Default to empty string on error
-                }
-              } else {
-                // If no '@', use the value directly
-                rows[rowIndex][updateIndex] = update.value;
+      case "update":
+        if (!referenceColumn || !referenceColumn.name || !referenceColumn.value) {
+          console.error("Invalid payload: Reference column data is missing.");
+          return false;
+        }
+
+        // Read existing rows
+        const readResponse = await sheets.spreadsheets.values.get({
+          spreadsheetId: spreadsheetId.id,
+          range: spreadsheetId.sheetName,
+        });
+
+        const rows = readResponse.data.values || [];
+        headerRow = rows[0];
+        let refColumnIndex = headerRow.indexOf(referenceColumn.name);
+
+        if (refColumnIndex === -1) {
+          console.error("Reference column not found in the sheet.");
+          return false;
+        }
+
+        // Find the row to update
+        const rowIndex = rows.findIndex(
+          (row: any) => row[refColumnIndex] === referenceColumn.value
+        );
+
+        if (rowIndex === -1) {
+          console.error("Row not found for the reference column value.");
+          return false;
+        }
+
+        // Update the row with resolved variables
+        for (const update of updateInAndBy || []) {
+          const updateIndex = headerRow.indexOf(update.name);
+          if (updateIndex !== -1) {
+            if (update.value.startsWith("@")) {
+              // Resolve variable if it starts with '@'
+              try {
+                const resolvedValue = await resolveVariables(update.value, currentNode.chatId);
+                rows[rowIndex][updateIndex] = resolvedValue || ""; // Replace with resolved value or empty string
+              } catch (error) {
+                console.error("Error resolving variable:", error);
+                rows[rowIndex][updateIndex] = ""; // Default to empty string on error
               }
+            } else {
+              // If no '@', use the value directly
+              rows[rowIndex][updateIndex] = update.value;
             }
           }
-        
-          // Write updated rows back to the spreadsheet
-          await sheets.spreadsheets.values.update({
-            spreadsheetId: spreadsheetId.id,
-            range: `${spreadsheetId.sheetName}!A1:Z${rows.length}`, // Adjust range as needed
-            valueInputOption: "USER_ENTERED",
-            requestBody: { values: rows },
-          });
-        
-          console.log("Rows successfully updated.");
-          return true;
-        
+        }
+
+        // Write updated rows back to the spreadsheet
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: spreadsheetId.id,
+          range: `${spreadsheetId.sheetName}!A1:Z${rows.length}`, // Adjust range as needed
+          valueInputOption: "USER_ENTERED",
+          requestBody: {values: rows},
+        });
+
+        console.log("Rows successfully updated.");
+        return true;
+
       case "delete":
         if (!referenceColumn || !referenceColumn.name || !referenceColumn.value) {
           throw new Error("Invalid payload: Reference column data is missing.");
@@ -445,7 +449,7 @@ export const performGoogleSheetAction = async (
         });
 
         const rowsToDelete = deleteResponse.data.values || [];
-         refColumnIndex = rowsToDelete[0].indexOf(referenceColumn.name);
+        refColumnIndex = rowsToDelete[0].indexOf(referenceColumn.name);
 
         if (refColumnIndex === -1) {
           throw new Error("Reference column not found in the sheet.");
@@ -453,7 +457,7 @@ export const performGoogleSheetAction = async (
 
         // Find the row to delete
         const rowIndexToDelete = rowsToDelete.findIndex(
-          (row:any) => row[refColumnIndex] === referenceColumn.value
+          (row: any) => row[refColumnIndex] === referenceColumn.value
         );
 
         if (rowIndexToDelete === -1) {
@@ -463,11 +467,11 @@ export const performGoogleSheetAction = async (
         rowsToDelete.splice(rowIndexToDelete, 1); // Remove the row
 
         // Write the updated rows back to the spreadsheet
-         await sheets.spreadsheets.values.update({
-          spreadsheetId:spreadsheetId.id,
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: spreadsheetId.id,
           range: `${spreadsheetId.sheetName}!A1:Z${rowsToDelete.length}`, // Adjust range as needed
           valueInputOption: "USER_ENTERED",
-          requestBody: { values: rowsToDelete },
+          requestBody: {values: rowsToDelete},
         });
         console.log("Rows successfully deleted.");
         return true;
@@ -490,9 +494,9 @@ export const refreshAccessToken = async (refreshToken: string): Promise<string> 
       process.env.GOOGLE_CLIENT_SECRET,
       `${process.env.BASE_URL}/auth/google-callback`
     );
-    auth.setCredentials({ refresh_token: refreshToken });
+    auth.setCredentials({refresh_token: refreshToken});
 
-    const { token } = await auth.getAccessToken();
+    const {token} = await auth.getAccessToken();
 
     if (!token) {
       throw new Error("Failed to refresh access token.");
@@ -506,7 +510,7 @@ export const refreshAccessToken = async (refreshToken: string): Promise<string> 
 };
 
 export const ensureValidAccessToken = async (user: any): Promise<string> => {
-  if (user.access_token==undefined || isTokenExpired(user.accessTokenExpiresAt)) {
+  if (user.access_token == undefined || isTokenExpired(user.accessTokenExpiresAt)) {
     console.log("Access token expired. Refreshing...");
     const newAccessToken = await refreshAccessToken(user.refreshToken);
 
@@ -515,8 +519,8 @@ export const ensureValidAccessToken = async (user: any): Promise<string> => {
 
     // Update the database with the new token and expiration time
     await prisma.user.update({
-      where: { id: user.id },
-      data: { accessToken: newAccessToken, accessTokenExpiresAt: expirationTimestamp },
+      where: {id: user.id},
+      data: {accessToken: newAccessToken, accessTokenExpiresAt: expirationTimestamp},
     });
 
     return newAccessToken;
@@ -531,93 +535,93 @@ export const isTokenExpired = (expirationTimestamp: number): boolean => {
   return now >= expirationTimestamp; // Token is expired if current time is past the expiration time
 };
 
-export const handleChatbotTrigger=async(text:string, recipient:string, phoneNumberId: string | undefined)=>{
+export const handleChatbotTrigger = async (text: string, recipient: string, phoneNumberId: string | undefined) => {
   const chatbotName = text.split(":")[1].trim();
 
   const chatbot = await prisma.chatbot.findFirst({
-    where: { name: chatbotName },
+    where: {name: chatbotName},
   });
   if (chatbot) {
     await bump(chatbot.id, "triggered");
   }
-  const bp=await prisma.businessPhoneNumber.findFirst({
-    where: { metaPhoneNumberId: phoneNumberId },
+  const bp = await prisma.businessPhoneNumber.findFirst({
+    where: {metaPhoneNumberId: phoneNumberId},
   });
   let conversation = await prisma.conversation.findFirst({
-    where: { recipient, businessPhoneNumberId: bp?.id, chatbotId: chatbot?.id },
+    where: {recipient, businessPhoneNumberId: bp?.id, chatbotId: chatbot?.id},
     orderBy: {
       updatedAt: 'desc', // Orders by the most recently updated conversation
     },
   });
-    if (!conversation) {
-        
-            conversation = await prisma.conversation.create({
-              data: {
-                recipient,
-                chatbotId:chatbot?.id,
-                answeringQuestion: true,
-                businessPhoneNumberId: bp?.id,
-              },
-            });
-  
-            console.log("New conversation created:", conversation);
-          }
-          let contact = await prisma.contact.findUnique({
-            where: { phoneNumber: recipient }
-          });
-          if (!contact) {
-            return {
-              ok: false,
-              status: 400,
-              message: "Please open a conversation by sending a message to this number first."
-            };
-          }
-          const lastMsg = await prisma.message.findFirst({
-            where: { 
-              conversationId: conversation?.id,
-              contactId: contact?.id, 
-              sender: "them"
-            },
-            orderBy: { time: 'desc' }
-          });
-            // 2) if no message or older than 24h → error
-            const WINDOW = 24 * 60 * 60 * 1000; // ms
-            if (!lastMsg || Date.now() - lastMsg.time.getTime() > WINDOW) {
-              return {
-                ok: false,
-                status: 400,
-                message: "Please open a conversation by sending a message to this number first."
-              };
-            }    
+  if (!conversation) {
+
+    conversation = await prisma.conversation.create({
+      data: {
+        recipient,
+        chatbotId: chatbot?.id,
+        answeringQuestion: true,
+        businessPhoneNumberId: bp?.id,
+      },
+    });
+
+    console.log("New conversation created:", conversation);
+  }
+  let contact = await prisma.contact.findUnique({
+    where: {phoneNumber: recipient}
+  });
+  if (!contact) {
+    return {
+      ok: false,
+      status: 400,
+      message: "Please open a conversation by sending a message to this number first."
+    };
+  }
+  const lastMsg = await prisma.message.findFirst({
+    where: {
+      conversationId: conversation?.id,
+      contactId: contact?.id,
+      sender: "them"
+    },
+    orderBy: {time: 'desc'}
+  });
+  // 2) if no message or older than 24h → error
+  const WINDOW = 24 * 60 * 60 * 1000; // ms
+  if (!lastMsg || Date.now() - lastMsg.time.getTime() > WINDOW) {
+    return {
+      ok: false,
+      status: 400,
+      message: "Please open a conversation by sending a message to this number first."
+    };
+  }
   if (chatbot) {
     await prisma.conversation.update({
-      where: { id: conversation.id },
-      data: { answeringQuestion: false },
+      where: {id: conversation.id},
+      data: {answeringQuestion: false},
     });
     await processChatFlow(chatbot.id, recipient, phoneNumberId);
   }
-  return { ok: true };
+  return {ok: true};
 }
 
 export async function processBroadcastStatus(statuses: any[]): Promise<void> {
   for (const statusObj of statuses) {
     const phoneNumber = statusObj.recipient_id; // e.g. "1234567890"
     const dbContact = await prisma.contact.findFirst({
-      where: { phoneNumber },
+      where: {phoneNumber},
     });
     if (!dbContact) {
       continue;
     }
     const newStatus = statusObj.status;         // e.g. "delivered", "read", "failed"
     // If you included "biz_opaque_callback_data" in the message
-    const broadcastIdString = statusObj.biz_opaque_callback_data; 
+    const broadcastIdString = statusObj.biz_opaque_callback_data;
     // e.g. "broadcastId=123"
     let broadcastId: number | undefined;
-    
+
     if (broadcastIdString && broadcastIdString.startsWith("broadcastId=")) {
       broadcastId = parseInt(broadcastIdString.replace("broadcastId=", ""), 10);
     }
-    
+
     // Convert WhatsApp status to your enum
     let updatedStatus: BroadcastStatus = "SENT";
     switch (newStatus) {
@@ -632,12 +636,12 @@ export async function processBroadcastStatus(statuses: any[]): Promise<void> {
         break;
       // Add more cases if needed
     }
-    
+
     if (broadcastId && phoneNumber) {
       // Update the BroadcastRecipient record matching broadcastId and phoneNumber
       await prisma.broadcast.update({
-        where: { id: broadcastId },
-        data: { status: updatedStatus },
+        where: {id: broadcastId},
+        data: {status: updatedStatus},
       });
       await prisma.broadcastRecipient.updateMany({
         where: {
@@ -663,7 +667,7 @@ export const processWebhookChange = async (change: any, io: any) => {
       if (change.value.reason) {
         console.log(change.value.reason);
       }
-      await updateTemplateInDb(change.value,change.value.reason);
+      await updateTemplateInDb(change.value, change.value.reason);
       break;
 
     case "messages":
@@ -690,18 +694,18 @@ export const processWebhookChange = async (change: any, io: any) => {
 };
 
 // in your triggerMyWebhooks helper
-const graphFieldMap: Record<string,string> = {
-  MSG_RECEIVED:        "messages",
-  NEW_CONTACT_MSG:     "messages",
-  SESSION_MSG_SENT:    "messages",
-  TEMPLATE_MSG_SENT:   "messages",
-  MSG_DELIVERED:       "messages",  // statuses come under messages for WhatsApp
-  MSG_READ:            "messages",
-  MSG_REPLIED:         "messages",
+const graphFieldMap: Record<string, string> = {
+  MSG_RECEIVED: "messages",
+  NEW_CONTACT_MSG: "messages",
+  SESSION_MSG_SENT: "messages",
+  TEMPLATE_MSG_SENT: "messages",
+  MSG_DELIVERED: "messages",  // statuses come under messages for WhatsApp
+  MSG_READ: "messages",
+  MSG_REPLIED: "messages",
   SESSION_MSG_SENT_V2: "messages",
-  TEMPLATE_MSG_SENT_V2:"messages",
-  MSG_DELIVERED_V2:    "messages",
-  PAYMENT_CAPTURED:    "payments",
+  TEMPLATE_MSG_SENT_V2: "messages",
+  MSG_DELIVERED_V2: "messages",
+  PAYMENT_CAPTURED: "payments",
   TEMPLATE_MSG_FAILED: "message_template_status_update",
 };
 
@@ -709,8 +713,8 @@ const graphFieldMap: Record<string,string> = {
  * Decide whether this payload should trigger the hook for the given UI-code.
  */
 function matchesEvent(uiCode: string, value: any): boolean {
-  const msgs     = Array.isArray(value.messages)  ? value.messages  : [];
-  const statuses = Array.isArray(value.statuses)  ? value.statuses  : [];
+  const msgs = Array.isArray(value.messages) ? value.messages : [];
+  const statuses = Array.isArray(value.statuses) ? value.statuses : [];
 
   switch (uiCode) {
     case "MSG_RECEIVED":
@@ -727,29 +731,29 @@ function matchesEvent(uiCode: string, value: any): boolean {
         m.from !== value.metadata.display_phone_number
       );
 
-      case "SESSION_MSG_SENT":
-        // "sent" plus no type=template flag → this is a session/text message
-        return statuses.some((s: any) =>
-          s.status === "sent" &&
-          (
-            !s.biz_opaque_callback_data ||             // no biz data at all
-            !/type=template/.test(s.biz_opaque_callback_data)  // or data present but no type=template
-          )
-        );
-  
-      case "TEMPLATE_MSG_SENT":
-        // "sent" plus type=template → this is a template message
-        return statuses.some((s: any) =>
-          s.status === "sent" &&
-          typeof s.biz_opaque_callback_data === "string" &&
-          /type=template/.test(s.biz_opaque_callback_data)
-        );
-  
-      case "MSG_DELIVERED":
-        return statuses.some((s: any) => s.status === "delivered");
-  
-      case "MSG_READ":
-        return statuses.some((s: any) => s.status === "read");
+    case "SESSION_MSG_SENT":
+      // "sent" plus no type=template flag → this is a session/text message
+      return statuses.some((s: any) =>
+        s.status === "sent" &&
+        (
+          !s.biz_opaque_callback_data ||             // no biz data at all
+          !/type=template/.test(s.biz_opaque_callback_data)  // or data present but no type=template
+        )
+      );
+
+    case "TEMPLATE_MSG_SENT":
+      // "sent" plus type=template → this is a template message
+      return statuses.some((s: any) =>
+        s.status === "sent" &&
+        typeof s.biz_opaque_callback_data === "string" &&
+        /type=template/.test(s.biz_opaque_callback_data)
+      );
+
+    case "MSG_DELIVERED":
+      return statuses.some((s: any) => s.status === "delivered");
+
+    case "MSG_READ":
+      return statuses.some((s: any) => s.status === "read");
 
     default:
       // payments & template failures come via other Graph fields,
@@ -759,21 +763,21 @@ function matchesEvent(uiCode: string, value: any): boolean {
 }
 
 export const triggerMyWebhooks = async (change: any) => {
-  const graphField       = change.field;                                 // e.g. "messages"
+  const graphField = change.field;                                 // e.g. "messages"
   const agentPhoneNumber = change.value?.metadata?.display_phone_number;
 
   // 1) find which UI codes subscribe to this Graph field
   const matchingUiCodes = Object.entries(graphFieldMap)
     .filter(([, gf]) => gf === graphField)
-    .map(([ui])        => ui);
+    .map(([ui]) => ui);
   if (!matchingUiCodes.length) return;
 
   // 2) load hooks whose eventTypes is one of those UI-codes
   const hooks = await prisma.webhook.findMany({
     where: {
       status: 'Enabled',
-      eventTypes: { in: matchingUiCodes },
-      businessPhoneNumber: { phoneNumber: agentPhoneNumber },
+      eventTypes: {in: matchingUiCodes},
+      businessPhoneNumber: {phoneNumber: agentPhoneNumber},
     },
   });
   if (!hooks.length) return;
@@ -786,7 +790,7 @@ export const triggerMyWebhooks = async (change: any) => {
     // Use the new logging function
     await executeWebhookWithLogging(
       hook,
-      { eventType: graphField },
+      {eventType: graphField},
       graphField,
       hook.businessPhoneNumberId
     );
@@ -796,20 +800,20 @@ export const triggerMyWebhooks = async (change: any) => {
 
 export const processMessageUpdate = async (value: any, io: any) => {
   const agentPhoneNumber = value?.metadata?.display_phone_number;
-  
+
   const phoneNumberId = value?.metadata?.phone_number_id;
   const bp = await prisma.businessPhoneNumber.findFirst({
-    where: { metaPhoneNumberId: phoneNumberId||"" },
+    where: {metaPhoneNumberId: phoneNumberId || ""},
   });
   const dbUser = await prisma.user.findFirst({
-    where: { selectedPhoneNumberId: phoneNumberId },
+    where: {selectedPhoneNumberId: phoneNumberId},
   });
-  const packageSubscription=await prisma.packageSubscription.findFirst({
-    where: { userId: dbUser?.id, isActive: true },
+  const packageSubscription = await prisma.packageSubscription.findFirst({
+    where: {userId: dbUser?.id, isActive: true},
   });
 
   const message = value?.messages?.[0];
-  const senderName=value?.contacts?.[0]?.profile?.name;
+  const senderName = value?.contacts?.[0]?.profile?.name;
   const sender = message?.from;
   if (!sender) {
     //console.warn("Sender is undefined. Cannot query contact.");
@@ -818,7 +822,7 @@ export const processMessageUpdate = async (value: any, io: any) => {
 
 
   const contact = await prisma.contact.findUnique({
-    where: { phoneNumber: sender },
+    where: {phoneNumber: sender},
     include: {
       user: true,
       assignedTeams: {
@@ -830,84 +834,85 @@ export const processMessageUpdate = async (value: any, io: any) => {
   });
   let finalContact = contact;
 
-if (!finalContact) {
-  const botUser= await prisma.user.findFirst({
-    where: {
-      email: "bot",
-    },
-  });
-  finalContact = await prisma.contact.create({
-    data: {
-      phoneNumber: sender,
-      name: senderName,
-      source: "WhatsApp", // or you can dynamically set this
-      subscribed: true,
-      sendSMS:true,
-      createdById: dbUser?.id,
-      userId: botUser?.id
-    },
-    include: {
-      user: true,
-      assignedTeams: {
-        include: { users: true },
-      },
-    },
-  });
-
-  await prisma.chatStatusHistory.create({
-    data: {
-      contactId: finalContact.id,
-      newStatus: "Assigned",
-      type: "assignmentChanged",
-      note: `Assigned to bot`,
-      assignedToUserId: botUser?.id,
-      changedById:  null,
-      changedAt: new Date(),
-    }
-  })
-}
-if (!finalContact) return;
-if(packageSubscription){
-  if (packageSubscription.packageName==="Free"){
-    const messageLength=await prisma.message.count({
+  if (!finalContact) {
+    const botUser = await prisma.user.findFirst({
       where: {
-        contactId: finalContact?.id,
+        email: "bot",
       },
     });
-    if(messageLength>=parseInt(process.env.FREE_PACKAGE_MESSAGE_LIMIT||"100") || sender!==dbUser?.phoneNumber){ 
-   return;}
-  }
- }
-let notifyEmails: Set<string> = new Set();
+    finalContact = await prisma.contact.create({
+      data: {
+        phoneNumber: sender,
+        name: senderName,
+        source: "WhatsApp", // or you can dynamically set this
+        subscribed: true,
+        sendSMS: true,
+        createdById: dbUser?.id,
+        userId: botUser?.id
+      },
+      include: {
+        user: true,
+        assignedTeams: {
+          include: {users: true},
+        },
+      },
+    });
 
-if (finalContact.user?.email) {
-  notifyEmails.add(finalContact.user.email);
-}
-
-for (const team of finalContact.assignedTeams) {
-  for (const agent of team.users) {
-    notifyEmails.add(agent.email);
+    await prisma.chatStatusHistory.create({
+      data: {
+        contactId: finalContact.id,
+        newStatus: "Assigned",
+        type: "assignmentChanged",
+        note: `Assigned to bot`,
+        assignedToUserId: botUser?.id,
+        changedById: null,
+        changedAt: new Date(),
+      }
+    })
   }
-}
+  if (!finalContact) return;
+  if (packageSubscription) {
+    if (packageSubscription.packageName === "Free") {
+      const messageLength = await prisma.message.count({
+        where: {
+          contactId: finalContact?.id,
+        },
+      });
+      if (messageLength >= parseInt(process.env.FREE_PACKAGE_MESSAGE_LIMIT || "100") || sender !== dbUser?.phoneNumber) {
+        return;
+      }
+    }
+  }
+  let notifyEmails: Set<string> = new Set();
+
+  if (finalContact.user?.email) {
+    notifyEmails.add(finalContact.user.email);
+  }
+
+  for (const team of finalContact.assignedTeams) {
+    for (const agent of team.users) {
+      notifyEmails.add(agent.email);
+    }
+  }
 // For now, let's simplify and get all users with notification settings
-const finalRecipients = await prisma.user.findMany({
-  where: {
-    email: { in: Array.from(notifyEmails) },
-  },
-  select: { email: true },
-});
+  const finalRecipients = await prisma.user.findMany({
+    where: {
+      email: {in: Array.from(notifyEmails)},
+    },
+    select: {email: true},
+  });
 
 // 🔔 Step 4: Emit only to those eligible
-const messageAssignedEmails = finalRecipients.map((u) => u.email);
+  const messageAssignedEmails = finalRecipients.map((u) => u.email);
 
-if (messageAssignedEmails.length > 0) {
-  io.emit("messageAssigned", {
-    recipients: messageAssignedEmails,
-    contactName: finalContact.name || finalContact.phoneNumber,
-    contactId: finalContact.id,
-    from: sender,
-  });
-}
+  if (messageAssignedEmails.length > 0) {
+    io.emit("messageAssigned", {
+      recipients: messageAssignedEmails,
+      contactName: finalContact.name || finalContact.phoneNumber,
+      contactId: finalContact.id,
+      from: sender,
+    });
+  }
   if (!sender) return;
 
 
@@ -920,41 +925,41 @@ if (messageAssignedEmails.length > 0) {
     finalContact.id
   );
   const agent = await prisma.user.findFirst({
-    where: { selectedPhoneNumberId: phoneNumberId },
+    where: {selectedPhoneNumberId: phoneNumberId},
   });
-console.log("agent?.email",agent?.email);
+  console.log("agent?.email", agent?.email);
   if (!agent) {
     console.warn("No agent found for phone number ID:", phoneNumberId);
     return;
   }
 //rules checking first
 // Fetch Active Rules for this agent/user
-const activeRules = await prisma.rule.findMany({
-  where: {
-    businessPhoneNumberId: bp?.id,
-    status: "Active",
-    triggerType: "whatsappMessage",
-  },
-});
+  const activeRules = await prisma.rule.findMany({
+    where: {
+      businessPhoneNumberId: bp?.id,
+      status: "Active",
+      triggerType: "whatsappMessage",
+    },
+  });
 
-if (activeRules.length > 0) {
-  for (const rule of activeRules) {
-    await processRuleForMessage(rule, sender, message, phoneNumberId, dbUser?.id);
+  if (activeRules.length > 0) {
+    for (const rule of activeRules) {
+      await processRuleForMessage(rule, sender, message, phoneNumberId, dbUser?.id);
+    }
   }
-}
 
   //notification to the creator of the agent
   const creatorId = agent.createdById ?? agent.id;
-console.log("creatorId",creatorId);
+  console.log("creatorId", creatorId);
   // 📢 Find all users created by the same creator (including the agent himself)
   const notifyUsers = await prisma.user.findMany({
     where: {
       OR: [
-        { id: creatorId },
-        { createdById: creatorId },
+        {id: creatorId},
+        {createdById: creatorId},
       ],
     },
-    select: { email: true },
+    select: {email: true},
   });
 
   const recipients = notifyUsers.map((u) => u.email);
@@ -987,11 +992,11 @@ const processRuleForMessage = async (
   const actionData = rule.actionData as any;
   const conditions = rule.conditions as any;
   const contact = await prisma.contact.findUnique({
-    where: { phoneNumber: sender, },
+    where: {phoneNumber: sender,},
   });
 
   // Step 1: Evaluate Conditions FIRST
-  const conditionsMet = await evaluateRuleConditions(conditions, sender, message,phoneNumberId);
+  const conditionsMet = await evaluateRuleConditions(conditions, sender, message, phoneNumberId);
 
   if (!conditionsMet) {
     console.log(`Rule "${rule.name}" skipped: Conditions not met`);
@@ -1004,13 +1009,13 @@ const processRuleForMessage = async (
       await sendTemplate(sender, actionData.templateId, 0, {}, phoneNumberId);
       break;
     case "sendMessage": {
-      const { messageType, replyId } = actionData;
-    
+      const {messageType, replyId} = actionData;
+
       if (messageType && replyId) {
         const materialType = messageType; // 'VIDEO', 'TEXT', etc.
         const materialId = parseInt(replyId, 10);
-    
-        const sent = await sendDefaultMaterial(materialType, materialId, sender,0,phoneNumberId);
+
+        const sent = await sendDefaultMaterial(materialType, materialId, sender, 0, phoneNumberId);
         if (sent) {
           console.log(`sendMessage action executed successfully for rule ${rule.name}`);
         } else {
@@ -1020,173 +1025,173 @@ const processRuleForMessage = async (
       break;
     }
     case "routeChat": {
-      const { routingType, selectedOptions } = actionData;
-    
+      const {routingType, selectedOptions} = actionData;
+
       if (!routingType || !Array.isArray(selectedOptions) || selectedOptions.length === 0) {
         console.log("❌ Invalid routeChat action data");
         break;
       }
-    
+
       const selected = selectedOptions[0]; // We're assuming single-select
-    
+
       if (routingType === "agent") {
         await prisma.contact.update({
-          where: { id: contact?.id },
-          data: { userId: selected.id },
+          where: {id: contact?.id},
+          data: {userId: selected.id},
         });
-    if (contact){
-        await prisma.chatStatusHistory.create({
-          data: {
-            contactId: contact?.id,
-            previousStatus: contact?.ticketStatus,
-            newStatus: "Assigned",
-            type: "assignmentChanged",
-            note: `Assigned to agent ${selected.name}`,
-            assignedToUserId: selected.id,
-            changedById: null,
-            changedAt: new Date(),
-          },
-        });
-    
-        console.log(`✅ Assigned agent ${selected.name} to contact ${sender}`);
-      }
-    
-      if (routingType === "team") {
-        // Fetch current assigned teams
-        const fullContact = await prisma.contact.findUnique({
-          where: { id: contact?.id },
-          include: { assignedTeams: true },
-        });
-    
-        const alreadyAssigned = fullContact?.assignedTeams.some((team) => team.id === selected.id);
-    
-        if (!alreadyAssigned) {
-          await prisma.contact.update({
-            where: { id: contact?.id },
-            data: {
-              assignedTeams: {
-                connect: { id: selected.id },
-              },
-            },
-          });
-    if (contact){
+        if (contact) {
           await prisma.chatStatusHistory.create({
             data: {
               contactId: contact?.id,
               previousStatus: contact?.ticketStatus,
-              newStatus: "TeamAssigned",
+              newStatus: "Assigned",
               type: "assignmentChanged",
-              note: `Assigned to team ${selected.name}`,
+              note: `Assigned to agent ${selected.name}`,
+              assignedToUserId: selected.id,
               changedById: null,
               changedAt: new Date(),
-              timerStartTime: contact?.ticketStatus === "Open" ? new Date() : contact?.timerStartTime,
             },
           });
-    
-          console.log(`✅ Assigned team ${selected.name} to contact ${sender}`);
+
+          console.log(`✅ Assigned agent ${selected.name} to contact ${sender}`);
         }
+
+        if (routingType === "team") {
+          // Fetch current assigned teams
+          const fullContact = await prisma.contact.findUnique({
+            where: {id: contact?.id},
+            include: {assignedTeams: true},
+          });
+
+          const alreadyAssigned = fullContact?.assignedTeams.some((team) => team.id === selected.id);
+
+          if (!alreadyAssigned) {
+            await prisma.contact.update({
+              where: {id: contact?.id},
+              data: {
+                assignedTeams: {
+                  connect: {id: selected.id},
+                },
+              },
+            });
+            if (contact) {
+              await prisma.chatStatusHistory.create({
+                data: {
+                  contactId: contact?.id,
+                  previousStatus: contact?.ticketStatus,
+                  newStatus: "TeamAssigned",
+                  type: "assignmentChanged",
+                  note: `Assigned to team ${selected.name}`,
+                  changedById: null,
+                  changedAt: new Date(),
+                  timerStartTime: contact?.ticketStatus === "Open" ? new Date() : contact?.timerStartTime,
+                },
+              });
+
+              console.log(`✅ Assigned team ${selected.name} to contact ${sender}`);
+            }
+          }
+
+          break;
+        }
+
       }
-    
       break;
     }
-    
-  }
-  break;
-}
-    case "startChatbot":{
+    case "startChatbot": {
       const chatbot = await prisma.chatbot.findFirst({
         where: {
           id: parseInt(actionData.chatbotId, 10),
         },
       });
       if (chatbot) {
-        await handleChatbotTrigger("chatbot:"+chatbot.name,sender, phoneNumberId);
+        await handleChatbotTrigger("chatbot:" + chatbot.name, sender, phoneNumberId);
       }
       break;
     }
     case "updateAttribute": {
       const material = await prisma.replyMaterial.findFirst({
         where: {
-            id: parseInt(actionData.attributeId, 10)
-          }
-        });
-      
-        if (!material?.content) break;
-      
-        let parsedAttributes: { attribute: string; value: string }[] = [];
-      
-        try {
-          parsedAttributes = JSON.parse(material.content);
-        } catch (e) {
-          console.error("Failed to parse attributes JSON:", e);
-          break;
+          id: parseInt(actionData.attributeId, 10)
         }
-      
-        const contact = await prisma.contact.findFirst({
-          where: { phoneNumber: sender }
-        });
-      
-        const normalizeBool = (val: string | null) =>
-          val?.toLowerCase() === "true" ? true : false;
-      
-        const directFields: any = {};
-        const flatAttributes: Record<string, string> = {};
-      
-        parsedAttributes.forEach(({ attribute, value }) => {
-          switch (attribute) {
-            case "allowbrodcast":
-              directFields.subscribed = normalizeBool(value);
-              break;
-            case "allowsms":
-              directFields.sendSMS = normalizeBool(value);
-              break;
-            case "Source":
-            case "Channel":
-              directFields.source = value || "Unknown";
-              break;
-            default:
-              flatAttributes[attribute] = value;
-          }
-        });
-      
-        if (contact) {
-          const existingAttrs = (contact.attributes || {}) as Prisma.JsonObject;
-      
-          await prisma.contact.update({
-            where: { id: contact.id },
-            data: {
-              ...directFields,
-              attributes: {
-                ...existingAttrs,
-                ...flatAttributes,
-              },
-            },
-          });
-      
-          console.log(`Contact ${contact.id} updated with attributes`);
-        } else {
-          await prisma.contact.create({
-            data: {
-              phoneNumber: sender,
-              attributes: flatAttributes,
-              ...directFields,
-              createdById: agentId,
-            },
-          });
-      
-          console.log(`Contact ${sender} created with attributes`);
-        }
-      
+      });
+
+      if (!material?.content) break;
+
+      let parsedAttributes: { attribute: string; value: string }[] = [];
+
+      try {
+        parsedAttributes = JSON.parse(material.content);
+      } catch (e) {
+        console.error("Failed to parse attributes JSON:", e);
         break;
       }
-      default:
+
+      const contact = await prisma.contact.findFirst({
+        where: {phoneNumber: sender}
+      });
+
+      const normalizeBool = (val: string | null) =>
+        val?.toLowerCase() === "true" ? true : false;
+
+      const directFields: any = {};
+      const flatAttributes: Record<string, string> = {};
+
+      parsedAttributes.forEach(({attribute, value}) => {
+        switch (attribute) {
+          case "allowbrodcast":
+            directFields.subscribed = normalizeBool(value);
+            break;
+          case "allowsms":
+            directFields.sendSMS = normalizeBool(value);
+            break;
+          case "Source":
+          case "Channel":
+            directFields.source = value || "Unknown";
+            break;
+          default:
+            flatAttributes[attribute] = value;
+        }
+      });
+
+      if (contact) {
+        const existingAttrs = (contact.attributes || {}) as Prisma.JsonObject;
+
+        await prisma.contact.update({
+          where: {id: contact.id},
+          data: {
+            ...directFields,
+            attributes: {
+              ...existingAttrs,
+              ...flatAttributes,
+            },
+          },
+        });
+
+        console.log(`Contact ${contact.id} updated with attributes`);
+      } else {
+        await prisma.contact.create({
+          data: {
+            phoneNumber: sender,
+            attributes: flatAttributes,
+            ...directFields,
+            createdById: agentId,
+          },
+        });
+
+        console.log(`Contact ${sender} created with attributes`);
+      }
+
+      break;
+    }
+    default:
       console.log(`Rule "${rule.name}" has an unknown action type.`);
   }
 
   // Increment rule's executed count
   await prisma.rule.update({
-    where: { id: rule.id },
-    data: { executed: { increment: 1 } },
+    where: {id: rule.id},
+    data: {executed: {increment: 1}},
   });
 };
 
@@ -1199,7 +1204,7 @@ const evaluateRuleConditions = async (
   if (!conditions || Object.keys(conditions).length === 0) return true;
 
   const contact = await prisma.contact.findUnique({
-    where: { phoneNumber: sender },
+    where: {phoneNumber: sender},
   });
 
   if (!contact) return false;
@@ -1207,10 +1212,10 @@ const evaluateRuleConditions = async (
   // 1️⃣ Keyword Filter
   if (conditions.keywordFilter) {
     const text = message?.text?.body || "";
-    
+
     // Get all keywords to perform advanced matching
     const allKeywords = await prisma.keyword.findMany();
-    
+
     // Use the new matching logic to find the best matching keyword
     const matchResult = findMatchingKeyword(text, allKeywords);
     const keyword = matchResult?.keyword;
@@ -1221,44 +1226,44 @@ const evaluateRuleConditions = async (
     }
   }
   if (conditions.contactFilter) {
-    const { operator, value } = conditions.contactFilter;
+    const {operator, value} = conditions.contactFilter;
     const contactPhoneNumber = contact.phoneNumber;
-  
+
     switch (operator) {
       case "exists":
         if (!contactPhoneNumber) return false;
         break;
-  
+
       case "not_exists":
         if (contactPhoneNumber) return false;
         break;
-  
+
       case "equals":
         if (contactPhoneNumber !== value) return false;
         break;
-  
+
       case "not_equals":
         if (contactPhoneNumber === value) return false;
         break;
-  
+
       case "contains":
         if (!contactPhoneNumber.includes(value)) return false;
         break;
-  
+
       case "not_contains":
         if (contactPhoneNumber.includes(value)) return false;
         break;
-  
+
       default:
         return false; // Unknown operator, fail-safe
     }
   }
-   if(conditions.selectedFilter==="noKeyword"){
+  if (conditions.selectedFilter === "noKeyword") {
     const text = message?.text?.body || "";
-    
+
     // Get all keywords to perform advanced matching
     const allKeywords = await prisma.keyword.findMany();
-    
+
     // Use the new matching logic to find the best matching keyword
     const matchResult = findMatchingKeyword(text, allKeywords);
     const keyword = matchResult?.keyword;
@@ -1267,15 +1272,15 @@ const evaluateRuleConditions = async (
       return false;
 
     }
-   }
+  }
   // 2️⃣ Contact Attribute Filter (Json attributes field)
   if (conditions.contactAttributeFilter) {
-    const { attribute, operator, value } = conditions.contactAttributeFilter;
-  
+    const {attribute, operator, value} = conditions.contactAttributeFilter;
+
     // Check direct fields first
     const directFields = ["allowbrodcast", "allowsms", "Source", "Channel"];
     let attrValue: any;
-  
+
     if (directFields.includes(attribute)) {
       switch (attribute) {
         case "allowbrodcast":
@@ -1293,12 +1298,12 @@ const evaluateRuleConditions = async (
       const attributesObj = contact.attributes as Record<string, any>;
       attrValue = attributesObj?.[attribute];
     }
-  
+
     if (attrValue === undefined || attrValue === null) return false;
-  
+
     const attrStr = attrValue.toString().toLowerCase();
     const filterVal = value.toString().toLowerCase();
-  
+
     switch (operator) {
       case "equals":
         if (attrStr !== filterVal) return false;
@@ -1315,8 +1320,8 @@ const evaluateRuleConditions = async (
       default:
         return false;
     }
-  }  
-  
+  }
+
   // 3️⃣ Tags Filter (You can add a new type if you like)
   if (conditions.tagsFilter) {
     const requiredTags = conditions.tagsFilter.tags?.map((t: string) => t.trim().toLowerCase());
@@ -1332,10 +1337,10 @@ const evaluateRuleConditions = async (
     const value = parseInt(conditions.timestampFilter.value, 10);
     const unit = conditions.timestampFilter.unit;
     const now = new Date();
-  
+
     // ⬇️ If working hour related, fetch DefaultActionSettings from Prisma
     if (operator === "is_within" || operator === "not_within") {
-      const bp=await prisma.businessPhoneNumber.findFirst({where:{metaPhoneNumberId:phoneNumberId}});
+      const bp = await prisma.businessPhoneNumber.findFirst({where: {metaPhoneNumberId: phoneNumberId}});
       const defaultActionSettings = await prisma.defaultActionSettings.findUnique({
         where: {
           businessPhoneNumberId: bp?.id, // ⬅️ Make sure you have this available
@@ -1344,63 +1349,50 @@ const evaluateRuleConditions = async (
           workingHours: true,
         },
       });
-  
+
       const workingHours: any = defaultActionSettings?.workingHours || {};
-      const dayName = now.toLocaleDateString("en-US", { weekday: "long" });
-      const todaySchedule = workingHours[dayName];
-  
-      let isWithin = false;
-  
-      if (todaySchedule?.open && Array.isArray(todaySchedule.times)) {
-        const nowMinutes = now.getHours() * 60 + now.getMinutes();
-  
-        isWithin = todaySchedule.times.some((slot: { from: string; to: string }) => {
-          const [fromH, fromM] = slot.from.split(":").map(Number);
-          const [toH, toM] = slot.to.split(":").map(Number);
-  
-          const fromMinutes = fromH * 60 + fromM;
-          const toMinutes = toH * 60 + toM;
-  
-          // Handle overnight time spans
-          if (fromMinutes <= toMinutes) {
-            return nowMinutes >= fromMinutes && nowMinutes <= toMinutes;
-          } else {
-            return nowMinutes >= fromMinutes || nowMinutes <= toMinutes;
-          }
-        });
-      }
-  
+
+      // Get user's timezone for working hours check
+      const user = await prisma.user.findFirst({
+        where: { selectedPhoneNumberId: phoneNumberId },
+        include: { businessAccount: true }
+      });
+      const userTimezone = user?.businessAccount?.[0]?.timeZone || 'UTC';
+
+      // Use the enhanced isWithinWorkingHours function with timezone support
+      const isWithin = isWithinWorkingHours(workingHours, userTimezone);
+
       if (operator === "is_within" && !isWithin) return false;
       if (operator === "not_within" && isWithin) return false;
     }
-  
+
     // ⬇️ Continue with time difference comparisons
     if (operator === "less_than" || operator === "greater_than") {
       const receivedAt = new Date(message.timestamp * 1000); // UNIX timestamp
       const diffMs = now.getTime() - receivedAt.getTime();
       const diffMinutes = diffMs / (1000 * 60);
       const diffHours = diffMinutes / 60;
-  
+
       const compareValue = unit === "hours" ? diffHours : diffMinutes;
-  
+
       if (operator === "less_than" && !(compareValue < value)) return false;
       if (operator === "greater_than" && !(compareValue > value)) return false;
     }
   }
-  
+
 
   // 5️⃣ New Chat Filter
-  if (conditions.selectedFilter==="newChat") {
-    const bp=await prisma.businessPhoneNumber.findFirst({where:{metaPhoneNumberId:phoneNumberId}});
+  if (conditions.selectedFilter === "newChat") {
+    const bp = await prisma.businessPhoneNumber.findFirst({where: {metaPhoneNumberId: phoneNumberId}});
     const recentConversation = await prisma.conversation.findFirst({
-      where: { recipient: sender, businessPhoneNumberId: bp?.id },
-      orderBy: { createdAt: "desc" },
+      where: {recipient: sender, businessPhoneNumberId: bp?.id},
+      orderBy: {createdAt: "desc"},
     });
     const messageCount = await prisma.message.count({
-      where: { conversationId: recentConversation?.id },
+      where: {conversationId: recentConversation?.id},
     });
-if (messageCount<2) return true;
- else return false;
+    if (messageCount < 2) return true;
+    else return false;
   }
 
   // 6️⃣ Condition Blocks (Advanced: skip or implement later)
@@ -1414,7 +1406,6 @@ if (messageCount<2) return true;
 };
 
 
-
 export const handleConversationFlow = async (
   recipient: string,
   message: any,
@@ -1424,18 +1415,17 @@ export const handleConversationFlow = async (
   //if (!conversation) return;
 
 
-
   if (message?.interactive) {
-    const chatbotData = await getChatbotData(conversation.lastNodeId?conversation.lastNodeId:conversation.currentNodeId);
+    const chatbotData = await getChatbotData(conversation.lastNodeId ? conversation.lastNodeId : conversation.currentNodeId);
     if (!chatbotData) return;
-    await handleInteractiveMessage(message, chatbotData, recipient,agentPhoneNumber);
+    await handleInteractiveMessage(message, chatbotData, recipient, agentPhoneNumber);
     return;
   }
 
   if (conversation && conversation.answeringQuestion) {
     const chatbotData = await getChatbotData(conversation.currentNodeId);
     if (!chatbotData) return;
-    await handleQuestionResponse(conversation, message, chatbotData, recipient,agentPhoneNumber);
+    await handleQuestionResponse(conversation, message, chatbotData, recipient, agentPhoneNumber);
     return;
   }
 
@@ -1465,13 +1455,13 @@ export const findOrCreateConversation = async (
 ): Promise<any> => {
   // 1️⃣ Always start by fetching the latest convo (if any)
   let conversation = await prisma.conversation.findFirst({
-    where: { recipient },
-    orderBy: [{ updatedAt: 'desc' },{ createdAt:  'desc' }],
+    where: {recipient},
+    orderBy: [{updatedAt: 'desc'}, {createdAt: 'desc'}],
 
   });
 
   // 2️⃣ If this is an interactive message, just return that convo
-    if (message?.interactive) {
+  if (message?.interactive) {
     if (!conversation) {
       console.warn(
         `No existing conversation found for interactive message from ${recipient}`
@@ -1484,14 +1474,13 @@ export const findOrCreateConversation = async (
   // 3️⃣ Otherwise (text) — extract keyword and lookup chatbotId
   const text = message?.text?.body?.toLowerCase();
   let chatbotId = null;
-  if(conversation && conversation.answeringQuestion){
+  if (conversation && conversation.answeringQuestion) {
     chatbotId = conversation.chatbotId;
-  }
-else chatbotId = text ? await findChatbotIdByKeyword(text) : null;
+  } else chatbotId = text ? await findChatbotIdByKeyword(text) : null;
 
-  if (!chatbotId &&  conversation && !conversation.answeringQuestion) {
+  if (!chatbotId && conversation && !conversation.answeringQuestion) {
     const businessPhoneNumber = await prisma.businessPhoneNumber.findFirst({
-      where: { metaPhoneNumberId: agentPhoneNumberId },
+      where: {metaPhoneNumberId: agentPhoneNumberId},
       select: {
         id: true,
         fallbackEnabled: true,
@@ -1501,48 +1490,48 @@ else chatbotId = text ? await findChatbotIdByKeyword(text) : null;
         fallbackHitCount: true,
       }
     });
-   
- // inside working hours fallback
- if (businessPhoneNumber?.fallbackEnabled && businessPhoneNumber.fallbackMessage) {
-  const {
-    id,
-    fallbackTriggerCount,
-   fallbackHitCount,
-    fallbackMessage
-  } = businessPhoneNumber;
 
-  const nextHitCount = fallbackHitCount + 1;
+    // inside working hours fallback
+    if (businessPhoneNumber?.fallbackEnabled && businessPhoneNumber.fallbackMessage) {
+      const {
+        id,
+        fallbackTriggerCount,
+        fallbackHitCount,
+        fallbackMessage
+      } = businessPhoneNumber;
 
-  if (nextHitCount > fallbackTriggerCount) {
-    // threshold reached → reset counter and send
-    await prisma.businessPhoneNumber.update({
-      where: { id },
-      data: { fallbackHitCount: 0 }
-    });
+      const nextHitCount = fallbackHitCount + 1;
 
-    console.log(
-      `No keyword match—hit ${nextHitCount}/${fallbackTriggerCount}, sending fallback.`
-    );
+      if (nextHitCount > fallbackTriggerCount) {
+        // threshold reached → reset counter and send
+        await prisma.businessPhoneNumber.update({
+          where: {id},
+          data: {fallbackHitCount: 0}
+        });
 
-  } else {
-    await sendMessage(
-      recipient,
-      { type: "text", message: fallbackMessage },
-      1,1,true,agentPhoneNumberId
-    );
-    // below threshold → just increment counter
-    await prisma.businessPhoneNumber.update({
-      where: { id },
-      data: { fallbackHitCount: nextHitCount }
-    });
+        console.log(
+          `No keyword match—hit ${nextHitCount}/${fallbackTriggerCount}, sending fallback.`
+        );
 
-    console.log(
-      `No keyword match—hit ${nextHitCount}/${fallbackTriggerCount}, not sending yet.`
-    );
-  }
+      } else {
+        await sendMessage(
+          recipient,
+          {type: "text", message: fallbackMessage},
+          1, 1, true, agentPhoneNumberId
+        );
+        // below threshold → just increment counter
+        await prisma.businessPhoneNumber.update({
+          where: {id},
+          data: {fallbackHitCount: nextHitCount}
+        });
 
-  return true;
-}
+        console.log(
+          `No keyword match—hit ${nextHitCount}/${fallbackTriggerCount}, not sending yet.`
+        );
+      }
+
+      return true;
+    }
     return false;
   }
 
@@ -1550,10 +1539,10 @@ else chatbotId = text ? await findChatbotIdByKeyword(text) : null;
   if (conversation) {
     if (conversation.chatbotId !== chatbotId) {
       conversation = await prisma.conversation.update({
-        where: { id: conversation.id },
-        data: { chatbotId, answeringQuestion: false },
+        where: {id: conversation.id},
+        data: {chatbotId, answeringQuestion: false},
       });
-   //   console.log("Existing conversation updated:", conversation);
+      //   console.log("Existing conversation updated:", conversation);
     }
   } else {
     // 5️⃣ Otherwise create a brand-new conversation
@@ -1573,8 +1562,10 @@ else chatbotId = text ? await findChatbotIdByKeyword(text) : null;
 
 export const getChatbotData = async (nodeId: number): Promise<any> => {
 
+  if (!nodeId) return null;
+
   const nodeWithChatbot = await prisma.node.findUnique({
-    where: { id: nodeId },
+    where: {id: nodeId},
     include: {
       chatbot: {
         include: {
@@ -1590,7 +1581,7 @@ export const getChatbotData = async (nodeId: number): Promise<any> => {
   }
 
   // now you have the full chatbotData
-   const chatbotData = nodeWithChatbot.chatbot;
+  const chatbotData = nodeWithChatbot.chatbot;
 
   if (!chatbotData) {
     console.warn(`Chatbot with ID  not found.`);
@@ -1607,9 +1598,9 @@ export const handleInteractiveMessage = async (
   agentPhoneNumberId: string | undefined
 ) => {
   if (message?.interactive?.button_reply) {
-    await handleButtonReply(message.interactive.button_reply, chatbotData, recipient,agentPhoneNumberId);
+    await handleButtonReply(message.interactive.button_reply, chatbotData, recipient, agentPhoneNumberId);
   } else if (message?.interactive?.list_reply) {
-    await handleListReply(message.interactive.list_reply, chatbotData, recipient,agentPhoneNumberId);
+    await handleListReply(message.interactive.list_reply, chatbotData, recipient, agentPhoneNumberId);
   }
 };
 
@@ -1623,7 +1614,7 @@ export const handleButtonReply = async (
   const buttonId = "source_" + parts[0];
   const nodeId = parseInt(parts[1]);
   const nodeWithChatbot = await prisma.node.findUnique({
-    where: { id: nodeId },
+    where: {id: nodeId},
     include: {
       chatbot: {
         include: {
@@ -1639,16 +1630,16 @@ export const handleButtonReply = async (
   }
 
   // now you have the full chatbotData
-   chatbotData = nodeWithChatbot.chatbot;
+  chatbotData = nodeWithChatbot.chatbot;
   const selectedEdge = chatbotData.edges.find(
-    (edge:any) => edge.sourceHandle === buttonId && edge.sourceId === nodeId
+    (edge: any) => edge.sourceHandle === buttonId && edge.sourceId === nodeId
   );
 
   const nextNodeId = selectedEdge
-    ? chatbotData.nodes.find((node:any) => node.id === selectedEdge.targetId)?.nodeId
+    ? chatbotData.nodes.find((node: any) => node.id === selectedEdge.targetId)?.nodeId
     : null;
 
-  const currentNode = chatbotData.nodes.find((node:any) => node.id === nodeId);
+  const currentNode = chatbotData.nodes.find((node: any) => node.id === nodeId);
 
   if (currentNode?.data?.buttons_data?.saveAnswerVariable) {
     await saveButtonReplyVariable(
@@ -1659,7 +1650,7 @@ export const handleButtonReply = async (
   }
 
   if (nextNodeId) {
-    await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient,agentPhoneNumberId);
+    await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient, agentPhoneNumberId);
   } else {
     await bump(chatbotData.id, "finished");
   }
@@ -1675,7 +1666,7 @@ export const saveButtonReplyVariable = async (
     : currentNode.data.buttons_data.saveAnswerVariable;
 
   const conversation = await prisma.conversation.findFirst({
-    where: { recipient, chatbotId: currentNode.chatId },
+    where: {recipient, chatbotId: currentNode.chatId},
   });
 
   if (conversation) {
@@ -1699,7 +1690,7 @@ export const handleListReply = async (
   const nodeId = parseInt(listReplyId.split("_node_")[1]);
   const buttonId = listReplyId.split("_node_")[0];
   const nodeWithChatbot = await prisma.node.findUnique({
-    where: { id: nodeId },
+    where: {id: nodeId},
     include: {
       chatbot: {
         include: {
@@ -1714,11 +1705,11 @@ export const handleListReply = async (
     throw new Error(`Node ${nodeId} not found`)
   }
 
- 
+
   // now you have the full chatbotData
-   chatbotData = nodeWithChatbot.chatbot;
- 
-  const currentNode = chatbotData.nodes.find((node:any) => node.id === nodeId);
+  chatbotData = nodeWithChatbot.chatbot;
+
+  const currentNode = chatbotData.nodes.find((node: any) => node.id === nodeId);
   if (currentNode?.data?.list_data?.saveAnswerVariable) {
     await saveListReplyVariable(
       currentNode,
@@ -1727,15 +1718,15 @@ export const handleListReply = async (
     );
   }
   const selectedEdge = chatbotData.edges.find(
-    (edge:any) => edge.sourceId === currentNode?.id && edge.sourceHandle === buttonId
+    (edge: any) => edge.sourceId === currentNode?.id && edge.sourceHandle === buttonId
   );
 
   const nextNodeId = selectedEdge
-    ? chatbotData.nodes.find((node:any) => node.id === selectedEdge.targetId)?.nodeId
+    ? chatbotData.nodes.find((node: any) => node.id === selectedEdge.targetId)?.nodeId
     : null;
 
   if (nextNodeId) {
-    await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient,agentPhoneNumberId);
+    await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient, agentPhoneNumberId);
   } else {
     await bump(chatbotData.id, "finished");
   }
@@ -1751,7 +1742,7 @@ export const saveListReplyVariable = async (
     : currentNode.data.list_data.saveAnswerVariable;
 
   const conversation = await prisma.conversation.findFirst({
-    where: { recipient, chatbotId: currentNode.chatId },
+    where: {recipient, chatbotId: currentNode.chatId},
   });
 
   if (conversation) {
@@ -1782,8 +1773,8 @@ export const saveOrUpdateVariable = async (
 
   if (existingVariable) {
     await prisma.variable.update({
-      where: { id: existingVariable.id },
-      data: { value, nodeId },
+      where: {id: existingVariable.id},
+      data: {value, nodeId},
     });
   } else {
     await prisma.variable.create({
@@ -1805,7 +1796,7 @@ export const handleQuestionResponse = async (
   agentPhoneNumberId: string | undefined
 ) => {
   const currentNode = await prisma.node.findFirst({
-    where: { id: conversation.currentNodeId },
+    where: {id: conversation.currentNodeId},
   });
 
   if (currentNode?.type !== "question") return;
@@ -1815,34 +1806,35 @@ export const handleQuestionResponse = async (
       validationFailureExitCount = 3,
       saveAnswerVariable,
     } = (currentNode.data as { question_data?: any }).question_data ?? {};
-  
-  
-  let failureCount = conversation.validationFailureCount;
-  const text = message?.text?.body?.toLowerCase();
 
-  if (message?.type !== "text" || !text) return;
 
-  const isValid = validateUserResponse(text, validation);
+    let failureCount = conversation.validationFailureCount;
+    const text = message?.text?.body?.toLowerCase();
 
-  if (isValid) {
-    await handleValidQuestionResponse(
-      conversation,
-      currentNode,
-      text,
-      saveAnswerVariable,
-      chatbotData,
-      recipient,
-      agentPhoneNumberId
-    );
-  } else {
-    await handleInvalidQuestionResponse(
-      conversation,
-      failureCount,
-      validationFailureExitCount,
-      validation,
-      agentPhoneNumberId
-    );
-  }}
+    if (message?.type !== "text" || !text) return;
+
+    const isValid = validateUserResponse(text, validation);
+
+    if (isValid) {
+      await handleValidQuestionResponse(
+        conversation,
+        currentNode,
+        text,
+        saveAnswerVariable,
+        chatbotData,
+        recipient,
+        agentPhoneNumberId
+      );
+    } else {
+      await handleInvalidQuestionResponse(
+        conversation,
+        failureCount,
+        validationFailureExitCount,
+        validation,
+        agentPhoneNumberId
+      );
+    }
+  }
 };
 
 export const handleValidQuestionResponse = async (
@@ -1855,7 +1847,7 @@ export const handleValidQuestionResponse = async (
   agentPhoneNumberId: string | undefined
 ) => {
   await prisma.conversation.update({
-    where: { id: conversation.id },
+    where: {id: conversation.id},
     data: {
       answeringQuestion: false,
       validationFailureCount: 0,
@@ -1882,9 +1874,9 @@ export const handleValidQuestionResponse = async (
     null,
     currentNode.id
   );
-  
+
   if (nextNodeId) {
-    await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient,agentPhoneNumberId);
+    await processNode(nextNodeId, chatbotData.nodes, chatbotData.edges, recipient, agentPhoneNumberId);
   } else {
     await bump(chatbotData.id, "finished");
   }
@@ -1901,7 +1893,7 @@ export const handleInvalidQuestionResponse = async (
 
   if (failureCount >= validationFailureExitCount) {
     await prisma.conversation.update({
-      where: { id: conversation.id },
+      where: {id: conversation.id},
       data: {
         answeringQuestion: false,
         validationFailureCount: 0,
@@ -1923,8 +1915,8 @@ export const handleInvalidQuestionResponse = async (
     console.warn("Chatflow ended due to repeated invalid responses.");
   } else {
     await prisma.conversation.update({
-      where: { id: conversation.id },
-      data: { validationFailureCount: failureCount },
+      where: {id: conversation.id},
+      data: {validationFailureCount: failureCount},
     });
 
     console.warn(`Response is invalid. Failure count: ${failureCount}`);
@@ -1942,7 +1934,7 @@ export const handleInvalidQuestionResponse = async (
   }
 };
 
-export const updateTemplateInDb = async (data: any,reason:string) => {
+export const updateTemplateInDb = async (data: any, reason: string) => {
   const {
     event,
     message_template_id,
@@ -1951,12 +1943,12 @@ export const updateTemplateInDb = async (data: any,reason:string) => {
   } = data;
 
   await prisma.template.update({
-    where: { name: message_template_name },
+    where: {name: message_template_name},
     data: {
       status: event,
       language: message_template_language,
       updatedAt: new Date(),
-      rejectionError: reason ||"",
+      rejectionError: reason || "",
     },
   });
 };
@@ -1995,9 +1987,9 @@ export const getNextNodeIdFromQuestion = (
 export const findChatbotIdByKeyword = async (text: string): Promise<number | null> => {
   // Get all keywords to perform advanced matching
   const allKeywords = await prisma.keyword.findMany({
-    include: { chatbot: true },
+    include: {chatbot: true},
   });
-  
+
   // Use the new matching logic to find the best matching keyword
   const matchResult = findMatchingKeyword(text, allKeywords);
   const keyword = matchResult?.keyword;
@@ -2005,16 +1997,16 @@ export const findChatbotIdByKeyword = async (text: string): Promise<number | nul
   return keyword?.chatbot?.id || null;
 };
 
-export const checkRulesForNodeAction =   async (
+export const checkRulesForNodeAction = async (
   recipient: string,
-  nodeType:  "attributeChanged" | "attributeAdded",
+  nodeType: "attributeChanged" | "attributeAdded",
   phoneNumberId: string | undefined,
   agentId: number | undefined
 ) => {
   try {
     // Get business phone number
     const bp = await prisma.businessPhoneNumber.findFirst({
-      where: { metaPhoneNumberId: phoneNumberId },
+      where: {metaPhoneNumberId: phoneNumberId},
     });
 
     if (!bp) {
@@ -2040,7 +2032,7 @@ export const checkRulesForNodeAction =   async (
     // Create a mock message object for rule evaluation
     const mockMessage = {
       type: "text",
-      text: { body: `Node action: ${nodeType}` },
+      text: {body: `Node action: ${nodeType}`},
       timestamp: Math.floor(Date.now() / 1000),
     };
 
@@ -2064,9 +2056,9 @@ const processRuleForNodeAction = async (
   const actionType = rule.action;
   const actionData = rule.actionData as any;
   const conditions = rule.conditions as any;
-  
+
   const contact = await prisma.contact.findUnique({
-    where: { phoneNumber: recipient },
+    where: {phoneNumber: recipient},
   });
 
   if (!contact) {
@@ -2088,12 +2080,12 @@ const processRuleForNodeAction = async (
       await sendTemplate(recipient, actionData.templateId, 0, {}, phoneNumberId);
       break;
     case "sendMessage": {
-      const { messageType, replyId } = actionData;
-    
+      const {messageType, replyId} = actionData;
+
       if (messageType && replyId) {
         const materialType = messageType;
         const materialId = parseInt(replyId, 10);
-    
+
         const sent = await sendDefaultMaterial(materialType, materialId, recipient, 0, phoneNumberId);
         if (sent) {
           console.log(`sendMessage action executed successfully for rule ${rule.name} (${nodeType})`);
@@ -2104,21 +2096,21 @@ const processRuleForNodeAction = async (
       break;
     }
     case "routeChat": {
-      const { routingType, selectedOptions } = actionData;
-    
+      const {routingType, selectedOptions} = actionData;
+
       if (!routingType || !Array.isArray(selectedOptions) || selectedOptions.length === 0) {
         console.log("❌ Invalid routeChat action data");
         break;
       }
-    
+
       const selected = selectedOptions[0];
-    
+
       if (routingType === "agent") {
         await prisma.contact.update({
-          where: { id: contact.id },
-          data: { userId: selected.id },
+          where: {id: contact.id},
+          data: {userId: selected.id},
         });
-        
+
         await prisma.chatStatusHistory.create({
           data: {
             contactId: contact.id,
@@ -2131,28 +2123,28 @@ const processRuleForNodeAction = async (
             changedAt: new Date(),
           },
         });
-    
+
         console.log(`✅ Assigned agent ${selected.name} to contact ${recipient} via rule (${nodeType})`);
       }
-    
+
       if (routingType === "team") {
         const fullContact = await prisma.contact.findUnique({
-          where: { id: contact.id },
-          include: { assignedTeams: true },
+          where: {id: contact.id},
+          include: {assignedTeams: true},
         });
-    
+
         const alreadyAssigned = fullContact?.assignedTeams.some((team) => team.id === selected.id);
-    
+
         if (!alreadyAssigned) {
           await prisma.contact.update({
-            where: { id: contact.id },
+            where: {id: contact.id},
             data: {
               assignedTeams: {
-                connect: { id: selected.id },
+                connect: {id: selected.id},
               },
             },
           });
-          
+
           await prisma.chatStatusHistory.create({
             data: {
               contactId: contact.id,
@@ -2165,7 +2157,7 @@ const processRuleForNodeAction = async (
               timerStartTime: contact.ticketStatus === "Open" ? new Date() : contact.timerStartTime,
             },
           });
-    
+
           console.log(`✅ Assigned team ${selected.name} to contact ${recipient} via rule (${nodeType})`);
         }
       }
@@ -2188,25 +2180,25 @@ const processRuleForNodeAction = async (
           id: parseInt(actionData.attributeId, 10)
         }
       });
-    
+
       if (!material?.content) break;
-    
+
       let parsedAttributes: { attribute: string; value: string }[] = [];
-    
+
       try {
         parsedAttributes = JSON.parse(material.content);
       } catch (e) {
         console.error("Failed to parse attributes JSON:", e);
         break;
       }
-    
+
       const normalizeBool = (val: string | null) =>
         val?.toLowerCase() === "true" ? true : false;
-    
+
       const directFields: any = {};
       const flatAttributes: Record<string, string> = {};
-    
-      parsedAttributes.forEach(({ attribute, value }) => {
+
+      parsedAttributes.forEach(({attribute, value}) => {
         switch (attribute) {
           case "allowbrodcast":
             directFields.subscribed = normalizeBool(value);
@@ -2222,11 +2214,11 @@ const processRuleForNodeAction = async (
             flatAttributes[attribute] = value;
         }
       });
-    
+
       const existingAttrs = (contact.attributes || {}) as Prisma.JsonObject;
-    
+
       await prisma.contact.update({
-        where: { id: contact.id },
+        where: {id: contact.id},
         data: {
           ...directFields,
           attributes: {
@@ -2235,7 +2227,7 @@ const processRuleForNodeAction = async (
           },
         },
       });
-    
+
       console.log(`Contact ${contact.id} updated with attributes via rule (${nodeType})`);
       break;
     }
@@ -2245,8 +2237,8 @@ const processRuleForNodeAction = async (
 
   // Increment rule's executed count
   await prisma.rule.update({
-    where: { id: rule.id },
-    data: { executed: { increment: 1 } },
+    where: {id: rule.id},
+    data: {executed: {increment: 1}},
   });
 };
 
@@ -2260,7 +2252,7 @@ const evaluateRuleConditionsForNodeAction = async (
   if (!conditions || Object.keys(conditions).length === 0) return true;
 
   const contact = await prisma.contact.findUnique({
-    where: { phoneNumber: recipient },
+    where: {phoneNumber: recipient},
   });
 
   if (!contact) return false;
@@ -2272,9 +2264,9 @@ const evaluateRuleConditionsForNodeAction = async (
 
   // 2️⃣ Contact Filter
   if (conditions.contactFilter) {
-    const { operator, value } = conditions.contactFilter;
+    const {operator, value} = conditions.contactFilter;
     const contactPhoneNumber = contact.phoneNumber;
-  
+
     switch (operator) {
       case "exists":
         if (!contactPhoneNumber) return false;
@@ -2306,11 +2298,11 @@ const evaluateRuleConditionsForNodeAction = async (
 
   // 4️⃣ Contact Attribute Filter
   if (conditions.contactAttributeFilter) {
-    const { attribute, operator, value } = conditions.contactAttributeFilter;
-  
+    const {attribute, operator, value} = conditions.contactAttributeFilter;
+
     const directFields = ["allowbrodcast", "allowsms", "Source", "Channel"];
     let attrValue: any;
-  
+
     if (directFields.includes(attribute)) {
       switch (attribute) {
         case "allowbrodcast":
@@ -2328,12 +2320,12 @@ const evaluateRuleConditionsForNodeAction = async (
       const attributesObj = contact.attributes as Record<string, any>;
       attrValue = attributesObj?.[attribute];
     }
-  
+
     if (attrValue === undefined || attrValue === null) return false;
-  
+
     const attrStr = attrValue.toString().toLowerCase();
     const filterVal = value.toString().toLowerCase();
-  
+
     switch (operator) {
       case "equals":
         if (attrStr !== filterVal) return false;
@@ -2350,8 +2342,8 @@ const evaluateRuleConditionsForNodeAction = async (
       default:
         return false;
     }
-  }  
-  
+  }
+
   // 5️⃣ Tags Filter
   if (conditions.tagsFilter) {
     const requiredTags = conditions.tagsFilter.tags?.map((t: string) => t.trim().toLowerCase());

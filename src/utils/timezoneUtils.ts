@@ -1,5 +1,14 @@
 /**
  * Timezone utilities for working hours conversion
+ * 
+ * This module provides timezone-aware working hours functionality for the metaWebhook route.
+ * Working hours are stored in UTC in the database but checked against the user's local timezone.
+ * 
+ * Example usage:
+ * - User sets working hours as 9:00 AM - 5:00 PM in their local timezone (e.g., America/New_York)
+ * - System converts these hours to UTC for storage (e.g., 2:00 PM - 10:00 PM UTC during EST)
+ * - When checking working hours, system converts current UTC time to user's timezone for comparison
+ * - This ensures working hours are always checked against the user's local business hours
  */
 
 export interface WorkingHourTime {
@@ -22,6 +31,27 @@ export interface WorkingHours {
   Saturday?: WorkingHourDay;
   Sunday?: WorkingHourDay;
 }
+
+/**
+ * Example: How timezone-aware working hours work
+ * 
+ * Scenario: Business in New York (EST/EDT)
+ * - User sets working hours: 9:00 AM - 5:00 PM EST
+ * - During EST (winter): 9:00 AM EST = 2:00 PM UTC
+ * - During EDT (summer): 9:00 AM EDT = 1:00 PM UTC
+ * 
+ * When customer sends message at 3:00 PM EST:
+ * - Server time: 8:00 PM UTC
+ * - Convert server time to user timezone: 8:00 PM UTC = 3:00 PM EST ✅
+ * - Check if 3:00 PM EST is within 9:00 AM - 5:00 PM EST ✅
+ * - Result: Within working hours
+ * 
+ * When customer sends message at 7:00 PM EST:
+ * - Server time: 12:00 AM UTC (next day)
+ * - Convert server time to user timezone: 12:00 AM UTC = 7:00 PM EST ❌
+ * - Check if 7:00 PM EST is within 9:00 AM - 5:00 PM EST ❌
+ * - Result: Outside working hours
+ */
 
 /**
  * Convert working hours from user's timezone to UTC for storage

@@ -1,7 +1,7 @@
 import agenda from '../config/agenda';
 import { prisma } from '../models/prismaClient';
 
-interface WaitingMessageJobData {
+export interface WaitingMessageJobData {
   conversationId: number;
   recipient: string;
   agentPhoneNumberId: string | undefined;

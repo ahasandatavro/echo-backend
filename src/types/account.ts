@@ -67,3 +67,4 @@ export const COMMON_LANGUAGES = [
 
 // Content direction options
 export const CONTENT_DIRECTIONS = ['ltr', 'rtl'] as const;
+

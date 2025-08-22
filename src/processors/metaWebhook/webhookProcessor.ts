@@ -21,6 +21,7 @@ import {
   closePreviousNodeVisit,
   createNodeVisit
 } from '../../utils/nodeVisitUtils';
+import { schedule24hNoResponseJob } from "../../utils/noResponse24hUtils";
 
 export const processChatFlow = async (chatbotId: number, recipient: string, agentPhoneNumberId: string | undefined) => {
   try {
@@ -1486,7 +1487,6 @@ export const sendTemplate = async (
           });
           
           // Schedule 24-hour no response job when agent sends template
-          console.log(`📅 Agent sent template - scheduling 24h no response job for conversation ${conversation.id}`);
           const { reschedule24hJobForConversation } = await import("../../utils/noResponse24hUtils");
           await reschedule24hJobForConversation(
             conversation.id,
@@ -1799,7 +1799,6 @@ export const storeMessage = async ({
       contact = newContact;
       // Retrieve the nested conversation that was just created
       conversation = newContact.conversations[0];
-      console.log("✅ New contact and conversation created:", contact, conversation);
     } else {
       // If the contact exists, try to find an existing conversation linked to it
       conversation = await prisma.conversation.findFirst({
@@ -1811,7 +1810,6 @@ export const storeMessage = async ({
         conversation = await prisma.conversation.create({
           data: { recipient, contactId: contact.id, chatbotId },
         });
-        console.log("✅ New conversation created:", conversation);
       }
     }
     let attachmentUrl;

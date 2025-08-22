@@ -1,13 +1,33 @@
-import { String } from "aws-sdk/clients/cloudsearch";
-import { prisma } from "../../models/prismaClient";
-import { processChatFlow, sendMessage, sendTemplate } from "./webhookProcessor";
-import { Chatbot, Contact, Keyword, KeywordReplyMaterial, KeywordRoutingMaterial, KeywordTemplate, MaterialType, ReplyMaterial, RoutingMaterial, RoutingType, Team, Template, User } from "@prisma/client";
+import {String} from "aws-sdk/clients/cloudsearch";
+import {prisma} from "../../models/prismaClient";
+import {processChatFlow, sendMessage, sendTemplate} from "./webhookProcessor";
+import {
+  Chatbot,
+  Contact,
+  Keyword,
+  KeywordReplyMaterial,
+  KeywordRoutingMaterial,
+  KeywordTemplate,
+  MaterialType,
+  ReplyMaterial,
+  RoutingMaterial,
+  RoutingType,
+  Team,
+  Template,
+  User
+} from "@prisma/client";
 import dayjs from 'dayjs';
-import { DefaultActionSettings } from '@prisma/client';
-import { bump } from "../../helpers";
-import { findMatchingKeyword } from "../../utils/keywordMatcher";
-import { cancelAndRescheduleWaitingMessage, cancelWaitingMessageForConversation } from "../../utils/waitingMessageUtils";
-import { updateCustomerMessageTimestamp, cancel24hJobForConversation } from "../../utils/noResponse24hUtils";
+import timezone from 'dayjs/plugin/timezone';
+import utc from 'dayjs/plugin/utc';
+import {DefaultActionSettings} from '@prisma/client';
+import {bump} from "../../helpers";
+import {findMatchingKeyword} from "../../utils/keywordMatcher";
+import {cancelAndRescheduleWaitingMessage, cancelWaitingMessageForConversation} from "../../utils/waitingMessageUtils";
+import {updateCustomerMessageTimestamp, cancel24hJobForConversation} from "../../utils/noResponse24hUtils";
+
+// Extend dayjs with timezone plugins
+dayjs.extend(utc);
+dayjs.extend(timezone);
 // Define types for the keyword query result
 type KeywordWithRelations = Keyword & {
   chatbot: Chatbot | null;
@@ -44,7 +64,7 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
   if (!text) return false;
 
   const businessPhoneNumber = await prisma.businessPhoneNumber.findFirst({
-    where: { metaPhoneNumberId: agentPhoneNumberId },
+    where: {metaPhoneNumberId: agentPhoneNumberId},
     select: {
       id: true,
       fallbackEnabled: true,
@@ -55,19 +75,19 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
       metaPhoneNumberId: true,
     }
   });
- const dbUser=await prisma.user.findFirst({where:{selectedPhoneNumberId:businessPhoneNumber?.metaPhoneNumberId}})
+  const dbUser = await prisma.user.findFirst({where: {selectedPhoneNumberId: businessPhoneNumber?.metaPhoneNumberId}})
   const defaultActionSettings = await prisma.defaultActionSettings.findUnique({
     where: {
       businessPhoneNumberId: businessPhoneNumber?.id,
     },
   });
 
-    const conversation = await prisma.conversation.findFirst({
+  const conversation = await prisma.conversation.findFirst({
     where: {
       recipient: recipient as string,
       businessPhoneNumberId: businessPhoneNumber?.id
     },
-    orderBy: { updatedAt: 'desc' }
+    orderBy: {updatedAt: 'desc'}
   });
 
   if (conversation) {
@@ -75,7 +95,7 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
   }
 
   // Use the new helper function
-  const defaultHandled = await checkAndSendDefaultMaterial(defaultActionSettings, recipient, agentPhoneNumberId,text);
+  const defaultHandled = await checkAndSendDefaultMaterial(defaultActionSettings, recipient, agentPhoneNumberId, text);
   if (defaultHandled) return true;
   try {
     // Get all keywords for the user to perform advanced matching
@@ -112,13 +132,13 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
     const matchResult = findMatchingKeyword(text, allKeywords);
     const keyword = matchResult?.keyword as KeywordWithRelations | null;
 
-        if (matchResult) {
+    if (matchResult) {
       const conversation = await prisma.conversation.findFirst({
         where: {
           recipient: recipient as string,
           businessPhoneNumberId: businessPhoneNumber?.id
         },
-        orderBy: { updatedAt: 'desc' }
+        orderBy: {updatedAt: 'desc'}
       });
 
       if (conversation) {
@@ -129,15 +149,20 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
 
     if (!keyword) {
       if (defaultActionSettings?.workingHours) {
-        const isWithinHours = isWithinWorkingHours(defaultActionSettings.workingHours as WorkingHours);
+        // Get user's timezone for working hours check
+        const user = await prisma.user.findFirst({
+          where: {selectedPhoneNumberId: agentPhoneNumberId},
+          include: {businessAccount: true}
+        });
+        const userTimezone = user?.businessAccount?.[0]?.timeZone || 'UTC';
 
-        if (defaultActionSettings.waitingMessageEnabled && isWithinHours) {
+        if (defaultActionSettings.waitingMessageEnabled && isWithinWorkingHours(defaultActionSettings.workingHours as WorkingHours, userTimezone)) {
           let conversation = await prisma.conversation.findFirst({
             where: {
               recipient: recipient as string,
               businessPhoneNumberId: businessPhoneNumber?.id
             },
-            orderBy: { updatedAt: 'desc' }
+            orderBy: {updatedAt: 'desc'}
           });
 
           if (!conversation && businessPhoneNumber?.id) {
@@ -161,7 +186,7 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
       }
 
       // Handle fallback message (waiting message takes priority over fallback)
-      if(defaultActionSettings?.fallbackMessageEnabled){
+      if (defaultActionSettings?.fallbackMessageEnabled) {
         const type = defaultActionSettings.fallbackMessageMaterialType;
         const id = defaultActionSettings.fallbackMessageMaterialId;
 
@@ -169,8 +194,7 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
           const sent = await sendDefaultMaterial(type, id, recipient, 1, agentPhoneNumberId);
           if (sent) return true;
         }
-      }
-      else return false;
+      } else return false;
 
     }
 
@@ -178,18 +202,17 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
 
     // 1. Process chatbot if associated
     if (keyword?.chatbot) {
-      console.log(`Triggering chatbot with ID: ${keyword.chatbot.id} for keyword "${keyword.value}"`);
       await bump(keyword.chatbot.id, "triggered");
       // Update conversation to not be answering a question anymore
       const conversation = await prisma.conversation.findFirst({
-        where: { recipient },
-        orderBy: { updatedAt: "desc" }
+        where: {recipient},
+        orderBy: {updatedAt: "desc"}
       });
 
       if (conversation) {
         await prisma.conversation.update({
-          where: { id: conversation.id },
-          data: { answeringQuestion: false }
+          where: {id: conversation.id},
+          data: {answeringQuestion: false}
         });
       }
 
@@ -202,8 +225,6 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
     if (keyword?.keywordTemplates && keyword.keywordTemplates.length > 0) {
       for (const keywordTemplate of keyword.keywordTemplates) {
         if (keywordTemplate.template) {
-          console.log(`Sending template "${keywordTemplate.template.name}" for keyword "${keyword.value}"`);
-
           // Use default chatbotId 1 if no chatbot is associated with the keyword
           const chatbotId = keyword.chatbot?.id || 1;
 
@@ -224,8 +245,6 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
       for (const keywordReplyMaterial of keyword.replyMaterials) {
         const replyMaterial = keywordReplyMaterial.replyMaterial;
         if (replyMaterial) {
-          console.log(`Sending reply material "${replyMaterial.name}" for keyword "${keyword.value}"`);
-
           // Determine the message type and content based on material type
           let messageContent: any;
 
@@ -262,15 +281,13 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
         const routingMaterial = keywordRoutingMaterial.routingMaterial;
 
         if (routingMaterial) {
-          console.log(`Processing routing material "${routingMaterial.materialName}" for keyword "${keyword.value}"`);
-
           // Perform actions based on routing type
           switch (routingMaterial.type) {
             case "AssignUser":
               if (routingMaterial.assignedUser && routingMaterial.assignedUserId) {
                 await prisma.contact.upsert({
-                  where: { phoneNumber: recipient },
-                  update: { userId: routingMaterial.assignedUserId },
+                  where: {phoneNumber: recipient},
+                  update: {userId: routingMaterial.assignedUserId},
                   create: {
                     phoneNumber: recipient,
                     name: "Unknown",
@@ -278,22 +295,21 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
                     userId: routingMaterial.assignedUserId,
                   }
                 });
-                console.log(`Assigned user ID ${routingMaterial.assignedUserId} to contact ${recipient}`);
                 const contactRecord = await prisma.contact.findUnique({
-                  where: { phoneNumber: recipient },
-                  select: { id: true }
+                  where: {phoneNumber: recipient},
+                  select: {id: true}
                 });
                 if (!contactRecord) {
                   throw new Error(`Contact with phoneNumber ${recipient} not found.`);
                 }
                 await prisma.chatStatusHistory.create({
                   data: {
-                    contactId: contactRecord?.id||0,
+                    contactId: contactRecord?.id || 0,
                     newStatus: "Assigned",
                     type: "assignmentChanged",
                     note: `Assigned to agent ${routingMaterial.assignedUser.email}`,
                     assignedToUserId: routingMaterial.assignedUserId,
-                    changedById:  null,
+                    changedById: null,
                     changedAt: new Date(),
                   }
                 });
@@ -303,8 +319,8 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
             case "AssignTeam":
               if (routingMaterial.team && routingMaterial.teamId) {
                 const contact = await prisma.contact.findUnique({
-                  where: { phoneNumber: recipient },
-                  include: { assignedTeams: true }
+                  where: {phoneNumber: recipient},
+                  include: {assignedTeams: true}
                 }) as (Contact & { assignedTeams: Team[] }) | null;
 
                 if (contact) {
@@ -313,24 +329,23 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
 
                   if (!isTeamAssigned && routingMaterial.teamId) {
                     await prisma.contact.update({
-                      where: { id: contact.id },
+                      where: {id: contact.id},
                       data: {
                         assignedTeams: {
-                          connect: { id: routingMaterial.teamId }
+                          connect: {id: routingMaterial.teamId}
                         }
                       }
                     });
-                    console.log(`Assigned team ID ${routingMaterial.teamId} to contact ${recipient}`);
                     const contactRecord = await prisma.contact.findUnique({
-                      where: { phoneNumber: recipient },
-                      select: { id: true }
+                      where: {phoneNumber: recipient},
+                      select: {id: true}
                     });
                     if (!contactRecord) {
                       throw new Error(`Contact with phoneNumber ${recipient} not found.`);
                     }
                     await prisma.chatStatusHistory.create({
                       data: {
-                        contactId: contactRecord?.id||0,
+                        contactId: contactRecord?.id || 0,
                         newStatus: "Assigned",
                         type: "assignmentChanged",
                         note: `Assigned to Team: ${routingMaterial.team.name}`,
@@ -348,11 +363,10 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
                         name: "Unknown",
                         source: "WhatsApp",
                         assignedTeams: {
-                          connect: { id: routingMaterial.teamId }
+                          connect: {id: routingMaterial.teamId}
                         }
                       }
                     });
-                    console.log(`Created contact ${recipient} with team ID ${routingMaterial.teamId}`);
                   }
                 }
               }
@@ -361,7 +375,6 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
             case "Notification":
               // For Notification type, we don't need immediate action in the webhook,
               // as this would typically generate notifications elsewhere in the system
-              console.log(`Notification routing triggered for ${recipient} with material ID ${routingMaterial.id}`);
               break;
           }
 
@@ -390,14 +403,22 @@ const checkAndSendDefaultMaterial = async (
 
   const workingHours = defaultActionSettings.workingHours as WorkingHours;
   // Check for outside working hours
+
+  // Get user's timezone for working hours check
+  const user = await prisma.user.findFirst({
+    where: {selectedPhoneNumberId: agentPhoneNumberId},
+    include: {businessAccount: true}
+  });
+  const userTimezone = user?.businessAccount?.[0]?.timeZone || 'UTC';
+
+
   if (
     defaultActionSettings?.outsideWorkingHoursEnabled &&
     defaultActionSettings.workingHours
   ) {
 
-
-    if (!isWithinWorkingHours(workingHours)) {
-      let dbUser = await prisma.user.findFirst({ where: { selectedPhoneNumberId: agentPhoneNumberId } });
+    if (!isWithinWorkingHours(workingHours, userTimezone)) {
+      let dbUser = await prisma.user.findFirst({where: {selectedPhoneNumberId: agentPhoneNumberId}});
 
       // Get all keywords for the user to perform advanced matching
       const allKeywords = await prisma.keyword.findMany({
@@ -409,18 +430,18 @@ const checkAndSendDefaultMaterial = async (
       // Use the new matching logic to find the best matching keyword
       const matchResult = findMatchingKeyword(text, allKeywords);
       const keyword = matchResult?.keyword;
-  if(keyword){
-    if(defaultActionSettings?.noKeywordMatchReplyEnabled){
-      const type = defaultActionSettings.outsideWorkingHoursMaterialType;
-      const id = defaultActionSettings.outsideWorkingHoursMaterialId;
+      if (keyword) {
+        if (defaultActionSettings?.noKeywordMatchReplyEnabled) {
+          const type = defaultActionSettings.outsideWorkingHoursMaterialType;
+          const id = defaultActionSettings.outsideWorkingHoursMaterialId;
 
-      if (type && id) {
-        const sent = await sendDefaultMaterial(type, id, recipient, 1, agentPhoneNumberId);
-        if (sent) return true;
+          if (type && id) {
+            const sent = await sendDefaultMaterial(type, id, recipient, 1, agentPhoneNumberId);
+            if (sent) return true;
+          }
+        }
       }
-    }
-  }
-      if ( !keyword) {
+      if (!keyword) {
         const type = defaultActionSettings.outsideWorkingHoursMaterialType;
         const id = defaultActionSettings.outsideWorkingHoursMaterialId;
 
@@ -429,14 +450,14 @@ const checkAndSendDefaultMaterial = async (
           if (sent) return true;
         }
       }
-    }else{
+    } else {
       return false;
     }
-    }
+  }
 
 
   // Check for no agents online
-  if (workingHours && isWithinWorkingHours(workingHours) && defaultActionSettings?.noAgentOnlineEnabled && agentPhoneNumberId) {
+  if (workingHours && isWithinWorkingHours(workingHours, userTimezone) && defaultActionSettings?.noAgentOnlineEnabled && agentPhoneNumberId) {
     // Find all agents with matching selectedPhoneNumberId
     const agents = await prisma.user.findMany({
       where: {
@@ -460,13 +481,13 @@ const checkAndSendDefaultMaterial = async (
       }
     }
   }
-    // Only send if this is the first message (no conversation exists for this recipient and agentPhoneNumberId)
-    const existingConversation = await prisma.conversation.findFirst({
-      where: {
-        recipient,
-        businessPhoneNumberId: defaultActionSettings.businessPhoneNumberId,
-      },
-    });
+  // Only send if this is the first message (no conversation exists for this recipient and agentPhoneNumberId)
+  const existingConversation = await prisma.conversation.findFirst({
+    where: {
+      recipient,
+      businessPhoneNumberId: defaultActionSettings.businessPhoneNumberId,
+    },
+  });
 
   const contact = await prisma.contact.findFirst({
     where: {
@@ -476,21 +497,21 @@ const checkAndSendDefaultMaterial = async (
       assignedTeams: true
     }
   });
-const contactTeamIds=contact?.assignedTeams.map((team)=>team.id);
-const agents = await prisma.user.findMany({
-  where: {
-    teams: {
-      some: {
-        id: { in: contactTeamIds }
+  const contactTeamIds = contact?.assignedTeams.map((team) => team.id);
+  const agents = await prisma.user.findMany({
+    where: {
+      teams: {
+        some: {
+          id: {in: contactTeamIds}
+        }
       }
-    }
-  },
-  distinct: ['id']
-});
+    },
+    distinct: ['id']
+  });
   if (defaultActionSettings?.roundRobinAssignmentEnabled && agentPhoneNumberId) {
-    const botUser=await prisma.user.findFirst({where:{email:"bot"}});
+    const botUser = await prisma.user.findFirst({where: {email: "bot"}});
     // If contact exists and not already assigned
-    if (contact && contactTeamIds && contactTeamIds.length > 0 && agents.length > 0 && contact.userId==botUser?.id) {
+    if (contact && contactTeamIds && contactTeamIds.length > 0 && agents.length > 0 && contact.userId == botUser?.id) {
       // Get or create round robin tracker (could be a separate table or a key-value config table)
       const rrState = await prisma.roundRobinState.findFirst({
         where: {
@@ -504,7 +525,7 @@ const agents = await prisma.user.findMany({
         nextIndex = (rrState.lastAssignedIndex + 1) % agents.length;
 
         await prisma.roundRobinState.update({
-          where: { phoneNumberId: agentPhoneNumberId },
+          where: {phoneNumberId: agentPhoneNumberId},
           data: {
             lastAssignedIndex: nextIndex,
           },
@@ -536,21 +557,21 @@ const agents = await prisma.user.findMany({
           type: "assignmentChanged",
           note: `Assigned to agent ${assignedAgent?.email}`,
           assignedToUserId: assignedAgent?.id,
-          changedById:  null,
+          changedById: null,
           changedAt: new Date(),
         }
       })
     }
   }
-//find the messages length for this conversation. If lesst than two then send the welcome message else do nothing
-    const messages = await prisma.message.findMany({
-      where: {
-        conversationId: existingConversation?.id,
-      },
-    });
-    if (messages.length < 2) {
+//find the messages length for this conversation. If lessthan two then send the welcome message else do nothing
+  const messages = await prisma.message.findMany({
+    where: {
+      conversationId: existingConversation?.id,
+    },
+  });
+  if (messages.length < 2) {
     // Check for keyword match (same logic as processKeyword)
-    let dbUser = await prisma.user.findFirst({ where: { selectedPhoneNumberId: agentPhoneNumberId } });
+    let dbUser = await prisma.user.findFirst({where: {selectedPhoneNumberId: agentPhoneNumberId}});
 
     // Get all keywords for the user to perform advanced matching
     const allKeywords = await prisma.keyword.findMany({
@@ -563,7 +584,7 @@ const agents = await prisma.user.findMany({
     const matchResult = findMatchingKeyword(text, allKeywords);
     const keyword = matchResult?.keyword;
 
-    if ( !keyword && defaultActionSettings?.welcomeMessageEnabled) {
+    if (!keyword && defaultActionSettings?.welcomeMessageEnabled) {
       const type = defaultActionSettings.welcomeMessageMaterialType;
       const id = defaultActionSettings.welcomeMessageMaterialId;
 
@@ -574,7 +595,7 @@ const agents = await prisma.user.findMany({
     }
 
 
-  }else{
+  } else {
     return false;
   }
 
@@ -598,36 +619,36 @@ export const sendDefaultMaterial = async (
       case 'DOCUMENT':
       case 'STICKER':
       case 'CONTACT_ATTRIBUTES': {
-        const replyMaterial = await prisma.replyMaterial.findUnique({ where: { id } });
+        const replyMaterial = await prisma.replyMaterial.findUnique({where: {id}});
         if (replyMaterial) {
           const messageContent = replyMaterial.type === 'TEXT'
-            ? { type: 'text', message: replyMaterial.content || replyMaterial.name }
+            ? {type: 'text', message: replyMaterial.content || replyMaterial.name}
             : {
-                type: replyMaterial.type.toLowerCase(),
-                message: {
-                  name: replyMaterial.name,
-                  url: replyMaterial.fileUrl,
-                },
-              };
+              type: replyMaterial.type.toLowerCase(),
+              message: {
+                name: replyMaterial.name,
+                url: replyMaterial.fileUrl,
+              },
+            };
 
-          await sendMessage(recipient, messageContent, fallbackChatbotId,1,true,agentPhoneNumberId);
+          await sendMessage(recipient, messageContent, fallbackChatbotId, 1, true, agentPhoneNumberId);
           return true;
         }
         break;
       }
 
       case 'template': {
-        const template = await prisma.template.findUnique({ where: { id } });
+        const template = await prisma.template.findUnique({where: {id}});
         if (template) {
-          await sendTemplate(recipient, template.name, fallbackChatbotId, template,agentPhoneNumberId);
+          await sendTemplate(recipient, template.name, fallbackChatbotId, template, agentPhoneNumberId);
           return true;
         }
         break;
       }
       case 'templates': {
-        const template = await prisma.template.findUnique({ where: { id } });
+        const template = await prisma.template.findUnique({where: {id}});
         if (template) {
-          await sendTemplate(recipient, template.name, fallbackChatbotId, template,agentPhoneNumberId);
+          await sendTemplate(recipient, template.name, fallbackChatbotId, template, agentPhoneNumberId);
           return true;
         }
         break;
@@ -647,28 +668,124 @@ export const sendDefaultMaterial = async (
   return false;
 };
 
-export const isWithinWorkingHours = (workingHours: WorkingHours): boolean => {
-  const now = dayjs();
-  const currentDay = now.format('dddd'); // e.g., "Thursday"
-  const todaySchedule = workingHours[currentDay];
+export const isWithinWorkingHours = (workingHours: WorkingHours, userTimezone?: string): boolean => {
+  // If no timezone specified, use server timezone (backward compatibility)
+  if (!userTimezone || userTimezone === 'UTC') {
+    const now = dayjs();
+    const currentDay = now.format('dddd'); // e.g., "Thursday"
+    const todaySchedule = workingHours[currentDay];
 
-  if (!todaySchedule?.open || !Array.isArray(todaySchedule.times)) return false;
-
-  for (const timeSlot of todaySchedule.times) {
-    const from = dayjs(`${now.format('YYYY-MM-DD')} ${timeSlot.from}`);
-    let to = dayjs(`${now.format('YYYY-MM-DD')} ${timeSlot.to}`);
-
-    // Handle overnight shift: e.g., from 23:00 to 06:00
-    if (to.isBefore(from)) {
-      to = to.add(1, 'day');
+    if (!todaySchedule?.open || !Array.isArray(todaySchedule.times)) {
+      return false;
     }
 
-    if (now.isAfter(from) && now.isBefore(to)) {
-      return true;
+    for (const timeSlot of todaySchedule.times) {
+      const from = dayjs(`${now.format('YYYY-MM-DD')} ${timeSlot.from}`);
+      let to = dayjs(`${now.format('YYYY-MM-DD')} ${timeSlot.to}`);
+
+      // Handle overnight shift: e.g., from 23:00 to 06:00
+      if (to.isBefore(from)) {
+        to = to.add(1, 'day');
+      }
+
+      if (now.isAfter(from) && now.isBefore(to)) {
+        return true;
+      }
     }
+    return false;
   }
 
-  return false;
+  // Timezone-aware working hours checking
+  try {
+    // Get current time in user's timezone
+    const now = dayjs().tz(userTimezone);
+    const currentDay = now.format('dddd'); // e.g., "Thursday"
+    const todaySchedule = workingHours[currentDay];
+
+    if (!todaySchedule?.open || !Array.isArray(todaySchedule.times)) {
+      return false;
+    }
+
+    for (const timeSlot of todaySchedule.times) {
+      // IMPORTANT: workingHours are stored in UTC, so we need to:
+      // 1. Create UTC time objects from the stored times
+      // 2. Convert them to the user's timezone for comparison
+      // 3. Handle date boundaries properly for overnight shifts
+      
+      // For overnight shifts, we need to check both current day and previous day
+      // because working hours like 11:00 PM - 11:30 PM span across midnight
+      const currentDate = now.format('YYYY-MM-DD');
+      const previousDate = now.subtract(1, 'day').format('YYYY-MM-DD');
+      
+      // Try current date first
+      let fromUTC = dayjs.utc(`${currentDate} ${timeSlot.from}`);
+      let toUTC = dayjs.utc(`${currentDate} ${timeSlot.to}`);
+      
+      // Convert UTC times to user's timezone for display and comparison
+      let fromLocal = fromUTC.tz(userTimezone);
+      let toLocal = toUTC.tz(userTimezone);
+
+      // Handle overnight shift: e.g., from 23:00 to 06:00
+      // Check if the time slot spans to the next day in the local timezone
+      if (toLocal.isBefore(fromLocal)) {
+        toLocal = toLocal.add(1, 'day');
+      }
+
+      // Check if current time falls within this slot
+      let isWithinSlot = false;
+      const fromLocalDate = fromLocal.format('YYYY-MM-DD');
+      const toLocalDate = toLocal.format('YYYY-MM-DD');
+      
+      if (fromLocalDate === toLocalDate) {
+        // Same day slot
+        isWithinSlot = now.isAfter(fromLocal) && now.isBefore(toLocal);
+      } else {
+        // Cross-day slot (e.g., 11:00 PM to 6:00 AM next day)
+        // Check if current time is after start time OR before end time
+        isWithinSlot = now.isAfter(fromLocal) || now.isBefore(toLocal);
+      }
+
+      // If not within current date slot, try previous date slot
+      if (!isWithinSlot) {
+        
+        // Try with previous date as base
+        fromUTC = dayjs.utc(`${previousDate} ${timeSlot.from}`);
+        toUTC = dayjs.utc(`${previousDate} ${timeSlot.to}`);
+        
+        fromLocal = fromUTC.tz(userTimezone);
+        toLocal = toUTC.tz(userTimezone);
+
+        // Handle overnight shift for previous day
+        if (toLocal.isBefore(fromLocal)) {
+          toLocal = toLocal.add(1, 'day');
+        }
+
+        const fromLocalDatePrev = fromLocal.format('YYYY-MM-DD');
+        const toLocalDatePrev = toLocal.format('YYYY-MM-DD');
+        
+        if (fromLocalDatePrev === toLocalDatePrev) {
+          // Same day slot
+          isWithinSlot = now.isAfter(fromLocal) && now.isBefore(toLocal);
+        } else {
+          // Cross-day slot
+          isWithinSlot = now.isAfter(fromLocal) || now.isBefore(toLocal);
+        }
+        
+        if (isWithinSlot) {
+          return true;
+        }
+      }
+      
+      if (isWithinSlot) {
+        return true;
+      }
+    }
+    return false;
+  } catch (error) {
+    console.error(`❌ Error checking working hours for timezone ${userTimezone}:`, error);
+    // Fallback to server timezone if timezone processing fails
+    return isWithinWorkingHours(workingHours);
+  }
 };
 
 export const handleFallbackMaterial = async (
@@ -682,8 +799,6 @@ export const handleFallbackMaterial = async (
       defaultActionSettings.fallbackMessageMaterialType &&
       defaultActionSettings.fallbackMessageMaterialId
     ) {
-      console.log(`No keyword matched. Sending fallback material of type "${defaultActionSettings.fallbackMessageMaterialType}"`);
-
       const sent = await sendDefaultMaterial(
         defaultActionSettings.fallbackMessageMaterialType,
         defaultActionSettings.fallbackMessageMaterialId,
@@ -695,7 +810,6 @@ export const handleFallbackMaterial = async (
       return sent;
     }
 
-    console.log(`No keyword matched and fallback is disabled or incomplete.`);
     return false;
   } catch (error) {
     console.error('Error handling fallback material:', error);

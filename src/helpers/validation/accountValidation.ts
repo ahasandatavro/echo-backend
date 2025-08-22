@@ -86,3 +86,4 @@ export const validateLanguage = (language: string): boolean => {
   const languageRegex = /^[a-zA-Z]{2,3}(-[a-zA-Z]{2,3})?$/;
   return languageRegex.test(language);
 };
+

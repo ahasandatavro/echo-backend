@@ -35,7 +35,8 @@ export const processWaitingMessageJob = async (job: Job<WaitingMessageJobData>) 
       return;
     }
 
-    const jobScheduledTime = new Date(Date.now() - (parseInt(process.env.WAITING_MESSAGE_DURATION_MINUTES || '10') * 60 * 1000));
+    const durationMinutes = parseInt(process.env.WAITING_MESSAGE_DURATION_MINUTES || '10');
+    const jobScheduledTime = new Date(Date.now() - (durationMinutes * 60 * 1000));
     const hasAgentRepliedSinceScheduled = conversation.lastAgentMessageAt && 
       conversation.lastAgentMessageAt > jobScheduledTime;
 
