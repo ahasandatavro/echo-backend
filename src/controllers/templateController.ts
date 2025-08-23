@@ -805,20 +805,13 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
             };
 
           case "Visit Website": {
-            let urlTemplate = url || "";
+            const urlTemplate = url || "";
             const buttonText = label || "Visit us";
 
             // Validate button text length (Meta API limit is 25 characters)
             if (buttonText.length > 25) {
               throw new Error(`Button text "${buttonText}" is too long. Maximum 25 characters allowed.`);
             }
-
-            // Replace templateId=pending with actual template ID if it exists in the URL
-            // if (urlTemplate.includes('templateId=pending')) {
-            //   // We'll replace this after the template is created and we have the actual ID
-            //   urlTemplate = urlTemplate.replace('templateId=pending', 'templateId={{TEMPLATE_ID}}');
-            // }
-
             // Extract variable numbers from URL
             const matches = urlTemplate.match(/\{\{(\d+)\}\}/g);
             const variableNumbers = matches ? matches.map((match: string) => match.replace(/\{\{(\d+)\}\}/, '$1')) : [];
@@ -990,7 +983,7 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
             timeout: 20000,
           }
         );
-       console.log("Template created successfully:\n", JSON.stringify(response.data, null, 2));
+        console.log("Template created successfully:\n", JSON.stringify(response.data, null, 2));
       }
       catch (err: any) {
         console.error("Meta API call failed:");
@@ -1101,31 +1094,6 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
         wabaId: selectedWabaId,
       },
     });
-
-    // Replace templateId placeholder with actual template ID in the content
-    // if (dbTemplate && dbTemplate.content) {
-    //   let updatedContent = dbTemplate.content;
-    //   if (updatedContent.includes('templateId=pending')) {
-    //     updatedContent = updatedContent.replace(/templateId=pending/g, `templateId=${dbTemplate.id}`);
-
-    //     // Update the template with the corrected content
-    //     dbTemplate = await prisma.template.update({
-    //       where: { id: dbTemplate.id },
-    //       data: {
-    //         content: updatedContent
-    //       }
-    //     });
-    //   }
-    // }
-//  }
-  // else{
-  //   const dbTemplate = await prisma.template.update({
-  //     where: { name: name, userId: user.userId, wabaId: selectedWabaId },
-  //     data: {
-  //       status: "PENDING",
-  //     },
-  //   });
-  // }
     if (saveAsDraft) {
       return res.status(201).json(dbTemplate);
     }
@@ -1137,6 +1105,7 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
     });
   }
 };
+
 
 // **Delete a Template**
 export const deleteTemplate = async (req: Request, res: Response) => {
