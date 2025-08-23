@@ -508,7 +508,7 @@ model KeywordRoutingMaterial {
 
 model Template {
   id               Int               @id @default(autoincrement())
-  name             String            
+  name             String            @unique
   language         String            @default("en_US")
   content          String?
   userId           Int
@@ -522,8 +522,6 @@ model Template {
   user             User              @relation(fields: [userId], references: [id])
   rejectionError   String?
   templateClick    TemplateClick?
-  @@unique([name, userId, wabaId])
-
 }
 
 model KeywordTemplate {
