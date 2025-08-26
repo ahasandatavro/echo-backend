@@ -1079,7 +1079,7 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
 //if (templateContent.status !== "DRAFT"){
 //update if already available
     dbTemplate = await prisma.template.upsert({
-      where: { name: name, userId: user.userId, wabaId: selectedWabaId },
+      where: { name: name, userId: user.userId},
       update: {
         status: templateContent.status,
         content: JSON.stringify(templateContent),

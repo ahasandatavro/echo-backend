@@ -106,8 +106,8 @@ export const getAllContacts = async (req: Request, res: Response) => {
       favoriteFilter = { favorite: isFavorite };
     }
 
-    // Step 3: Fetch only the contacts that are linked via conversations
-   // console.log('🔍 Fetching contact details...');
+    // Step 3: Fetch contacts with their latest message time, ordered by most recent message first
+   // console.log('🔍 Fetching contact details with latest message time...');
     const contacts = await prisma.contact.findMany({
       where: { 
         id: { in: contactIds },
@@ -124,13 +124,33 @@ export const getAllContacts = async (req: Request, res: Response) => {
         favorite: true,
         createdAt: true,
         updatedAt: true,
+        messages: {
+          orderBy: { time: 'desc' },
+          take: 1,
+          select: { time: true }
+        }
       },
+      orderBy: {
+        messages: {
+          _count: 'desc'
+        }
+      }
     });
+
+    // Sort contacts by their latest message time (most recent first)
+    const sortedContacts = contacts.sort((a, b) => {
+      const aLatestTime = a.messages[0]?.time || a.createdAt;
+      const bLatestTime = b.messages[0]?.time || b.createdAt;
+      return new Date(bLatestTime).getTime() - new Date(aLatestTime).getTime();
+    });
+
+    // Remove the messages array from the response
+    const contactsWithoutMessages = sortedContacts.map(({ messages, ...contact }) => contact);
    // console.log('✅ Found contacts:', contacts.length);
 
     // Ensure attributes is always an array
    // console.log('🔄 Formatting contact attributes...');
-    const formattedContacts = contacts.map((contact) => ({
+    const formattedContacts = contactsWithoutMessages.map((contact) => ({
       ...contact,
       attributes: Array.isArray(contact.attributes)
         ? contact.attributes
