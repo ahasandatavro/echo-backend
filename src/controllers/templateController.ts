@@ -107,15 +107,33 @@ export const getBroadcastById = async (req: Request, res: Response) => {
 export const getAllApprovedTemplates = async (req: Request, res: Response) => {
   try {
     const user: any = req.user;
+    const { search } = req.query;
+    
     const userRecord = await prisma.user.findUnique({
       where: { id: user.userId },
       select: {
         selectedWabaId: true,
       },
     });
+    
+    // Build where clause for filtering
+    const whereClause: any = { 
+      userId: user.userId, 
+      wabaId: userRecord?.selectedWabaId, 
+      status: "APPROVED" 
+    };
+    
+    // Add search filter if search parameter is provided
+    if (search && typeof search === 'string') {
+      whereClause.name = {
+        contains: search,
+        mode: 'insensitive' // Case-insensitive search
+      };
+    }
+    
     //send latests templates first
     const templates = await prisma.template.findMany({
-      where: { userId: user.userId, wabaId: userRecord?.selectedWabaId, status: "APPROVED" },
+      where: whereClause,
       orderBy: { updatedAt: 'desc' },
     });
 

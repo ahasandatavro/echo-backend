@@ -35,19 +35,40 @@ export const uploadFileToDigitalOcean = async (file: Express.Multer.File): Promi
 };
 
 router.get('/', async (req: Request, res: Response) => {
-  const { type } = req.query;
+  const { type, search, page = "1", limit = "10" } = req.query;
 
   try {
     if (!type) {
       return res.status(400).json({ message: "Type parameter is required" });
     }
 
+    // Parse pagination parameters
+    const pageNum = parseInt(page as string, 10);
+    const limitNum = parseInt(limit as string, 10);
+    const offset = (pageNum - 1) * limitNum;
+
     let materials;
+    let total;
 
     if (type === "Notification" || type === "AssignUser" || type === "AssignTeam") {
       // ✅ Fetch from `RoutingMaterial`
+      const whereClause: any = { type: type as any };
+      
+      // Add search filter if search parameter is provided
+      if (search && typeof search === 'string') {
+        whereClause.name = {
+          contains: search,
+          mode: 'insensitive' // Case-insensitive search
+        };
+      }
+
+      // Get total count
+      total = await prisma.routingMaterial.count({
+        where: whereClause,
+      });
+
       materials = await prisma.routingMaterial.findMany({
-        where: { type: type as any },
+        where: whereClause,
         include: {
           users: {
             select: {               // ✅ Select only required user fields
@@ -67,15 +88,39 @@ router.get('/', async (req: Request, res: Response) => {
           },
           team: true, // Include team for AssignTeam
         },
+        skip: offset,
+        take: limitNum,
+        orderBy: { createdAt: 'desc' },
       });
     } else {
       // ✅ Fetch from `ReplyMaterial`
+      const whereClause: any = { type: type as MaterialType };
+      
+      // Add search filter if search parameter is provided
+      if (search && typeof search === 'string') {
+        whereClause.name = {
+          contains: search,
+          mode: 'insensitive' // Case-insensitive search
+        };
+      }
+
+      // Get total count
+      total = await prisma.replyMaterial.count({
+        where: whereClause,
+      });
+
       materials = await prisma.replyMaterial.findMany({
-        where: { type: type as MaterialType },
+        where: whereClause,
+        skip: offset,
+        take: limitNum,
+        orderBy: { createdAt: 'desc' },
       });
     }
 
-    res.json(materials);
+    res.json({
+      materials,
+      total,
+    });
   } catch (error) {
     console.error('Error fetching materials:', error);
     res.status(500).json({ message: 'Failed to fetch materials', error });
