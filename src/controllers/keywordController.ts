@@ -279,9 +279,27 @@ export const deleteKeyword = async (req: Request, res: Response) => {
   const { id } = req.params;
 
   try {
-    await prisma.keyword.delete({
-      where: { id: parseInt(id) },
+    // Use a transaction to ensure all related records are deleted atomically
+    await prisma.$transaction(async (tx) => {
+      // Delete related records in junction tables first
+      await tx.keywordReplyMaterial.deleteMany({
+        where: { keywordId: parseInt(id) },
+      });
+      
+      await tx.keywordRoutingMaterial.deleteMany({
+        where: { keywordId: parseInt(id) },
+      });
+      
+      await tx.keywordTemplate.deleteMany({
+        where: { keywordId: parseInt(id) },
+      });
+      
+      // Now delete the keyword itself
+      await tx.keyword.delete({
+        where: { id: parseInt(id) },
+      });
     });
+    
     res.status(200).json({ message: 'Keyword deleted successfully' });
   } catch (error) {
     console.error('Error deleting Keyword:', error);

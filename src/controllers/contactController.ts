@@ -106,8 +106,8 @@ export const getAllContacts = async (req: Request, res: Response) => {
       favoriteFilter = { favorite: isFavorite };
     }
 
-    // Step 3: Fetch only the contacts that are linked via conversations
-   // console.log('🔍 Fetching contact details...');
+    // Step 3: Fetch contacts with their latest message time, ordered by most recent message first
+   // console.log('🔍 Fetching contact details with latest message time...');
     const contacts = await prisma.contact.findMany({
       where: { 
         id: { in: contactIds },
@@ -124,13 +124,33 @@ export const getAllContacts = async (req: Request, res: Response) => {
         favorite: true,
         createdAt: true,
         updatedAt: true,
+        messages: {
+          orderBy: { time: 'desc' },
+          take: 1,
+          select: { time: true }
+        }
       },
+      orderBy: {
+        messages: {
+          _count: 'desc'
+        }
+      }
     });
+
+    // Sort contacts by their latest message time (most recent first)
+    const sortedContacts = contacts.sort((a, b) => {
+      const aLatestTime = a.messages[0]?.time || a.createdAt;
+      const bLatestTime = b.messages[0]?.time || b.createdAt;
+      return new Date(bLatestTime).getTime() - new Date(aLatestTime).getTime();
+    });
+
+    // Remove the messages array from the response
+    const contactsWithoutMessages = sortedContacts.map(({ messages, ...contact }) => contact);
    // console.log('✅ Found contacts:', contacts.length);
 
     // Ensure attributes is always an array
    // console.log('🔄 Formatting contact attributes...');
-    const formattedContacts = contacts.map((contact) => ({
+    const formattedContacts = contactsWithoutMessages.map((contact) => ({
       ...contact,
       attributes: Array.isArray(contact.attributes)
         ? contact.attributes
@@ -161,7 +181,11 @@ export const getAllImportedContacts = async (req: Request, res: Response) => {
         createdById: true,
       },
     });
-
+const bp=await prisma.businessPhoneNumber.findFirst({
+  where: {
+    metaPhoneNumberId: dbUser?.selectedPhoneNumberId,
+  },
+});
     if (!dbUser) return res.status(404).json({ error: "User not found" });
 
     let userIdsToInclude: number[] = [];
@@ -203,8 +227,25 @@ export const getAllImportedContacts = async (req: Request, res: Response) => {
       favoriteFilter = { favorite: isFavorite };
     }
 
-    // ✅ Fetch all contacts created by any of the users in the set
-    const contacts = await prisma.contact.findMany({
+    // Step 1: Get business phone number ID for conversation contacts
+    const businessPhone = await prisma.businessPhoneNumber.findFirst({
+      where: { metaPhoneNumberId: dbUser?.selectedPhoneNumberId },
+      select: { id: true },
+    });
+
+    // Step 2: Get conversation contact IDs (recipients who messaged this business phone)
+    let conversationContactIds: number[] = [];
+    if (businessPhone) {
+      const conversationContacts = await prisma.conversation.findMany({
+        where: { businessPhoneNumberId: businessPhone.id },
+        select: { contactId: true },
+        distinct: ["contactId"],
+      });
+      conversationContactIds = conversationContacts.map((c) => c.contactId).filter((id) => id !== null);
+    }
+
+    // Step 3: Fetch all contacts created by any of the users in the set
+    const createdContacts = await prisma.contact.findMany({
       where: {
         createdById: {
           in: userIdsToInclude,
@@ -224,6 +265,35 @@ export const getAllImportedContacts = async (req: Request, res: Response) => {
         updatedAt: true,
       },
     });
+
+    // Step 4: Fetch conversation contacts (recipients) that aren't already in createdContacts
+    const existingContactIds = new Set(createdContacts.map(c => c.id));
+    const uniqueConversationContactIds = conversationContactIds.filter(id => !existingContactIds.has(id));
+    
+    let conversationContacts: any[] = [];
+    if (uniqueConversationContactIds.length > 0) {
+      conversationContacts = await prisma.contact.findMany({
+        where: {
+          id: { in: uniqueConversationContactIds },
+          ...favoriteFilter,
+        },
+        select: {
+          id: true,
+          name: true,
+          phoneNumber: true,
+          attributes: true,
+          subscribed: true,
+          sendSMS: true,
+          ticketStatus: true,
+          favorite: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+    }
+
+    // Step 5: Combine both sets of contacts
+    const contacts = [...createdContacts, ...conversationContacts];
 
     // ✅ Format attributes into array of {key, value} objects
     const formattedContacts = contacts.map((contact) => ({
