@@ -1,5 +1,5 @@
 import { Agenda, Job } from '@hokify/agenda';
-import { brodcastTemplate } from '../processors/template/templateProcessor';
+import { broadcastTemplate } from '../controllers/templateController';
 import { prisma } from '../models/prismaClient';
 import { syncTemplates } from '../services/templateService';
 import { registerChatbotTimerJobs } from '../utils/chatbotTimerUtils';
@@ -30,12 +30,14 @@ agenda.on('error', (err) => {
 // Define the data structure
 interface SendScheduledBroadcastData {
   broadcastId: number;
+  templateParameters?: Record<string, string>;
+  fileUrl?: string;
 }
 
 // Define job processor
 agenda.define<SendScheduledBroadcastData>('sendScheduledBroadcast', async (job: Job<SendScheduledBroadcastData>) => {
   try {
-    const { broadcastId } = job.attrs.data;
+    const { broadcastId, templateParameters, fileUrl } = job.attrs.data;
 
     const broadcast = await prisma.broadcast.findUnique({
       where: { id: broadcastId },
@@ -51,12 +53,14 @@ agenda.define<SendScheduledBroadcastData>('sendScheduledBroadcast', async (job: 
     }
 
     for (const recipient of broadcast.recipients) {
-      await brodcastTemplate(
+      await broadcastTemplate(
         recipient.contact.phoneNumber,
         broadcast.templateName,
         0,
         broadcast.id,
-        broadcast?.phoneNumberId || undefined
+        broadcast?.phoneNumberId || undefined,
+        templateParameters,
+        fileUrl
       );
     }
 

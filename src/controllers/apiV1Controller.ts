@@ -51,7 +51,7 @@ export const getMessages = async (req: Request, res: Response) => {
       },
     });
     if (!conversation) {
-      return res.status(404).json({ message: "Contact does not belong to this business phone number" });
+      return res.status(404).json({ message: "There is no conversation between this contact and this business phone number yet" });
     }
 
     // Step 3: Find all conversation IDs matching contactId and businessPhoneNumberId

@@ -1586,7 +1586,7 @@ export const sendMessageWithList = async (
       section.rows.map((row: any, rowIndex: number) => ({
         id: `source_${sectionIndex}_${rowIndex}_node_${nodeId}`,
         title: row,
-        description: "row demo description",
+        description: "",
       }))
     );
     const payload = {
@@ -1613,7 +1613,7 @@ export const sendMessageWithList = async (
             rows: section.rows.map((row, rowIndex) => ({
               id: `source_${sectionIndex}_${rowIndex}_node_${nodeId}`,
               title: row,
-              description: "row demo description",
+              description: "",
             })),
           })),
         }

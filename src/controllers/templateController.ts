@@ -1158,110 +1158,6 @@ export const deleteTemplate = async (req: Request, res: Response) => {
   }
 };
 
-// export const createBroadcast = async (req: Request, res: Response) => {
-//   try {
-//     const user: any = req.user;
-
-//     // Check broadcast access based on package
-//     const accessCheck = await checkBroadcastAccess(user.userId);
-//     if (!accessCheck.allowed) {
-//       return res.status(403).json({
-//         success: false,
-//         message: accessCheck.message || "Access denied for broadcast features"
-//       });
-//     }
-
-//     const { broadcastName, templateName, userId, contacts, chatbotId, scheduledDateTime } = req.body;
-
-//     const dbUser = await prisma.user.findFirst({
-//       where: { id: user.userId },
-//       select: { id: true, selectedPhoneNumberId: true },
-//     });
-//     const phoneNumberId = dbUser?.selectedPhoneNumberId;
-//     if (!phoneNumberId) {
-//       return res.status(400).json({ message: "No phone number selected." });
-//     }
-//     const contactsToConnect = await prisma.contact.findMany({
-//       where: {
-//         phoneNumber: { in: contacts },
-//       },
-//       select: { id: true },
-//     });
-//     const broadcast = await prisma.broadcast.create({
-//       data: {
-//         name: broadcastName,
-//         templateName,
-//         userId: dbUser?.id || 1,
-//         phoneNumberId,
-//         recipients: {
-//           create: contactsToConnect.map((contact) => ({
-//             contact: { connect: { id: contact.id } },
-//           })),
-//         },
-//       },
-//     });
-
-//     // If scheduling is requested
-//     if (scheduledDateTime) {
-//       const scheduledDate = new Date(scheduledDateTime);
-
-//       // Schedule the broadcast using Agenda
-//       const agenda = (await import('../config/agenda')).default;
-//       await agenda.schedule(scheduledDate, 'sendScheduledBroadcast', {
-//         broadcastId: broadcast.id
-//       });
-
-//       // Update the broadcast with scheduling info
-//       await prisma.broadcast.update({
-//         where: { id: broadcast.id },
-//         data: {
-//           scheduledDateTime: scheduledDate,
-//           status: 'SCHEDULED'
-//         }
-//       });
-
-//       res.status(200).json({
-//         success: true,
-//         broadcastId: broadcast.id,
-//         message: "Broadcast scheduled successfully!",
-//         scheduledFor: scheduledDate
-//       });
-//     } else {
-//       // Send immediately if no scheduling requested
-//       for (const phoneNumber of contacts) {
-//         await brodcastTemplate(
-//           phoneNumber,
-//           templateName,
-//           chatbotId,
-//           broadcast.id,
-//           phoneNumberId
-//         );
-//       }
-
-//       // Update sent time
-//       await prisma.broadcast.update({
-//         where: { id: broadcast.id },
-//         data: {
-//           sentAt: new Date(),
-//           status: 'SENT'
-//         }
-//       });
-
-//       res.status(200).json({
-//         success: true,
-//         broadcastId: broadcast.id,
-//         message: "Broadcast sent successfully!",
-//       });
-//     }
-//   } catch (error: any) {
-//     console.error("Error creating broadcast:", error);
-//     res.status(500).json({
-//       success: false,
-//       message: error.response?.data?.error?.error_data?.details || error.message,
-//       error: error.message,
-//     });
-//   }
-// };
 interface TemplateComponent {
   type: string;
   text?: string;
@@ -1486,7 +1382,8 @@ export const createBroadcast = async (req: Request, res: Response) => {
       const agenda = (await import('../config/agenda')).default;
       await agenda.schedule(scheduledDate, 'sendScheduledBroadcast', {
         broadcastId: broadcast.id,
-        templateParameters // Pass parameters to scheduled job
+        templateParameters,
+        fileUrl
       });
 
       // Update the broadcast with scheduling info
