@@ -13,7 +13,7 @@ if (!process.env.MONGODB_URI) {
 const agenda = new Agenda({
   db: {
     address: process.env.MONGODB_URI,
-    collection: 'agendaJobs'
+    collection: 'agendaJobsStaging'
   },
   processEvery: '30 seconds',
   maxConcurrency: 20,
@@ -66,7 +66,7 @@ agenda.define<SendScheduledBroadcastData>('sendScheduledBroadcast', async (job: 
 
     // Update broadcast status only if it still exists and hasn't been updated by webhooks
     const updatedBroadcast = await prisma.broadcast.updateMany({
-      where: { 
+      where: {
         id: broadcastId,
         status: { in: ['SCHEDULED', 'PENDING'] } // Only update if still in initial state
       },
@@ -75,17 +75,17 @@ agenda.define<SendScheduledBroadcastData>('sendScheduledBroadcast', async (job: 
         status: 'SENT'
       }
     });
-    
+
     if (updatedBroadcast.count === 0) {
       console.log(`Broadcast ${broadcastId} was already updated by webhook processing`);
     }
 
   } catch (error) {
     console.error('Error processing scheduled broadcast:', error);
-    
+
     // Only update to FAILED if the broadcast still exists and hasn't been processed
     const failedUpdate = await prisma.broadcast.updateMany({
-      where: { 
+      where: {
         id: job.attrs.data.broadcastId,
         status: { in: ['SCHEDULED', 'PENDING'] }
       },
@@ -93,7 +93,7 @@ agenda.define<SendScheduledBroadcastData>('sendScheduledBroadcast', async (job: 
         status: 'FAILED'
       }
     });
-    
+
     if (failedUpdate.count === 0) {
       console.log(`Broadcast ${job.attrs.data.broadcastId} was already processed or doesn't exist`);
     }
