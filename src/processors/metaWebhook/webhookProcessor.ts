@@ -1308,7 +1308,7 @@ export const sendMessage = async (
   recipient: string,
   message: any,
   chatbotId: number = 1, // Default to 1 if not provided
-  userId: number = 1,     // Default to 1 if not provided
+  userId: number = 0,     // Default to 1 if not provided
   plainText?: boolean,
   agentPhoneNumberId?: string
 ) => {
@@ -1391,7 +1391,7 @@ export const sendMessage = async (
     });
     await storeMessage({recipient, chatbotId, messageType: message.type, text: messageBody}, agentPhoneNumberId);
 
-    if (userId && userId > 1) {
+    if (userId) {
       try {
         const businessPhoneNumber = await prisma.businessPhoneNumber.findFirst({
           where: {metaPhoneNumberId: agentPhoneNumberId}
