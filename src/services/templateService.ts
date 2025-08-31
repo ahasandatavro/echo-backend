@@ -33,10 +33,19 @@ export const syncTemplatesWithWhatsApp = async () => {
 
 
 export async function syncTemplates(wabaId: string, reqUserId:number) {
+  console.log(`[syncTemplates] Starting template sync for wabaId: ${wabaId}, userId: ${reqUserId}`);
+  
   try {
     let after: string | undefined = undefined;
+    let totalTemplatesProcessed = 0;
+    let totalTemplatesCreated = 0;
+    let totalTemplatesSkipped = 0;
+    let pageCount = 0;
 
     do {
+      pageCount++;
+      console.log(`[syncTemplates] Fetching page ${pageCount} for wabaId: ${wabaId}`);
+      
       const resp: any = await axios.get(
         `https://graph.facebook.com/v22.0/${wabaId}/message_templates`,
         {
@@ -57,7 +66,12 @@ export async function syncTemplates(wabaId: string, reqUserId:number) {
         paging: { cursors: { after?: string; before?: string } };
       } = resp.data;
 
+      console.log(`[syncTemplates] Page ${pageCount}: Retrieved ${data.length} templates`);
+
       for (const tpl of data) {
+        totalTemplatesProcessed++;
+        console.log(`[syncTemplates] Processing template: ${tpl.name} (${tpl.language}) - ID: ${tpl.id}`);
+        
         const exists = await prisma.template.findFirst({
           where: {
             wabaId: wabaId,
@@ -65,7 +79,14 @@ export async function syncTemplates(wabaId: string, reqUserId:number) {
             language: tpl.language,
           },
         });
-        if (exists) continue;
+        
+        if (exists) {
+          console.log(`[syncTemplates] Template ${tpl.name} (${tpl.language}) already exists, skipping`);
+          totalTemplatesSkipped++;
+          continue;
+        }
+
+        console.log(`[syncTemplates] Creating new template: ${tpl.name} (${tpl.language})`);
 
         const content = {
           name: tpl.name,
@@ -91,18 +112,40 @@ export async function syncTemplates(wabaId: string, reqUserId:number) {
           createdAt: new Date(),
           updatedAt: new Date(),
         };
+        
         if (user?.id !== undefined) {
           data.userId = user.id;
+          console.log(`[syncTemplates] Assigning template to user: ${user.id}`);
+        } else {
+          console.log(`[syncTemplates] No user found for wabaId: ${wabaId}, creating template without user assignment`);
         }
+        
         await prisma.template.create({
           data,
         });
+        
+        totalTemplatesCreated++;
+        console.log(`[syncTemplates] Successfully created template: ${tpl.name} (${tpl.language})`);
       }
 
       after = paging?.cursors?.after;
+      console.log(`[syncTemplates] Page ${pageCount} completed. After cursor: ${after || 'none'}`);
+      
     } while (after);
+
+    console.log(`[syncTemplates] Sync completed successfully!`);
+    console.log(`[syncTemplates] Summary: ${totalTemplatesProcessed} templates processed, ${totalTemplatesCreated} created, ${totalTemplatesSkipped} skipped across ${pageCount} pages`);
+    
   } catch (error: any) {
-    console.error('Error syncing templates:', error.message);
+    console.error('[syncTemplates] Error syncing templates:', error.message);
+    console.error('[syncTemplates] Error details:', {
+      wabaId,
+      reqUserId,
+      error: error.message,
+      stack: error.stack,
+      response: error.response?.data
+    });
+    throw error; // Re-throw to allow calling function to handle
   }
 }
 
