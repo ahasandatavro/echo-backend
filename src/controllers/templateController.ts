@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import axios from "axios";
 import dotenv from "dotenv";
 import { preprocessHtmlForWhatsApp } from "../helpers";
+import { resolveContactAttributes } from "../helpers/validation";
 import fs from "fs";
 import FormData from "form-data";
 import { prisma } from "../models/prismaClient";
@@ -1500,8 +1501,8 @@ export const broadcastTemplate = async (
     // Build the send-payload components array
     const sendComponents: any[] = [];
 
-    tplDef.components.forEach((c, idx) => {
-      if (!c) return;
+    for (const c of tplDef.components) {
+      if (!c) continue;
 
       if (c.type === "HEADER") {
         if (c.format === "IMAGE" && c.example?.header_handle) {
@@ -1522,19 +1523,22 @@ export const broadcastTemplate = async (
         } else if (c.format === "TEXT" && c.text) {
           const matches = Array.from(c.text.matchAll(/\{\{(\d+)\}\}/g));
           if (matches.length > 0) {
-            const params = matches.map(m => {
+            const params = matches.map(async m => {
               const paramNum = m[1];
               const key = `header_${paramNum}`;
+              const paramText = templateParameters?.[key] ?? "";
+              const resolvedText = await resolveContactAttributes(paramText, recipient);
               return {
                 type: "text" as const,
-                text: templateParameters?.[key] ?? ""
+                text: resolvedText
               };
             });
             // Only add header component if we have parameters
-            if (params.some(param => param.text && param.text.trim() !== "")) {
+            const resolvedParams = await Promise.all(params);
+            if (resolvedParams.some(param => param.text && param.text.trim() !== "")) {
               sendComponents.push({
                 type: "header",
-                parameters: params
+                parameters: resolvedParams
               });
             }
           }
@@ -1544,19 +1548,22 @@ export const broadcastTemplate = async (
       if (c.type === "BODY" && c.text && c.text.trim().length > 0) {
         const matches = Array.from(c.text.matchAll(/\{\{(\d+)\}\}/g));
         if (matches.length > 0) {
-          const params = matches.map(m => {
+          const params = matches.map(async m => {
             const paramNum = m[1];
             const key = `body_${paramNum}`;
+            const paramText = templateParameters?.[key] ?? "";
+            const resolvedText = await resolveContactAttributes(paramText, recipient);
             return {
               type: "text" as const,
-              text: templateParameters?.[key] ?? ""
+              text: resolvedText
             };
           });
           // Only add body component if we have parameters
-          if (params.some(param => param.text && param.text.trim() !== "")) {
+          const resolvedParams = await Promise.all(params);
+          if (resolvedParams.some(param => param.text && param.text.trim() !== "")) {
             sendComponents.push({
               type: "body",
-              parameters: params
+              parameters: resolvedParams
             });
           }
         }
@@ -1566,19 +1573,22 @@ export const broadcastTemplate = async (
       if (c.type === "FOOTER" && c.text) {
         const matches = Array.from(c.text.matchAll(/\{\{(\d+)\}\}/g));
         if (matches.length > 0) {
-          const params = matches.map(m => {
+          const params = matches.map(async m => {
             const paramNum = m[1];
             const key = `footer_${paramNum}`;
+            const paramText = templateParameters?.[key] ?? "";
+            const resolvedText = await resolveContactAttributes(paramText, recipient);
             return {
               type: "text" as const,
-              text: templateParameters?.[key] ?? ""
+              text: resolvedText
             };
           });
           // Only add footer component if we have parameters
-          if (params.some(param => param.text && param.text.trim() !== "")) {
+          const resolvedParams = await Promise.all(params);
+          if (resolvedParams.some(param => param.text && param.text.trim() !== "")) {
             sendComponents.push({
               type: "footer",
-              parameters: params
+              parameters: resolvedParams
             });
           }
         }
@@ -1638,7 +1648,7 @@ export const broadcastTemplate = async (
           }
         });
       }
-    });
+    }
 
     const templatePayload: any = {
       name: selectedTemplate,
