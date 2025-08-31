@@ -247,7 +247,7 @@ function extractFooterVariableNumbers(text:string) {
 export const createTemplate = async (req: Request, res: Response) => {
   try {
     const user: any = req.user;
-
+    console.log("Creating template for ", user.userId);
     // Check template creation limit based on package
     const limitCheck = await checkTemplateLimit(user.userId, 1);
     if (!limitCheck.allowed) {
@@ -1079,8 +1079,9 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
     let dbTemplate: any;
 //if (templateContent.status !== "DRAFT"){
 //update if already available
+console.log("Upserting template for ", user.userId);
     dbTemplate = await prisma.template.upsert({
-      where: { name: name},
+      where: { name: name, userId: user.userId},
       update: {
         status: templateContent.status,
         content: JSON.stringify(templateContent),
