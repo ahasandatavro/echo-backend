@@ -1080,7 +1080,48 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
 //if (templateContent.status !== "DRAFT"){
 //update if already available
 console.log("Upserting template for ", user.userId);
-    dbTemplate = await prisma.template.upsert({
+console.log("Upsert details:", {
+  name,
+  language,
+  category,
+  status: templateContent.status,
+  userId: user.userId,
+  wabaId: selectedWabaId,
+  templateContent: JSON.stringify(templateContent)
+});
+
+try {
+  dbTemplate = await prisma.template.upsert({
+    where: { name: name, userId: user.userId, wabaId: selectedWabaId },
+    update: {
+      status: templateContent.status,
+      content: JSON.stringify(templateContent),
+    },
+    create: {
+      name,
+      language,
+      category,
+      status: templateContent.status,
+      content: JSON.stringify(templateContent),
+      userId: user.userId,
+      wabaId: selectedWabaId,
+    },
+  });
+  
+  console.log("Template upsert successful:", {
+    templateId: dbTemplate.id,
+    name: dbTemplate.name,
+    status: dbTemplate.status,
+    operation: dbTemplate.createdAt === dbTemplate.updatedAt ? 'created' : 'updated'
+  });
+  
+} catch (upsertError: any) {
+  console.error("Template upsert failed:", {
+    error: upsertError.message,
+    code: upsertError.code,
+    meta: upsertError.meta,
+    stack: upsertError.stack,
+    upsertData: {
       where: { name: name, userId: user.userId, wabaId: selectedWabaId },
       update: {
         status: templateContent.status,
@@ -1094,8 +1135,41 @@ console.log("Upserting template for ", user.userId);
         content: JSON.stringify(templateContent),
         userId: user.userId,
         wabaId: selectedWabaId,
-      },
-    });
+      }
+    }
+  });
+  
+  // Check if it's a unique constraint violation
+  if (upsertError.code === 'P2002') {
+    console.error("Unique constraint violation detected. Checking existing templates...");
+    
+    try {
+      const existingTemplates = await prisma.template.findMany({
+        where: {
+          OR: [
+            { name: name },
+            { name: name, userId: user.userId },
+            { name: name, wabaId: selectedWabaId }
+          ]
+        },
+        select: {
+          id: true,
+          name: true,
+          userId: true,
+          wabaId: true,
+          language: true,
+          status: true
+        }
+      });
+      
+      console.error("Existing templates that might conflict:", existingTemplates);
+    } catch (checkError: any) {
+      console.error("Failed to check existing templates:", checkError.message);
+    }
+  }
+  
+  throw upsertError; // Re-throw to be caught by outer catch block
+}
     if (saveAsDraft) {
       return res.status(201).json(dbTemplate);
     }
