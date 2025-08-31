@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import axios from "axios";
 import dotenv from "dotenv";
 import { preprocessHtmlForWhatsApp } from "../helpers";
+import { resolveContactAttributes } from "../helpers/validation";
 import fs from "fs";
 import FormData from "form-data";
 import { prisma } from "../models/prismaClient";
@@ -246,7 +247,7 @@ function extractFooterVariableNumbers(text:string) {
 export const createTemplate = async (req: Request, res: Response) => {
   try {
     const user: any = req.user;
-
+    console.log("Creating template for ", user.userId);
     // Check template creation limit based on package
     const limitCheck = await checkTemplateLimit(user.userId, 1);
     if (!limitCheck.allowed) {
@@ -1078,8 +1079,50 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
     let dbTemplate: any;
 //if (templateContent.status !== "DRAFT"){
 //update if already available
-    dbTemplate = await prisma.template.upsert({
-      where: { name: name, userId: user.userId},
+console.log("Upserting template for ", user.userId);
+console.log("Upsert details:", {
+  name,
+  language,
+  category,
+  status: templateContent.status,
+  userId: user.userId,
+  wabaId: selectedWabaId,
+  templateContent: JSON.stringify(templateContent)
+});
+
+try {
+  dbTemplate = await prisma.template.upsert({
+    where: { name: name, userId: user.userId, wabaId: selectedWabaId },
+    update: {
+      status: templateContent.status,
+      content: JSON.stringify(templateContent),
+    },
+    create: {
+      name,
+      language,
+      category,
+      status: templateContent.status,
+      content: JSON.stringify(templateContent),
+      userId: user.userId,
+      wabaId: selectedWabaId,
+    },
+  });
+  
+  console.log("Template upsert successful:", {
+    templateId: dbTemplate.id,
+    name: dbTemplate.name,
+    status: dbTemplate.status,
+    operation: dbTemplate.createdAt === dbTemplate.updatedAt ? 'created' : 'updated'
+  });
+  
+} catch (upsertError: any) {
+  console.error("Template upsert failed:", {
+    error: upsertError.message,
+    code: upsertError.code,
+    meta: upsertError.meta,
+    stack: upsertError.stack,
+    upsertData: {
+      where: { name: name, userId: user.userId, wabaId: selectedWabaId },
       update: {
         status: templateContent.status,
         content: JSON.stringify(templateContent),
@@ -1092,8 +1135,41 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
         content: JSON.stringify(templateContent),
         userId: user.userId,
         wabaId: selectedWabaId,
-      },
-    });
+      }
+    }
+  });
+  
+  // Check if it's a unique constraint violation
+  if (upsertError.code === 'P2002') {
+    console.error("Unique constraint violation detected. Checking existing templates...");
+    
+    try {
+      const existingTemplates = await prisma.template.findMany({
+        where: {
+          OR: [
+            { name: name },
+            { name: name, userId: user.userId },
+            { name: name, wabaId: selectedWabaId }
+          ]
+        },
+        select: {
+          id: true,
+          name: true,
+          userId: true,
+          wabaId: true,
+          language: true,
+          status: true
+        }
+      });
+      
+      console.error("Existing templates that might conflict:", existingTemplates);
+    } catch (checkError: any) {
+      console.error("Failed to check existing templates:", checkError.message);
+    }
+  }
+  
+  throw upsertError; // Re-throw to be caught by outer catch block
+}
     if (saveAsDraft) {
       return res.status(201).json(dbTemplate);
     }
@@ -1500,8 +1576,8 @@ export const broadcastTemplate = async (
     // Build the send-payload components array
     const sendComponents: any[] = [];
 
-    tplDef.components.forEach((c, idx) => {
-      if (!c) return;
+    for (const c of tplDef.components) {
+      if (!c) continue;
 
       if (c.type === "HEADER") {
         if (c.format === "IMAGE" && c.example?.header_handle) {
@@ -1522,19 +1598,22 @@ export const broadcastTemplate = async (
         } else if (c.format === "TEXT" && c.text) {
           const matches = Array.from(c.text.matchAll(/\{\{(\d+)\}\}/g));
           if (matches.length > 0) {
-            const params = matches.map(m => {
+            const params = matches.map(async m => {
               const paramNum = m[1];
               const key = `header_${paramNum}`;
+              const paramText = templateParameters?.[key] ?? "";
+              const resolvedText = await resolveContactAttributes(paramText, recipient);
               return {
                 type: "text" as const,
-                text: templateParameters?.[key] ?? ""
+                text: resolvedText
               };
             });
             // Only add header component if we have parameters
-            if (params.some(param => param.text && param.text.trim() !== "")) {
+            const resolvedParams = await Promise.all(params);
+            if (resolvedParams.some(param => param.text && param.text.trim() !== "")) {
               sendComponents.push({
                 type: "header",
-                parameters: params
+                parameters: resolvedParams
               });
             }
           }
@@ -1544,19 +1623,22 @@ export const broadcastTemplate = async (
       if (c.type === "BODY" && c.text && c.text.trim().length > 0) {
         const matches = Array.from(c.text.matchAll(/\{\{(\d+)\}\}/g));
         if (matches.length > 0) {
-          const params = matches.map(m => {
+          const params = matches.map(async m => {
             const paramNum = m[1];
             const key = `body_${paramNum}`;
+            const paramText = templateParameters?.[key] ?? "";
+            const resolvedText = await resolveContactAttributes(paramText, recipient);
             return {
               type: "text" as const,
-              text: templateParameters?.[key] ?? ""
+              text: resolvedText
             };
           });
           // Only add body component if we have parameters
-          if (params.some(param => param.text && param.text.trim() !== "")) {
+          const resolvedParams = await Promise.all(params);
+          if (resolvedParams.some(param => param.text && param.text.trim() !== "")) {
             sendComponents.push({
               type: "body",
-              parameters: params
+              parameters: resolvedParams
             });
           }
         }
@@ -1566,19 +1648,22 @@ export const broadcastTemplate = async (
       if (c.type === "FOOTER" && c.text) {
         const matches = Array.from(c.text.matchAll(/\{\{(\d+)\}\}/g));
         if (matches.length > 0) {
-          const params = matches.map(m => {
+          const params = matches.map(async m => {
             const paramNum = m[1];
             const key = `footer_${paramNum}`;
+            const paramText = templateParameters?.[key] ?? "";
+            const resolvedText = await resolveContactAttributes(paramText, recipient);
             return {
               type: "text" as const,
-              text: templateParameters?.[key] ?? ""
+              text: resolvedText
             };
           });
           // Only add footer component if we have parameters
-          if (params.some(param => param.text && param.text.trim() !== "")) {
+          const resolvedParams = await Promise.all(params);
+          if (resolvedParams.some(param => param.text && param.text.trim() !== "")) {
             sendComponents.push({
               type: "footer",
-              parameters: params
+              parameters: resolvedParams
             });
           }
         }
@@ -1638,7 +1723,7 @@ export const broadcastTemplate = async (
           }
         });
       }
-    });
+    }
 
     const templatePayload: any = {
       name: selectedTemplate,

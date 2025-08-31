@@ -218,13 +218,38 @@ const bp=await prisma.businessPhoneNumber.findFirst({
       userIdsToInclude = [dbUser.id, ...agents.map((a) => a.id)];
     }
 
-    // Get favorite filter from query parameters
-    const { favorite } = req.query;
+    // Get query parameters
+    const { favorite, search, page = '1', limit = '20' } = req.query;
+    const pageNumber = parseInt(page as string, 10);
+    const limitNumber = parseInt(limit as string, 10);
+    const offset = (pageNumber - 1) * limitNumber;
+    
     let favoriteFilter = {};
+    let searchFilter = {};
     
     if (favorite !== undefined) {
       const isFavorite = favorite === 'true';
       favoriteFilter = { favorite: isFavorite };
+    }
+
+    if (search && typeof search === 'string' && search.trim()) {
+      const searchTerm = search.trim();
+      searchFilter = {
+        OR: [
+          {
+            name: {
+              contains: searchTerm,
+              mode: 'insensitive',
+            },
+          },
+          {
+            phoneNumber: {
+              contains: searchTerm,
+              mode: 'insensitive',
+            },
+          },
+        ],
+      };
     }
 
     // Step 1: Get business phone number ID for conversation contacts
@@ -244,13 +269,14 @@ const bp=await prisma.businessPhoneNumber.findFirst({
       conversationContactIds = conversationContacts.map((c) => c.contactId).filter((id) => id !== null);
     }
 
-    // Step 3: Fetch all contacts created by any of the users in the set
+    // Step 3: Fetch all contacts created by any of the users in the set with search and pagination
     const createdContacts = await prisma.contact.findMany({
       where: {
         createdById: {
           in: userIdsToInclude,
         },
         ...favoriteFilter,
+        ...searchFilter,
       },
       select: {
         id: true,
@@ -264,6 +290,11 @@ const bp=await prisma.businessPhoneNumber.findFirst({
         createdAt: true,
         updatedAt: true,
       },
+      skip: offset,
+      take: limitNumber,
+      orderBy: {
+        createdAt: 'desc',
+      },
     });
 
     // Step 4: Fetch conversation contacts (recipients) that aren't already in createdContacts
@@ -276,6 +307,7 @@ const bp=await prisma.businessPhoneNumber.findFirst({
         where: {
           id: { in: uniqueConversationContactIds },
           ...favoriteFilter,
+          ...searchFilter,
         },
         select: {
           id: true,
@@ -289,11 +321,40 @@ const bp=await prisma.businessPhoneNumber.findFirst({
           createdAt: true,
           updatedAt: true,
         },
+        skip: offset,
+        take: limitNumber,
+        orderBy: {
+          createdAt: 'desc',
+        },
       });
     }
 
     // Step 5: Combine both sets of contacts
     const contacts = [...createdContacts, ...conversationContacts];
+
+    // Get total count for pagination
+    const totalCreatedContacts = await prisma.contact.count({
+      where: {
+        createdById: {
+          in: userIdsToInclude,
+        },
+        ...favoriteFilter,
+        ...searchFilter,
+      },
+    });
+
+    const totalConversationContacts = uniqueConversationContactIds.length > 0 
+      ? await prisma.contact.count({
+          where: {
+            id: { in: uniqueConversationContactIds },
+            ...favoriteFilter,
+            ...searchFilter,
+          },
+        })
+      : 0;
+
+    const totalContacts = totalCreatedContacts + totalConversationContacts;
+    const totalPages = Math.ceil(totalContacts / limitNumber);
 
     // ✅ Format attributes into array of {key, value} objects
     const formattedContacts = contacts.map((contact) => ({
@@ -306,7 +367,17 @@ const bp=await prisma.businessPhoneNumber.findFirst({
           })),
     }));
 
-    res.json(formattedContacts);
+    res.json({
+      contacts: formattedContacts,
+      pagination: {
+        currentPage: pageNumber,
+        totalPages,
+        totalContacts,
+        limit: limitNumber,
+        hasNextPage: pageNumber < totalPages,
+        hasPreviousPage: pageNumber > 1,
+      },
+    });
   } catch (error) {
     console.error("Error fetching contacts:", error);
     res.status(500).json({ error: "Internal Server Error" });
