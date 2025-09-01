@@ -44,8 +44,6 @@ export async function syncTemplates(wabaId: string, reqUserId:number) {
 
     do {
       pageCount++;
-      console.log(`[syncTemplates] Fetching page ${pageCount} for wabaId: ${wabaId}`);
-      
       const resp: any = await axios.get(
         `https://graph.facebook.com/v22.0/${wabaId}/message_templates`,
         {
@@ -66,12 +64,7 @@ export async function syncTemplates(wabaId: string, reqUserId:number) {
         paging: { cursors: { after?: string; before?: string } };
       } = resp.data;
 
-      console.log(`[syncTemplates] Page ${pageCount}: Retrieved ${data.length} templates`);
-
-      for (const tpl of data) {
-        totalTemplatesProcessed++;
-        console.log(`[syncTemplates] Processing template: ${tpl.name} (${tpl.language}) - ID: ${tpl.id}`);
-        
+      for (const tpl of data) {        
         // const exists = await prisma.template.findFirst({
         //   where: {
         //     wabaId: wabaId,
@@ -82,16 +75,13 @@ export async function syncTemplates(wabaId: string, reqUserId:number) {
         const exists = await prisma.template.findFirst({
           where: {
             name: tpl.name,
+            wabaId: wabaId,
           },
         });
         
         if (exists) {
-          console.log(`[syncTemplates] Template ${tpl.name} (${tpl.language}) already exists, skipping`);
-          totalTemplatesSkipped++;
           continue;
         }
-
-        console.log(`[syncTemplates] Creating new template: ${tpl.name} (${tpl.language})`);
 
         const content = {
           name: tpl.name,
@@ -120,9 +110,8 @@ export async function syncTemplates(wabaId: string, reqUserId:number) {
         
         if (user?.id !== undefined) {
           data.userId = user.id;
-          console.log(`[syncTemplates] Assigning template to user: ${user.id}`);
         } else {
-          console.log(`[syncTemplates] No user found for wabaId: ${wabaId}, creating template without user assignment`);
+
         }
         
         await prisma.template.create({
@@ -130,16 +119,12 @@ export async function syncTemplates(wabaId: string, reqUserId:number) {
         });
         
         totalTemplatesCreated++;
-        console.log(`[syncTemplates] Successfully created template: ${tpl.name} (${tpl.language})`);
+     
       }
 
       after = paging?.cursors?.after;
-      console.log(`[syncTemplates] Page ${pageCount} completed. After cursor: ${after || 'none'}`);
       
     } while (after);
-
-    console.log(`[syncTemplates] Sync completed successfully!`);
-    console.log(`[syncTemplates] Summary: ${totalTemplatesProcessed} templates processed, ${totalTemplatesCreated} created, ${totalTemplatesSkipped} skipped across ${pageCount} pages`);
     
   } catch (error: any) {
     console.error('[syncTemplates] Error syncing templates:', error.message);
