@@ -72,11 +72,16 @@ export async function syncTemplates(wabaId: string, reqUserId:number) {
         totalTemplatesProcessed++;
         console.log(`[syncTemplates] Processing template: ${tpl.name} (${tpl.language}) - ID: ${tpl.id}`);
         
+        // const exists = await prisma.template.findFirst({
+        //   where: {
+        //     wabaId: wabaId,
+        //     name: tpl.name,
+        //     language: tpl.language,
+        //   },
+        // });
         const exists = await prisma.template.findFirst({
           where: {
-            wabaId: wabaId,
             name: tpl.name,
-            language: tpl.language,
           },
         });
         

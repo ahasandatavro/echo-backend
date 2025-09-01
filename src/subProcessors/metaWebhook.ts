@@ -685,6 +685,11 @@ export const processWebhookChange = async (change: any, io: any) => {
       console.log("History event:", change.value);
       break;
 
+    case "template_category_update":
+      // Handle template category update
+      await updateTemplateCategoryInDb(change.value);
+      break;
+
     // Add more cases for other fields you subscribe to
 
     default:
@@ -707,6 +712,7 @@ const graphFieldMap: Record<string, string> = {
   MSG_DELIVERED_V2: "messages",
   PAYMENT_CAPTURED: "payments",
   TEMPLATE_MSG_FAILED: "message_template_status_update",
+  TEMPLATE_CATEGORY_UPDATE: "template_category_update",
 };
 
 /**
@@ -754,6 +760,10 @@ function matchesEvent(uiCode: string, value: any): boolean {
 
     case "MSG_READ":
       return statuses.some((s: any) => s.status === "read");
+
+    case "TEMPLATE_CATEGORY_UPDATE":
+      // Always return true for template category updates as they don't have messages/statuses
+      return true;
 
     default:
       // payments & template failures come via other Graph fields,
@@ -1963,6 +1973,50 @@ export const updateTemplateInDb = async (data: any, reason: string) => {
       rejectionError: reason || "",
     },
   });
+};
+
+export const updateTemplateCategoryInDb = async (data: any) => {
+  const {
+    message_template_id,
+    message_template_name,
+    message_template_language,
+    new_category,
+  } = data;
+
+  try {
+
+
+    if (!message_template_id) {
+      console.log('No template ID found in webhook data, skipping category update');
+      return;
+    }
+
+    // First check if template exists by searching in the content field
+    const existingTemplate = await prisma.template.findFirst({
+      where: {
+        content: {
+          contains: `"id":"${message_template_id}"`
+        }
+      },
+    });
+
+    if (!existingTemplate) {
+      console.log(`Template with ID ${message_template_id} not found in database, skipping category update`);
+      return;
+    }
+
+    await prisma.template.update({
+      where: {id: existingTemplate.id},
+      data: {
+        category: new_category,
+        updatedAt: new Date(),
+      },
+    });
+    
+    console.log(`Template category updated for template ID ${message_template_id}: ${new_category}`);
+  } catch (error) {
+    console.error(`Error updating template category for template ID ${message_template_id}:`, error);
+  }
 };
 
 export const getNextNodeIdFromQuestion = (
