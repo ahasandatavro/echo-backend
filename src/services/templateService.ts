@@ -41,9 +41,19 @@ export async function syncTemplates(wabaId: string, reqUserId:number) {
     let totalTemplatesCreated = 0;
     let totalTemplatesSkipped = 0;
     let pageCount = 0;
+    const MAX_PAGES = 100; // Safety limit to prevent infinite loops
 
     do {
       pageCount++;
+      
+      // Safety check to prevent infinite loops
+      if (pageCount > MAX_PAGES) {
+        console.warn(`[syncTemplates] Reached maximum page limit (${MAX_PAGES}). Stopping sync to prevent infinite loop.`);
+        break;
+      }
+      
+      console.log(`[syncTemplates] Processing page ${pageCount}`);
+      
       const resp: any = await axios.get(
         `https://graph.facebook.com/v22.0/${wabaId}/message_templates`,
         {
@@ -64,7 +74,17 @@ export async function syncTemplates(wabaId: string, reqUserId:number) {
         paging: { cursors: { after?: string; before?: string } };
       } = resp.data;
 
+      // Validate that we received data
+      if (!data || !Array.isArray(data) || data.length === 0) {
+        console.log(`[syncTemplates] No templates found on page ${pageCount}`);
+        break; // Exit if no data received
+      }
+
+      console.log(`[syncTemplates] Processing ${data.length} templates on page ${pageCount}`);
+
       for (const tpl of data) {        
+        totalTemplatesProcessed++;
+        
         // const exists = await prisma.template.findFirst({
         //   where: {
         //     wabaId: wabaId,
@@ -80,6 +100,7 @@ export async function syncTemplates(wabaId: string, reqUserId:number) {
         });
         
         if (exists) {
+          totalTemplatesSkipped++;
           continue;
         }
 
@@ -122,9 +143,22 @@ export async function syncTemplates(wabaId: string, reqUserId:number) {
      
       }
 
-      after = paging?.cursors?.after;
+      // Check if there's a next page
+      if (!paging || !paging.cursors || !paging.cursors.after) {
+        console.log(`[syncTemplates] No more pages available. Ending sync.`);
+        break;
+      }
+      
+      after = paging.cursors.after;
+      console.log(`[syncTemplates] Moving to next page with cursor: ${after}`);
       
     } while (after);
+    
+    console.log(`[syncTemplates] Sync completed successfully:`);
+    console.log(`  - Total pages processed: ${pageCount}`);
+    console.log(`  - Total templates processed: ${totalTemplatesProcessed}`);
+    console.log(`  - Total templates created: ${totalTemplatesCreated}`);
+    console.log(`  - Total templates skipped: ${totalTemplatesSkipped}`);
     
   } catch (error: any) {
     console.error('[syncTemplates] Error syncing templates:', error.message);
