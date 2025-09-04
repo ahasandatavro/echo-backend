@@ -1345,7 +1345,7 @@ export const sendMessage = async (
           payload.type = "image";
           payload.image = {
             link: message.message.url,
-            caption: message.message.name || "",
+            caption: "",
           };
           messageBody = `Image: ${message.message.url}`;
           break;
@@ -1358,7 +1358,7 @@ export const sendMessage = async (
           payload.type = "video";
           payload.video = {
             link: message.message.url,
-            caption: message.message.name || "",
+            caption: "",
           };
           messageBody = `Video:${message.message.url}`;
           break;
@@ -1366,7 +1366,7 @@ export const sendMessage = async (
           payload.type = "document";
           payload.document = {
             link: message.message.url,
-            caption: message.message.name || "",
+            caption: "",
           };
           messageBody = `Document:${message.message.url}`;
           break;

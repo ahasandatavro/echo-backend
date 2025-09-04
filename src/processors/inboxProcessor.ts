@@ -60,6 +60,9 @@ export const processWebhookMessage = async (recipient: string, message: any, age
         case "document":
           textMessage = "📂 Document received";
           break;
+        case "sticker":
+          textMessage = "💬 Sticker received";
+          break;
       }
     }
     // ✅ Handle Unsupported Messages
