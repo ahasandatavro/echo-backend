@@ -269,6 +269,18 @@ export const processBroadcastInteraction = async (messageData: any) => {
                 where: { id: recentBroadcast.broadcastId },
                 data: updateData
               });
+
+              // Update BroadcastRecipient status
+              const recipientStatus = messageStatus.toUpperCase();
+              await prisma.broadcastRecipient.update({
+                where: {
+                  id: recentBroadcast.id,
+                  contactId: contact.id
+                },
+                data: {
+                  status: recipientStatus
+                }
+              });
             }
           }
         }
