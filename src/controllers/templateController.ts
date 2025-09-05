@@ -1595,7 +1595,40 @@ export const broadcastTemplate = async (
               ]
             });
           }
-        } else if (c.format === "TEXT" && c.text) {
+        } 
+        if (c.format === "VIDEO" && c.example?.header_handle) {
+          // Only add header component if we have a fileUrl or URL
+          if (fileUrl || c.url) {
+            sendComponents.push({
+              type: "header",
+              parameters: [
+                {
+                  type: "video",
+                  video: {
+                    link: fileUrl || c.url
+                  }
+                }
+              ]
+            });
+          }
+        }
+        else if (c.format === "DOCUMENT" && c.example?.header_handle) {
+          // Only add header component if we have a fileUrl or URL
+          if (fileUrl || c.url) {
+            sendComponents.push({
+              type: "header",
+              parameters: [
+                {
+                  type: "document",
+                  document: {
+                    link: fileUrl || c.url
+                  }
+                }
+              ]
+            });
+          }
+        }
+        else if (c.format === "TEXT" && c.text) {
           const matches = Array.from(c.text.matchAll(/\{\{(\d+)\}\}/g));
           if (matches.length > 0) {
             const params = matches.map(async m => {
