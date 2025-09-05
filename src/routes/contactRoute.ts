@@ -3,6 +3,7 @@ import multer from "multer";
 import {
   getAllContacts,
   getContactById,
+  getContactsByIds,
   createContact,
   updateContact,
   deleteContact,
@@ -43,6 +44,7 @@ router.get("/attribute-options", authenticateJWT, getAttributeOptionsForUser);
 router.get("/countries", authenticateJWT, getCountriesByPhoneNumber);
 router.get("/analytics", authenticateJWT, getContactsAnalytics);
 router.get("/analytics/users", authenticateJWT, getUsersAnalytics);
+router.get("/multiple", authenticateJWT, getContactsByIds);
 router.get("/:id", authenticateJWT, getContactById);
 router.get("/:id/messages", authenticateJWT, getMessagesByContactId);
 router.post("/", authenticateJWT, createContact);

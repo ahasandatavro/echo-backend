@@ -426,6 +426,67 @@ export const getContactById = async (req: Request, res: Response) => {
   }
 };
 
+/** 📌 Get Multiple Contacts by IDs */
+export const getContactsByIds = async (req: Request, res: Response) => {
+  try {
+    const { ids } = req.query;
+    
+    if (!ids) {
+      return res.status(400).json({ error: "Contact IDs are required" });
+    }
+
+    // Parse the IDs from query parameter
+    let contactIds: number[];
+    if (typeof ids === 'string') {
+      // Handle comma-separated string: "1,2,3"
+      contactIds = ids.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+    } else if (Array.isArray(ids)) {
+      // Handle array: ["1", "2", "3"]
+      contactIds = ids.map(id => parseInt(String(id))).filter(id => !isNaN(id));
+    } else {
+      return res.status(400).json({ error: "Invalid IDs format" });
+    }
+
+    if (contactIds.length === 0) {
+      return res.status(400).json({ error: "No valid contact IDs provided" });
+    }
+
+    // Fetch contacts with the same structure as getContactById
+    const contacts = await prisma.contact.findMany({
+      where: { 
+        id: { in: contactIds }
+      },
+      select: {
+        id: true,
+        name: true,
+        phoneNumber: true,
+      },
+    });
+
+    // Format attributes for each contact (same as in getAllContacts)
+    const formattedContacts = contacts.map((contact) => ({
+      ...contact,
+      attributes: Array.isArray(contact.attributes)
+        ? contact.attributes
+        : Object.entries(contact.attributes || {}).map(([key, value]) => ({
+            key,
+            value,
+          })),
+    }));
+
+    res.status(200).json({
+      contacts: formattedContacts,
+      total: formattedContacts.length,
+      requested: contactIds.length,
+      found: formattedContacts.length,
+      missing: contactIds.filter(id => !contacts.some(c => c.id === id))
+    });
+  } catch (error) {
+    console.error("Error fetching contacts:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
 /** 📌 Create a New Contact */
 export const createContact = async (req: Request, res: Response) => {
   const { name, phoneNumber, source, userId, tags, attributes } = req.body;
