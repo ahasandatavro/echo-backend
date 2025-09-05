@@ -4,6 +4,7 @@ import { prisma } from '../models/prismaClient';
 import fs from "fs";
 import csvParser from "csv-parser";
 import { processWebhookMessage } from "../processors/inboxProcessor";
+import { broadcastTemplate } from "../controllers/templateController";
 import {
   sendMessage,
   sendTemplate,
@@ -16,6 +17,7 @@ import path from 'path';
 import { ProcessRulesForAttributes } from "../processors/contactProcessor/contactProcessor";
 import { checkContactLimit, checkChatAssignmentAccess } from "../utils/packageUtils";
 import { parsePhoneNumberFromString, getCountries, getCountryCallingCode, getCountryName } from 'libphonenumber-js';
+import { storeMessage } from "../processors/metaWebhook/webhookProcessor";
 
 // Helper function to get user's phone number ID
 const getUserPhoneNumberId = async (userId: number): Promise<string | undefined> => {
@@ -1472,7 +1474,31 @@ export const sendMessageController = async (req: Request, res: Response) => {
 
       templateId = dbTemplate.id;
       templateDetails = dbTemplate;
-      await sendTemplate(contact.phoneNumber, template, chatbotId, templateDetails,dbUser.selectedPhoneNumberId);
+     // await sendTemplate(contact.phoneNumber, template, chatbotId, templateDetails,dbUser.selectedPhoneNumberId);
+      const broadcastResult = await broadcastTemplate(contact.phoneNumber, template, chatbotId, templateDetails,dbUser.selectedPhoneNumberId);
+      
+      // Check if broadcast was successful
+      if (broadcastResult && broadcastResult.success === false) {
+        return res.status(400).json({
+          success: false,
+          message: broadcastResult.message || "Failed to send template message",
+          error: broadcastResult.error
+        });
+      }
+      
+      savedMessage = {
+        success: true,
+        message: "Template message sent successfully",
+        templateId: templateId,
+        templateDetails: templateDetails
+      };  
+      await storeMessage({
+        recipient: contact.phoneNumber,
+        chatbotId,
+        messageType: "template",
+        text: `Template: sent`,
+        templateDetails: templateDetails
+      }, dbUser.selectedPhoneNumberId);
     }
     // ✅ Handle Regular Messages (Text, Media)
     else {
