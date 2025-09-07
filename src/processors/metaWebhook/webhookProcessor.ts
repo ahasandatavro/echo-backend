@@ -339,7 +339,7 @@ export const processNode = async (
 
         try {
           // Send list message
-          await sendMessageWithList(recipient, listMessage, currentNode.id, agentPhoneNumberId);
+          await sendMessageWithList(recipient, listMessage, currentNode.id, agentPhoneNumberId, currentNode?.chatId || currentNode?.chatbotId);
           // Reset timer after sending list
           await scheduleChatbotTimers(conversation);
 
@@ -353,7 +353,7 @@ export const processNode = async (
             const conversation = await prisma.conversation.findFirst({
               where: {
                 recipient: recipient,
-                chatbotId: currentNode?.chatbotId,
+                chatbotId: currentNode?.chatId || currentNode?.chatbotId,
               },
             });
 
@@ -1584,7 +1584,8 @@ export const sendMessageWithList = async (
   recipient: string,
   listMessage: ListMessage,
   nodeId: number,
-  agentPhoneNumberId?: string
+  agentPhoneNumberId?: string,
+  chatId?: number
 ) => {
   try {
     const url = `${metaWhatsAppAPI.baseURL}/${agentPhoneNumberId}/messages`;
@@ -1636,7 +1637,7 @@ export const sendMessageWithList = async (
     });
     await storeMessage({
       recipient,
-      chatbotId: nodeId,
+      chatbotId: chatId,
       messageType: "list",
       text: listMessage.text,
       listItems,
@@ -1824,6 +1825,7 @@ export const storeMessage = async ({
     if (text?.startsWith("Image:") || text?.startsWith("Audio:") || text?.startsWith("Video:") || text?.startsWith("Document:") || text?.startsWith("Sticker:")) {
       const parts = text.split(/:(.+)/); // Split at the first colon only
       attachmentUrl = parts[1]?.trim();
+      text="";
     }
     // Create a new message attached to the conversation and contact
     const savedMessage = await prisma.message.create({
