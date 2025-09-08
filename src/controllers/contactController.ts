@@ -491,7 +491,7 @@ export const getContactsByIds = async (req: Request, res: Response) => {
 
 /** 📌 Create a New Contact */
 export const createContact = async (req: Request, res: Response) => {
-  const { name, phoneNumber, source, userId, tags, attributes } = req.body;
+  const { name, phoneNumber, source, userId,subscribed, sendSMS, tags, attributes } = req.body;
 
   try {
     // Get the currently logged-in user if userId is not provided
@@ -526,6 +526,8 @@ export const createContact = async (req: Request, res: Response) => {
         phoneNumber,
         source: source || 'manual',
         userId: contactUserId ? parseInt(contactUserId) : undefined,
+        subscribed: subscribed !== undefined ? subscribed : false,
+        sendSMS: sendSMS !== undefined ? sendSMS : false,
         tags: tags || [],
         attributes: parsedAttributes,
         createdById: contactUserId ? parseInt(contactUserId) : undefined,
