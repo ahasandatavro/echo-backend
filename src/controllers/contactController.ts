@@ -181,13 +181,9 @@ export const getAllImportedContacts = async (req: Request, res: Response) => {
         id: true,
         agent: true,
         createdById: true,
+        selectedPhoneNumberId: true,
       },
     });
-const bp=await prisma.businessPhoneNumber.findFirst({
-  where: {
-    metaPhoneNumberId: dbUser?.selectedPhoneNumberId,
-  },
-});
     if (!dbUser) return res.status(404).json({ error: "User not found" });
 
     let userIdsToInclude: number[] = [];
@@ -255,20 +251,25 @@ const bp=await prisma.businessPhoneNumber.findFirst({
     }
 
     // Step 1: Get business phone number ID for conversation contacts
-    const businessPhone = await prisma.businessPhoneNumber.findFirst({
-      where: { metaPhoneNumberId: dbUser?.selectedPhoneNumberId },
-      select: { id: true },
-    });
-
-    // Step 2: Get conversation contact IDs (recipients who messaged this business phone)
+    // Only proceed if user has a selected phone number
+    let businessPhone = null;
     let conversationContactIds: number[] = [];
-    if (businessPhone) {
-      const conversationContacts = await prisma.conversation.findMany({
-        where: { businessPhoneNumberId: businessPhone.id },
-        select: { contactId: true },
-        distinct: ["contactId"],
+    
+    if (dbUser?.selectedPhoneNumberId) {
+      businessPhone = await prisma.businessPhoneNumber.findFirst({
+        where: { metaPhoneNumberId: dbUser.selectedPhoneNumberId },
+        select: { id: true },
       });
-      conversationContactIds = conversationContacts.map((c) => c.contactId).filter((id) => id !== null);
+
+      // Step 2: Get conversation contact IDs (recipients who messaged this business phone)
+      if (businessPhone) {
+        const conversationContacts = await prisma.conversation.findMany({
+          where: { businessPhoneNumberId: businessPhone.id },
+          select: { contactId: true },
+          distinct: ["contactId"],
+        });
+        conversationContactIds = conversationContacts.map((c) => c.contactId).filter((id) => id !== null);
+      }
     }
 
     // Step 3: Fetch all contacts created by any of the users in the set with search and pagination
@@ -345,7 +346,7 @@ const bp=await prisma.businessPhoneNumber.findFirst({
       },
     });
 
-    const totalConversationContacts = uniqueConversationContactIds.length > 0 
+    const totalConversationContacts = (uniqueConversationContactIds.length > 0 && dbUser?.selectedPhoneNumberId)
       ? await prisma.contact.count({
           where: {
             id: { in: uniqueConversationContactIds },
