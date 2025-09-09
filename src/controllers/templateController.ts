@@ -342,24 +342,15 @@ export const createTemplate = async (req: Request, res: Response) => {
         details: "Language must be in ISO 639-1 format (e.g., 'en_US', 'es_ES')"
       });
     }
-
-   // console.log("Template parameters:", { name, category, language, draft });
-
     const saveAsDraftInitial =
       draft === true || draft === 'true';
 
     const components = JSON.parse(req.body.components || "[]");
     console.log("components",components);
     const files = req.files as { [fieldname: string]: Express.Multer.File[] };
-const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
-
-
-
     const file = files?.["file"]?.[0] || null;
     const filePath = file?.path || "";
 
-    // Preprocess components (BODY, HEADER, etc.)
-  //  console.log("Processing components:", JSON.stringify(components, null, 2));
     const processedComponents = components.map(async (component: any) => {
       if (
         (component.type === "HEADER" || component.type === "header") &&
@@ -367,121 +358,7 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
       ) {
         return null;
       }
-      if (component.type === "CAROUSEL" || component.type === "carousel") {
-        console.log("Processing CAROUSEL component with cards:", component.cards?.length || 0);
 
-        if (!component.cards || !Array.isArray(component.cards) || component.cards.length === 0) {
-          console.error("Invalid carousel: missing or empty cards array");
-          return null;
-        }
-
-        const carouselCards = await Promise.all(component.cards.map(async (card: any, index: number) => {
-          console.log(`Processing carousel card ${index}:`, card);
-
-          if (!card.components || !Array.isArray(card.components)) {
-            console.error(`Invalid carousel card ${index}: missing components array`);
-            return null;
-          }
-
-          const cardComponents = await Promise.all(card.components.map(async (c: any) => {
-            if ((c.type === "HEADER" || c.type === "header") && (c.format === "IMAGE" || c.format === "image")) {
-              const cardFile = carouselFiles[index];
-
-              if (!cardFile) {
-                console.warn(`No carousel file found for card ${index}, using existing header_handle`);
-                return c; // Return the component as-is if no file is provided
-              }
-
-              let fileUrl = "";
-              try {
-                fileUrl = await uploadFileToDigitalOceanHelper(cardFile);
-              } catch (error) {
-                console.error(`Error uploading carousel media for card ${index}:`, error);
-              }
-
-              const uploadRes = await axios.post(
-                `${process.env.META_BASE_URL}/${process.env.META_APP_ID}/uploads`,
-                null,
-                {
-                  params: {
-                    file_name: cardFile.originalname,
-                    file_length: cardFile.size,
-                    file_type: cardFile.mimetype,
-                    access_token: process.env.META_ACCESS_TOKEN,
-                  },
-                  headers: {
-                    Authorization: `Bearer ${process.env.META_ACCESS_TOKEN}`,
-                  },
-                }
-              );
-
-              const mediaUploadId = uploadRes.data.id;
-              const form = new FormData();
-              form.append("file_offset", 0);
-              //form.append("file", fs.createReadStream(cardFile.path));
-              const stream = Readable.from(cardFile.buffer);
-              form.append("file", stream, {
-                filename: cardFile.originalname,
-                contentType: cardFile.mimetype,
-              });
-              const headers = {
-                Authorization: `OAuth ${process.env.META_ACCESS_TOKEN}`,
-                file_offset: "0",
-                "Content-Length": cardFile.size,
-                ...form.getHeaders(),
-              };
-
-              const mediaIdRes = await axios.post(
-                `${process.env.META_BASE_URL}/${mediaUploadId}`,
-                form,
-                { headers }
-              );
-
-              return {
-                type: "HEADER",
-                format: "IMAGE",
-                example: {header_handle: [ mediaIdRes.data.h] },
-              };
-            }
-
-            // for body use preprocessHtmlForWhatsApp
-            if (c.type === "BODY" || c.type === "body") {
-              c.text = preprocessHtmlForWhatsApp(c.text || "");
-            }
-
-            // Handle BUTTONS components in carousel cards
-            if (c.type === "BUTTONS" || c.type === "buttons") {
-              return c;
-            }
-
-            return c;
-          }));
-
-          return { components: cardComponents };
-        }));
-
-        // Filter out null cards
-        const validCards = carouselCards.filter(card => card !== null);
-
-        if (validCards.length === 0) {
-          console.error("No valid cards in carousel");
-          return null;
-        }
-
-        // Meta API v22.0 might not support CAROUSEL component type
-        // Let's convert it to a regular template with the first card's HEADER component
-        const firstCard = validCards[0];
-        if (firstCard && firstCard.components && firstCard.components.length > 0) {
-          const headerComponent = firstCard.components.find((c: any) => c.type === "HEADER");
-          if (headerComponent) {
-            console.log("Converting carousel to HEADER component");
-            return headerComponent;
-          }
-        }
-
-        console.log("No valid carousel components found, returning null");
-        return null;
-      }
       if ((component.type === "HEADER" || component.type === "header") && component.format === "TEXT") {
         const headerText = component.text || "";
         const variableNumbers = extractHeaderVariableNumbers(headerText);
@@ -899,6 +776,19 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
       }, null, 2));
 
       try {
+        // Check if template already exists in database to determine if this is an update
+        const existingTemplate = await prisma.template.findFirst({
+          where: { 
+            name: name, 
+            userId: user.userId, 
+            wabaId: selectedWabaId 
+          },
+          select: { id: true, content: true }
+        });
+
+        const isUpdate = !!existingTemplate;
+        console.log("Template operation type:", isUpdate ? "UPDATE" : "CREATE");
+
         // Test if the WABA ID is valid first
         console.log("Testing WABA ID validity...");
 
@@ -942,9 +832,32 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
         }
 
         console.log("Using working API version:", workingVersion);
-        // Update the API URL to use the working version
-        const workingApiUrl = `https://graph.facebook.com/${workingVersion}/${selectedWabaId}/message_templates`;
-        console.log("Updated API URL:", workingApiUrl);
+        
+        // Build API URL based on operation type
+        let workingApiUrl: string;
+        if (isUpdate && existingTemplate?.content) {
+          // For updates, we need the template ID from Meta API
+          try {
+            const parsedContent = JSON.parse(existingTemplate.content);
+            const metaTemplateId = parsedContent.id;
+            if (metaTemplateId) {
+              workingApiUrl = `https://graph.facebook.com/${workingVersion}/${metaTemplateId}`;
+              console.log("Update API URL:", workingApiUrl);
+            } else {
+              // If no Meta template ID, treat as create
+              workingApiUrl = `https://graph.facebook.com/${workingVersion}/${selectedWabaId}/message_templates`;
+              console.log("Create API URL (no Meta ID found):", workingApiUrl);
+            }
+          } catch (parseError) {
+            // If content parsing fails, treat as create
+            workingApiUrl = `https://graph.facebook.com/${workingVersion}/${selectedWabaId}/message_templates`;
+            console.log("Create API URL (parse error):", workingApiUrl);
+          }
+        } else {
+          // For new templates
+          workingApiUrl = `https://graph.facebook.com/${workingVersion}/${selectedWabaId}/message_templates`;
+          console.log("Create API URL:", workingApiUrl);
+        }
 
         console.log("Making template creation request...");
 
@@ -973,18 +886,74 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
         }
 
         console.log("Meta API payload:", JSON.stringify(finalPayload, null, 2));
-        response = await axios.post(
-          workingApiUrl,
-          finalPayload,
-          {
-            headers: {
-              Authorization: `Bearer ${process.env.META_ACCESS_TOKEN}`,
-              "Content-Type": "application/json",
-            },
-            timeout: 20000,
+        
+        // Use PUT for updates, POST for creates
+        if (isUpdate && existingTemplate?.content) {
+          try {
+            const parsedContent = JSON.parse(existingTemplate.content);
+            const metaTemplateId = parsedContent.id;
+            if (metaTemplateId) {
+              console.log("Making template UPDATE request...");
+              response = await axios.put(
+                workingApiUrl,
+                finalPayload,
+                {
+                  headers: {
+                    Authorization: `Bearer ${process.env.META_ACCESS_TOKEN}`,
+                    "Content-Type": "application/json",
+                  },
+                  timeout: 20000,
+                }
+              );
+              console.log("Template updated successfully:\n", JSON.stringify(response.data, null, 2));
+            } else {
+              // Fallback to POST if no Meta template ID
+              console.log("Making template CREATE request (no Meta ID)...");
+              response = await axios.post(
+                workingApiUrl,
+                finalPayload,
+                {
+                  headers: {
+                    Authorization: `Bearer ${process.env.META_ACCESS_TOKEN}`,
+                    "Content-Type": "application/json",
+                  },
+                  timeout: 20000,
+                }
+              );
+              console.log("Template created successfully:\n", JSON.stringify(response.data, null, 2));
+            }
+          } catch (parseError) {
+            // Fallback to POST if content parsing fails
+            console.log("Making template CREATE request (parse error)...");
+            response = await axios.post(
+              workingApiUrl,
+              finalPayload,
+              {
+                headers: {
+                  Authorization: `Bearer ${process.env.META_ACCESS_TOKEN}`,
+                  "Content-Type": "application/json",
+                },
+                timeout: 20000,
+              }
+            );
+            console.log("Template created successfully:\n", JSON.stringify(response.data, null, 2));
           }
-        );
-        console.log("Template created successfully:\n", JSON.stringify(response.data, null, 2));
+        } else {
+          // For new templates
+          console.log("Making template CREATE request...");
+          response = await axios.post(
+            workingApiUrl,
+            finalPayload,
+            {
+              headers: {
+                Authorization: `Bearer ${process.env.META_ACCESS_TOKEN}`,
+                "Content-Type": "application/json",
+              },
+              timeout: 20000,
+            }
+          );
+          console.log("Template created successfully:\n", JSON.stringify(response.data, null, 2));
+        }
       }
       catch (err: any) {
         console.error("Meta API call failed:");
@@ -994,25 +963,42 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
         console.error("Error data:", err.response?.data);
         console.error("Error message:", err.message);
 
+        // Capture the full Meta API error response
+        const metaApiErrorResponse = {
+          status: err.response?.status,
+          statusText: err.response?.statusText,
+          headers: err.response?.headers,
+          data: err.response?.data,
+          message: err.message,
+          config: {
+            url: err.config?.url,
+            method: err.config?.method,
+            headers: err.config?.headers
+          }
+        };
+
         // Check for HTML response (usually indicates wrong URL or API version)
         if (err.response?.headers?.['content-type']?.includes('text/html')) {
           console.error("Received HTML response instead of JSON - likely wrong API URL or version");
           return res.status(400).json({
             error: "API Configuration Error",
-            details: "Received HTML response. Please check API URL and version configuration."
+            details: "Received HTML response. Please check API URL and version configuration.",
+            metaApiError: metaApiErrorResponse
           });
         }
         if (err.response?.status === 401) {
           return res.status(401).json({
             error: "Authentication failed",
-            details: "Invalid or expired access token"
+            details: "Invalid or expired access token",
+            metaApiError: metaApiErrorResponse
           });
         }
 
         if (err.response?.status === 403) {
           return res.status(403).json({
             error: "Permission denied",
-            details: "Insufficient permissions to create templates"
+            details: "Insufficient permissions to create templates",
+            metaApiError: metaApiErrorResponse
           });
         }
 
@@ -1038,7 +1024,8 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
             error: errorMessage,
             details: errorDetails || "Please check template structure and content",
             metaErrorCode: errorData?.error?.code,
-            metaErrorSubcode: errorData?.error?.error_subcode
+            metaErrorSubcode: errorData?.error?.error_subcode,
+            metaApiError: metaApiErrorResponse
           });
         }
 
@@ -1047,6 +1034,7 @@ const carouselFiles: Express.Multer.File[] = files?.["carouselFiles[]"] || [];
         return res.status(400).json({
           error: "Template creation failed",
           details: err.response?.data?.error?.message || err.message,
+          metaApiError: metaApiErrorResponse
         });
        }
     }
@@ -1175,9 +1163,24 @@ try {
     }
     return res.status(201).json(dbTemplate);
   } catch (error: any) {
+    // Capture any Meta API error information if available
+    const metaApiError = error.response ? {
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      headers: error.response?.headers,
+      data: error.response?.data,
+      message: error.message,
+      config: {
+        url: error.config?.url,
+        method: error.config?.method,
+        headers: error.config?.headers
+      }
+    } : null;
+
     return res.status(500).json({
       error: "Failed to create template",
-      details: error.response?.data || "",
+      details: error.response?.data || error.message || "Unknown error occurred",
+      metaApiError: metaApiError
     });
   }
 };
