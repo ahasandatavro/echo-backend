@@ -231,7 +231,6 @@ export const processBroadcastInteraction = async (messageData: any) => {
                 break;
               default:
                 metricType = "failed"
-                continue;
             }
 
             // Check if this metric already exists for this broadcast, contact, and metric type
