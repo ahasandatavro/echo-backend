@@ -1,11 +1,11 @@
-import { prisma } from "../models/prismaClient";
+import {prisma} from "../models/prismaClient";
 
 // MM Lite API Analytics Processing Functions
 export const processTemplateAnalytics = async (analyticsData: any) => {
   try {
     console.log("Processing MM Lite template analytics:", JSON.stringify(analyticsData, null, 2));
 
-    const { template_id, phone_number_id, analytics } = analyticsData;
+    const {template_id, phone_number_id, analytics} = analyticsData;
 
     if (!template_id || !analytics) {
       console.warn("Invalid template analytics data received");
@@ -41,7 +41,7 @@ export const processTemplateAnalytics = async (analyticsData: any) => {
       }
 
       await prisma.broadcast.update({
-        where: { id: broadcast.id },
+        where: {id: broadcast.id},
         data: updateData
       });
 
@@ -70,14 +70,14 @@ export const processMessageEchoes = async (echoData: any) => {
   try {
     console.log("Processing MM Lite message echoes:", JSON.stringify(echoData, null, 2));
 
-    const { messages } = echoData;
+    const {messages} = echoData;
 
     if (!messages || !Array.isArray(messages)) {
       return;
     }
 
     for (const message of messages) {
-      const { id: messageId, to: recipient, template } = message;
+      const {id: messageId, to: recipient, template} = message;
 
       if (!template || !template.name) {
         continue;
@@ -85,7 +85,7 @@ export const processMessageEchoes = async (echoData: any) => {
 
       // Find broadcast by template name and recipient
       const contact = await prisma.contact.findFirst({
-        where: { phoneNumber: recipient }
+        where: {phoneNumber: recipient}
       });
 
       if (!contact) continue;
@@ -98,7 +98,7 @@ export const processMessageEchoes = async (echoData: any) => {
             status: "SENT"
           }
         },
-        include: { broadcast: true }
+        include: {broadcast: true}
       });
 
       if (broadcastRecipient) {
@@ -115,7 +115,7 @@ export const processMessageEchoes = async (echoData: any) => {
 
         // Update broadcast sent count
         await prisma.broadcast.update({
-          where: { id: broadcastRecipient.broadcastId },
+          where: {id: broadcastRecipient.broadcastId},
           data: {
             totalSent: {
               increment: 1
@@ -131,17 +131,17 @@ export const processMessageEchoes = async (echoData: any) => {
 
 export const processBroadcastInteraction = async (messageData: any) => {
   try {
-    const { messages, statuses } = messageData;
+    const {messages, statuses} = messageData;
 
     // Process message replies for broadcast tracking
     if (messages && Array.isArray(messages)) {
       for (const message of messages) {
-        const { from: phoneNumber, context } = message;
+        const {from: phoneNumber, context} = message;
 
         // Check if this is a reply to a broadcast template
         if (context && context.referred_product) {
           const contact = await prisma.contact.findFirst({
-            where: { phoneNumber }
+            where: {phoneNumber}
           });
 
           if (contact) {
@@ -153,8 +153,8 @@ export const processBroadcastInteraction = async (messageData: any) => {
                   gte: new Date(Date.now() - 24 * 60 * 60 * 1000) // Last 24 hours
                 }
               },
-              include: { broadcast: true },
-              orderBy: { createdAt: 'desc' }
+              include: {broadcast: true},
+              orderBy: {createdAt: 'desc'}
             });
 
             if (recentBroadcast) {
@@ -182,7 +182,7 @@ export const processBroadcastInteraction = async (messageData: any) => {
 
                 // Update broadcast reply count
                 await prisma.broadcast.update({
-                  where: { id: recentBroadcast.broadcastId },
+                  where: {id: recentBroadcast.broadcastId},
                   data: {
                     totalReplied: {
                       increment: 1
@@ -199,10 +199,10 @@ export const processBroadcastInteraction = async (messageData: any) => {
     // Process message status updates (delivered, read)
     if (statuses && Array.isArray(statuses)) {
       for (const status of statuses) {
-        const { recipient_id: phoneNumber, status: messageStatus, errors: messageError } = status;
+        const {recipient_id: phoneNumber, status: messageStatus, errors: messageError} = status;
 
         const contact = await prisma.contact.findFirst({
-          where: { phoneNumber }
+          where: {phoneNumber}
         });
 
         if (contact) {
@@ -213,8 +213,8 @@ export const processBroadcastInteraction = async (messageData: any) => {
                 gte: new Date(Date.now() - 24 * 60 * 60 * 1000)
               }
             },
-            include: { broadcast: true },
-            orderBy: { createdAt: 'desc' }
+            include: {broadcast: true},
+            orderBy: {createdAt: 'desc'}
           });
 
           if (recentBroadcast) {
@@ -255,40 +255,40 @@ export const processBroadcastInteraction = async (messageData: any) => {
                   timestamp: new Date()
                 }
               });
-
-              // Update broadcast counts
-              const updateData: any = {};
-              if (metricType === "sent") {
-                updateData.totalSent = { increment: 1 };
-              } else if (metricType === "delivered") {
-                updateData.totalDelivered = { increment: 1 };
-              } else if (metricType === "read") {
-                updateData.totalRead = { increment: 1 };
-              }
-
-              await prisma.broadcast.update({
-                where: { id: recentBroadcast.broadcastId },
-                data: updateData
-              });
-
-              // Update BroadcastRecipient status
-              const recipientStatus = messageStatus.toUpperCase();
-              console.log('Message Error', messageError);
-              const errorData = Array.isArray(messageError)
-                ? {errorMessage: messageError.map(error => `${error.title}: ${error.message}`).join(', ')}
-                : {};
-              console.log('Error Data', errorData);
-              await prisma.broadcastRecipient.update({
-                where: {
-                  id: recentBroadcast.id,
-                  contactId: contact.id
-                },
-                data: {
-                  status: recipientStatus,
-                  ...errorData
-                }
-              });
             }
+
+            // Update broadcast counts
+            const updateData: any = {};
+            if (metricType === "sent") {
+              updateData.totalSent = {increment: 1};
+            } else if (metricType === "delivered") {
+              updateData.totalDelivered = {increment: 1};
+            } else if (metricType === "read") {
+              updateData.totalRead = {increment: 1};
+            }
+
+            await prisma.broadcast.update({
+              where: {id: recentBroadcast.broadcastId},
+              data: updateData
+            });
+
+            // Update BroadcastRecipient status
+            const recipientStatus = messageStatus.toUpperCase();
+            console.log('Message Error', messageError);
+            const errorData = Array.isArray(messageError)
+              ? {errorMessage: messageError.map(error => `${error.title}: ${error.message}`).join(', ')}
+              : {};
+            console.log('Error Data', errorData);
+            await prisma.broadcastRecipient.update({
+              where: {
+                id: recentBroadcast.id,
+                contactId: contact.id
+              },
+              data: {
+                status: recipientStatus,
+                ...errorData
+              }
+            });
           }
         }
       }
