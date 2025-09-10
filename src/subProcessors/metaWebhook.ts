@@ -662,9 +662,9 @@ export const isValidWebhookRequest = (entry: any): boolean => {
 };
 
 export const processWebhookChange = async (change: any, io: any) => {
+  console.log("Meta event:", JSON.stringify(change, null, 2));
   switch (change.field) {
     case "message_template_status_update":
-      console.log("Message template status update event:", JSON.stringify(change, null, 2));
       if (change.value.reason) {
         console.log(change.value.reason);
       }
