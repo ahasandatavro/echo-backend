@@ -659,7 +659,7 @@ export const sendTemplateMessage = async (req: Request, res: Response) => {
     });
 
     // Send the template message
-    await broadcastTemplate(
+    const templateResult = await broadcastTemplate(
       whatsappNumber as string,
       template_name,
       0, // chatbotId is not used in this context
@@ -669,7 +669,30 @@ export const sendTemplateMessage = async (req: Request, res: Response) => {
       fileUrl // fileUrl - not used for single message
     );
 
-    // Update broadcast status
+    // Check if template sending was successful
+    if (templateResult && templateResult.success === false) {
+      console.error("Error sending template message:", templateResult.message);
+      console.error("Full error response:", JSON.stringify(templateResult.error, null, 2));
+      
+      // Update broadcast status to FAILED
+      await prisma.broadcast.update({
+        where: { id: broadcast.id },
+        data: {
+          status: 'FAILED'
+        }
+      });
+      
+      // Extract detailed error message from WhatsApp API response
+      let errorMessage = templateResult.message || "Failed to send template message";
+      
+      if (templateResult.error?.error?.error_data?.details) {
+        errorMessage = templateResult.error.error.error_data.details;
+      }
+      
+      throw new Error(errorMessage);
+    }
+
+    // Update broadcast status to SENT only if template was sent successfully
     await prisma.broadcast.update({
       where: { id: broadcast.id },
       data: {
@@ -696,7 +719,7 @@ export const sendTemplateMessage = async (req: Request, res: Response) => {
 export const sendTemplateMessages = async (req: Request, res: Response) => {
   try {
     const { phoneNumberId } = req.params;
-    const { template_name, broadcast_name } = req.body;
+    const { template_name, broadcast_name,fileUrl } = req.body;
 
     const receivers: string[] = req.body.contacts;  
     if (!phoneNumberId || !template_name || !Array.isArray(receivers) || receivers.length === 0) {
@@ -741,17 +764,34 @@ export const sendTemplateMessages = async (req: Request, res: Response) => {
       
       try {
         // broadcastTemplate(phoneNumber, templateName, chatbotId, broadcastId, phoneNumberId, templateParameters, fileUrl)
-        await broadcastTemplate(
+        const templateResult = await broadcastTemplate(
           whatsappNumber,
           template_name,
           0, // chatbotId (not used)
           broadcast.id, // broadcastId
           phoneNumberId,
-          customParams, // templateParameters from receiver data
-          undefined // fileUrl - not used for broadcast
+          req.body.templateParameters, // templateParameters from receiver data
+          fileUrl // fileUrl - not used for broadcast
         );
-        results.push({ whatsappNumber, status: 'sent' });
+
+        // Check if template sending was successful
+        if (templateResult && templateResult.success === false) {
+          console.error(`Error sending template message to ${whatsappNumber}:`, templateResult.message);
+          console.error("Full error response:", JSON.stringify(templateResult.error, null, 2));
+          
+          // Extract detailed error message from WhatsApp API response
+          let errorMessage = templateResult.message || "Failed to send template message";
+          
+          if (templateResult.error?.error?.error_data?.details) {
+            errorMessage = templateResult.error.error.error_data.details;
+          }
+          
+          results.push({ whatsappNumber, status: 'failed', error: errorMessage });
+        } else {
+          results.push({ whatsappNumber, status: 'sent' });
+        }
       } catch (err) {
+        console.error(`Unexpected error sending template to ${whatsappNumber}:`, err);
         results.push({ whatsappNumber, status: 'failed', error: err instanceof Error ? err.message : String(err) });
       }
     }
