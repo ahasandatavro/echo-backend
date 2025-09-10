@@ -230,6 +230,7 @@ export const processBroadcastInteraction = async (messageData: any) => {
                 metricType = "read";
                 break;
               default:
+                metricType = "failed"
                 continue;
             }
 
@@ -272,9 +273,11 @@ export const processBroadcastInteraction = async (messageData: any) => {
 
               // Update BroadcastRecipient status
               const recipientStatus = messageStatus.toUpperCase();
+              console.log('Message Error', messageError);
               const errorData = Array.isArray(messageError)
                 ? {errorMessage: messageError.map(error => `${error.title}: ${error.message}`).join(', ')}
                 : {};
+              console.log('Error Data', errorData);
               await prisma.broadcastRecipient.update({
                 where: {
                   id: recentBroadcast.id,
