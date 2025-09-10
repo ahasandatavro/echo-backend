@@ -696,67 +696,67 @@ export const sendTemplateMessage = async (req: Request, res: Response) => {
 export const sendTemplateMessages = async (req: Request, res: Response) => {
   try {
     const { phoneNumberId } = req.params;
-    const { template_name, broadcast_name, templateParameters, fileUrl, contacts } = req.body;
-    const user: any = req.user;
+    const { template_name, broadcast_name } = req.body;
 
-    // Validate required fields
-    if (!phoneNumberId || !template_name || !Array.isArray(contacts) || contacts.length === 0) {
+    const receivers: string[] = req.body.contacts;  
+    if (!phoneNumberId || !template_name || !Array.isArray(receivers) || receivers.length === 0) {
       return res.status(400).json({
-        message: "phoneNumberId (path), template_name (body), and contacts (body) are required"
+        message: "phoneNumberId (path), template_name (body), and receivers (body) are required"
       });
     }
-
-    // Find contacts to create broadcast recipients
+//but receiver is like this
+// "receivers": [
+//   {
+//     "whatsappNumber": "8801752015791",
+//     "customParams": [
+//     ]
+//   }
     const contactsToConnect = await prisma.contact.findMany({
       where: {
-        phoneNumber: { in: contacts }
+        phoneNumber: { in: receivers },//
       },
-      select: { id: true, phoneNumber: true }
+      select: { id: true, phoneNumber: true },
     });
 
-    if (contactsToConnect.length === 0) {
-      return res.status(404).json({ message: "No contacts found" });
-    }
-
-    // Create broadcast record
     const broadcast = await prisma.broadcast.create({
       data: {
-        name: broadcast_name || `Template: ${template_name}`,
+        name: broadcast_name,
         templateName: template_name,
-        userId: Number((user as any)?.userId) || 1,
+        userId: 1,
         phoneNumberId: phoneNumberId,
         recipients: {
-          create: contactsToConnect.map((contact: any) => ({
-            contact: { connect: { id: contact.id } }
-          }))
-        }
-      }
+          create: contactsToConnect.map((contact:any) => ({
+            contact: { connect: { id: contact.id } },
+          })),
+        },
+      },
     });
 
-    // Send template messages to each contact
     const results = [];
-    for (const contact of contactsToConnect) {
+    for (const receiver of contactsToConnect) {
+      const whatsappNumber = receiver.phoneNumber;
+      // Find the corresponding receiver data to get customParams
+      const receiverData = receivers.find((r: any) => r.whatsappNumber === whatsappNumber);
+      const customParams = (receiverData as any)?.customParams || {};
+      
       try {
+        // broadcastTemplate(phoneNumber, templateName, chatbotId, broadcastId, phoneNumberId, templateParameters, fileUrl)
         await broadcastTemplate(
-          contact.phoneNumber,
+          whatsappNumber,
           template_name,
-          0, // chatbotId is not used in this context
-          broadcast.id, // broadcastId from created broadcast
+          0, // chatbotId (not used)
+          broadcast.id, // broadcastId
           phoneNumberId,
-          templateParameters || {}, // templateParameters
-          fileUrl // fileUrl
+          customParams, // templateParameters from receiver data
+          undefined // fileUrl - not used for broadcast
         );
-        results.push({ phoneNumber: contact.phoneNumber, status: 'sent' });
+        results.push({ whatsappNumber, status: 'sent' });
       } catch (err) {
-        results.push({ 
-          phoneNumber: contact.phoneNumber, 
-          status: 'failed', 
-          error: err instanceof Error ? err.message : String(err) 
-        });
+        results.push({ whatsappNumber, status: 'failed', error: err instanceof Error ? err.message : String(err) });
       }
     }
 
-    // Update broadcast status
+    // Update broadcast status after all messages are sent
     await prisma.broadcast.update({
       where: { id: broadcast.id },
       data: {
@@ -766,7 +766,7 @@ export const sendTemplateMessages = async (req: Request, res: Response) => {
     });
 
     res.status(200).json({
-      message: "Template messages sent successfully",
+      message: "Broadcast sent",
       results
     });
   } catch (error) {
