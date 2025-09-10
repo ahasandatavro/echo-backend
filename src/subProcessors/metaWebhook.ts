@@ -664,6 +664,7 @@ export const isValidWebhookRequest = (entry: any): boolean => {
 export const processWebhookChange = async (change: any, io: any) => {
   switch (change.field) {
     case "message_template_status_update":
+      console.log("Message template status update event:", JSON.stringify(change, null, 2));
       if (change.value.reason) {
         console.log(change.value.reason);
       }
@@ -2012,7 +2013,7 @@ export const updateTemplateCategoryInDb = async (data: any) => {
         updatedAt: new Date(),
       },
     });
-    
+
     console.log(`Template category updated for template ID ${message_template_id}: ${new_category}`);
   } catch (error) {
     console.error(`Error updating template category for template ID ${message_template_id}:`, error);
