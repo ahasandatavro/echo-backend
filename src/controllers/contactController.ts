@@ -504,35 +504,68 @@ export const createContact = async (req: Request, res: Response) => {
       }
     }
 
-    // Check contact limit before creating
-    const limitCheck = await checkContactLimit(contactUserId, 1);
-    if (!limitCheck.allowed) {
-      return res.status(403).json({ 
-        error: "Contact limit exceeded",
-        message: limitCheck.message,
-        currentCount: limitCheck.currentCount,
-        maxAllowed: limitCheck.maxAllowed,
-        packageName: limitCheck.packageName
-      });
+    // Check contact limit before creating (only for new contacts)
+    const existingContact = await prisma.contact.findUnique({
+      where: { phoneNumber },
+      select: { id: true, createdById: true }
+    });
+
+    // Only check limit if this is a new contact
+    if (!existingContact) {
+      const limitCheck = await checkContactLimit(contactUserId, 1);
+      if (!limitCheck.allowed) {
+        return res.status(403).json({ 
+          error: "Contact limit exceeded",
+          message: limitCheck.message,
+          currentCount: limitCheck.currentCount,
+          maxAllowed: limitCheck.maxAllowed,
+          packageName: limitCheck.packageName
+        });
+      }
     }
 
     const parsedAttributes = attributes ? 
       (typeof attributes === 'string' ? JSON.parse(attributes) : attributes) : 
       {};
 
-    // Create the new contact
-    const newContact = await prisma.contact.create({
-      data: {
-        name,
-        phoneNumber,
-        source: source || 'manual',
+    // Prepare contact data
+    const contactData = {
+      name,
+      phoneNumber,
+      source: source || 'manual',
+      userId: contactUserId ? parseInt(contactUserId) : undefined,
+      subscribed: subscribed !== undefined ? subscribed : false,
+      sendSMS: sendSMS !== undefined ? sendSMS : false,
+      tags: tags || [],
+      attributes: parsedAttributes,
+      createdById: contactUserId ? parseInt(contactUserId) : undefined,
+    };
+
+    // Get existing contact tags for proper merging
+    let existingTags: string[] = [];
+    if (existingContact && tags && tags.length > 0) {
+      const existingContactData = await prisma.contact.findUnique({
+        where: { phoneNumber },
+        select: { tags: true }
+      });
+      existingTags = existingContactData?.tags || [];
+    }
+
+    // Use upsert to handle duplicate phone numbers
+    const contact = await prisma.contact.upsert({
+      where: { phoneNumber },
+      update: {
+        // Update existing contact with new data
+        name: name || undefined,
+        source: source || undefined,
         userId: contactUserId ? parseInt(contactUserId) : undefined,
-        subscribed: subscribed !== undefined ? subscribed : false,
-        sendSMS: sendSMS !== undefined ? sendSMS : false,
-        tags: tags || [],
+        subscribed: subscribed !== undefined ? subscribed : undefined,
+        sendSMS: sendSMS !== undefined ? sendSMS : undefined,
+        tags: tags && tags.length > 0 ? [...existingTags, ...tags] : undefined,
         attributes: parsedAttributes,
         createdById: contactUserId ? parseInt(contactUserId) : undefined,
       },
+      create: contactData,
     });
 
     // Check if attributes were added and trigger rules
@@ -577,7 +610,15 @@ export const createContact = async (req: Request, res: Response) => {
       }
     }
 
-    res.status(201).json(newContact);
+    // Return appropriate status code based on whether contact was created or updated
+    const statusCode = existingContact ? 200 : 201;
+    const message = existingContact ? "Contact updated successfully" : "Contact created successfully";
+    
+    res.status(statusCode).json({
+      ...contact,
+      message,
+      wasUpdated: !!existingContact
+    });
   } catch (error) {
     console.error("Error creating contact:", error);
     res.status(500).json({ error: "Internal Server Error" });
