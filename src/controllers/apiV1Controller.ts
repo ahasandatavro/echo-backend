@@ -4,6 +4,7 @@ import { s3 } from "../config/s3Config";
 import { handleChatbotTrigger } from "../subProcessors/metaWebhook";
 import { sendMessage, sendTemplate } from "../processors/metaWebhook/webhookProcessor";
 import { brodcastTemplate } from "../processors/template/templateProcessor";
+import { broadcastTemplate } from "./templateController";
 import { notifyAgent } from "../helpers";
 import { prisma } from "../models/prismaClient";
 
@@ -622,7 +623,8 @@ export const sendTemplateMessage = async (req: Request, res: Response) => {
   try {
     const { phoneNumberId } = req.params;
     const { whatsappNumber } = req.query;
-    const { template_name, broadcast_name, parameters } = req.body;
+    const { template_name, broadcast_name, templateParameters,fileUrl } = req.body;
+    const user: any = req.user;
 
     // Validate required fields
     if (!phoneNumberId || !whatsappNumber || !template_name) {
@@ -631,26 +633,56 @@ export const sendTemplateMessage = async (req: Request, res: Response) => {
       });
     }
 
-    // Optionally, you can validate parameters array if needed
-    // Prepare templateDetails for sendTemplate
-    const templateDetails = {
-      broadcast_name: broadcast_name || undefined,
-      parameters: parameters || []
-    };
+    // Find the contact to create broadcast recipient
+    const contact = await prisma.contact.findFirst({
+      where: { phoneNumber: whatsappNumber as string },
+      select: { id: true }
+    });
+
+    if (!contact) {
+      return res.status(404).json({ message: "Contact not found" });
+    }
+
+    // Create broadcast record
+    const broadcast = await prisma.broadcast.create({
+      data: {
+        name: broadcast_name || `Template: ${template_name}`,
+        templateName: template_name,
+        userId: Number((user as any)?.userId) || 1,
+        phoneNumberId: phoneNumberId,
+        recipients: {
+          create: [{
+            contact: { connect: { id: contact.id } }
+          }]
+        }
+      }
+    });
 
     // Send the template message
-    await sendTemplate(
+    await broadcastTemplate(
       whatsappNumber as string,
       template_name,
-      0, // chatbotId is not used in this context, set to 0 or remove from sendTemplate if possible
-      templateDetails,
-      phoneNumberId
+      0, // chatbotId is not used in this context
+      broadcast.id, // broadcastId from created broadcast
+      phoneNumberId,
+      templateParameters || {}, // templateParameters
+      fileUrl // fileUrl - not used for single message
     );
+
+    // Update broadcast status
+    await prisma.broadcast.update({
+      where: { id: broadcast.id },
+      data: {
+        sentAt: new Date(),
+        status: 'SENT'
+      }
+    });
 
     res.status(200).json({
       message: "Template message sent successfully",
       recipient: whatsappNumber,
-      template_name
+      template_name,
+      broadcastId: broadcast.id
     });
   } catch (error) {
     console.error("Error sending template message:", error);
@@ -664,72 +696,77 @@ export const sendTemplateMessage = async (req: Request, res: Response) => {
 export const sendTemplateMessages = async (req: Request, res: Response) => {
   try {
     const { phoneNumberId } = req.params;
-    const { template_name, broadcast_name } = req.body;
+    const { template_name, broadcast_name, templateParameters, fileUrl, contacts } = req.body;
+    const user: any = req.user;
 
-    const receivers = req.body.receivers;  
-    if (!phoneNumberId || !template_name || !Array.isArray(receivers) || receivers.length === 0) {
+    // Validate required fields
+    if (!phoneNumberId || !template_name || !Array.isArray(contacts) || contacts.length === 0) {
       return res.status(400).json({
-        message: "phoneNumberId (path), template_name (body), and receivers (body) are required"
+        message: "phoneNumberId (path), template_name (body), and contacts (body) are required"
       });
     }
-//but receiver is like this
-// "receivers": [
-//   {
-//     "whatsappNumber": "8801752015791",
-//     "customParams": [
-//     ]
-//   }
+
+    // Find contacts to create broadcast recipients
     const contactsToConnect = await prisma.contact.findMany({
       where: {
-        phoneNumber: { in: receivers.map((receiver: any) => receiver.whatsappNumber) },//
+        phoneNumber: { in: contacts }
       },
-      select: { id: true, phoneNumber: true },
+      select: { id: true, phoneNumber: true }
     });
 
+    if (contactsToConnect.length === 0) {
+      return res.status(404).json({ message: "No contacts found" });
+    }
+
+    // Create broadcast record
     const broadcast = await prisma.broadcast.create({
       data: {
-        name: broadcast_name,
+        name: broadcast_name || `Template: ${template_name}`,
         templateName: template_name,
-        userId: 1,
+        userId: Number((user as any)?.userId) || 1,
         phoneNumberId: phoneNumberId,
         recipients: {
-          create: contactsToConnect.map((contact:any) => ({
-            contact: { connect: { id: contact.id } },
-          })),
-        },
-      },
+          create: contactsToConnect.map((contact: any) => ({
+            contact: { connect: { id: contact.id } }
+          }))
+        }
+      }
     });
 
+    // Send template messages to each contact
     const results = [];
-    for (const receiver of contactsToConnect) {
-      const whatsappNumber = receiver.phoneNumber;
-      //const customParams = receiver.customParams || [];
+    for (const contact of contactsToConnect) {
       try {
-        // brodcastTemplate(phoneNumber, templateName, chatbotId, broadcastId, phoneNumberId)
-        // We don't have chatbotId or broadcastId, so pass null/0 as needed
-        await brodcastTemplate(
-          whatsappNumber,
+        await broadcastTemplate(
+          contact.phoneNumber,
           template_name,
-          0, // chatbotId (not used)
-          broadcast.id, // broadcastId (not used)
+          0, // chatbotId is not used in this context
+          broadcast.id, // broadcastId from created broadcast
           phoneNumberId,
-          //customParams // Pass customParams if brodcastTemplate supports it
+          templateParameters || {}, // templateParameters
+          fileUrl // fileUrl
         );
-        await prisma.broadcast.update({
-          where: { id: broadcast.id },
-          data: {
-            sentAt: new Date(),
-            status: 'SENT'
-          }
-        });
-        results.push({ whatsappNumber, status: 'sent' });
+        results.push({ phoneNumber: contact.phoneNumber, status: 'sent' });
       } catch (err) {
-        results.push({ whatsappNumber, status: 'failed', error: err instanceof Error ? err.message : String(err) });
+        results.push({ 
+          phoneNumber: contact.phoneNumber, 
+          status: 'failed', 
+          error: err instanceof Error ? err.message : String(err) 
+        });
       }
     }
 
+    // Update broadcast status
+    await prisma.broadcast.update({
+      where: { id: broadcast.id },
+      data: {
+        sentAt: new Date(),
+        status: 'SENT'
+      }
+    });
+
     res.status(200).json({
-      message: "Broadcast sent",
+      message: "Template messages sent successfully",
       results
     });
   } catch (error) {

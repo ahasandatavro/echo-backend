@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node build/app.js",
     "start:dev": "npx nodemon",
-    "build": "rimraf ./build && NODE_ENV=build tsc"
+    "build": "rimraf ./build && tsc"
   },
   "engines": {
     "node": "20.x"
