@@ -4,9 +4,9 @@ import { prisma } from "../models/prismaClient";
 export const processTemplateAnalytics = async (analyticsData: any) => {
   try {
     console.log("Processing MM Lite template analytics:", JSON.stringify(analyticsData, null, 2));
-    
+
     const { template_id, phone_number_id, analytics } = analyticsData;
-    
+
     if (!template_id || !analytics) {
       console.warn("Invalid template analytics data received");
       return;
@@ -24,13 +24,13 @@ export const processTemplateAnalytics = async (analyticsData: any) => {
     for (const broadcast of broadcasts) {
       // Update broadcast metrics based on analytics data
       const updateData: any = {};
-      
+
       if (analytics.sent !== undefined) updateData.totalSent = analytics.sent;
       if (analytics.delivered !== undefined) updateData.totalDelivered = analytics.delivered;
       if (analytics.read !== undefined) updateData.totalRead = analytics.read;
       if (analytics.clicked !== undefined) updateData.totalClicked = analytics.clicked;
       if (analytics.replied !== undefined) updateData.totalReplied = analytics.replied;
-      
+
       // Handle button clicks
       if (analytics.button_clicks) {
         updateData.buttonClicks = analytics.button_clicks;
@@ -59,7 +59,7 @@ export const processTemplateAnalytics = async (analyticsData: any) => {
         }
       }
     }
-    
+
     console.log(`Updated analytics for ${broadcasts.length} broadcasts`);
   } catch (error) {
     console.error("Error processing template analytics:", error);
@@ -69,16 +69,16 @@ export const processTemplateAnalytics = async (analyticsData: any) => {
 export const processMessageEchoes = async (echoData: any) => {
   try {
     console.log("Processing MM Lite message echoes:", JSON.stringify(echoData, null, 2));
-    
+
     const { messages } = echoData;
-    
+
     if (!messages || !Array.isArray(messages)) {
       return;
     }
 
     for (const message of messages) {
       const { id: messageId, to: recipient, template } = message;
-      
+
       if (!template || !template.name) {
         continue;
       }
@@ -132,12 +132,12 @@ export const processMessageEchoes = async (echoData: any) => {
 export const processBroadcastInteraction = async (messageData: any) => {
   try {
     const { messages, statuses } = messageData;
-    
+
     // Process message replies for broadcast tracking
     if (messages && Array.isArray(messages)) {
       for (const message of messages) {
         const { from: phoneNumber, context } = message;
-        
+
         // Check if this is a reply to a broadcast template
         if (context && context.referred_product) {
           const contact = await prisma.contact.findFirst({
@@ -199,8 +199,8 @@ export const processBroadcastInteraction = async (messageData: any) => {
     // Process message status updates (delivered, read)
     if (statuses && Array.isArray(statuses)) {
       for (const status of statuses) {
-        const { recipient_id: phoneNumber, status: messageStatus } = status;
-        
+        const { recipient_id: phoneNumber, status: messageStatus, errors: messageError } = status;
+
         const contact = await prisma.contact.findFirst({
           where: { phoneNumber }
         });
@@ -272,13 +272,17 @@ export const processBroadcastInteraction = async (messageData: any) => {
 
               // Update BroadcastRecipient status
               const recipientStatus = messageStatus.toUpperCase();
+              const errorData = Array.isArray(messageError)
+                ? {errorMessage: messageError.map(error => `${error.title}: ${error.message}`).join(', ')}
+                : {};
               await prisma.broadcastRecipient.update({
                 where: {
                   id: recentBroadcast.id,
                   contactId: contact.id
                 },
                 data: {
-                  status: recipientStatus
+                  status: recipientStatus,
+                  ...errorData
                 }
               });
             }
