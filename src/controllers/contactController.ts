@@ -5,6 +5,7 @@ import fs from "fs";
 import csvParser from "csv-parser";
 import { processWebhookMessage } from "../processors/inboxProcessor";
 import { broadcastTemplate } from "../controllers/templateController";
+import { uploadFileToDigitalOceanHelper } from "../helpers";
 import {
   sendMessage,
   sendTemplate,
@@ -1478,7 +1479,7 @@ export const sendMessageController = async (req: Request, res: Response) => {
       return res.status(400).json({ error: "User does not have a selected Phone Number ID" });
     }
     const contactId = Number(req.params.contactId); // Ensure it's a number
-    const { text, template, chatbotId } = req.body;
+    const { text, template, chatbotId, templateParameters } = req.body;
     const file = req.file; // Handle file uploads
     const filePath = req?.file?.path||"";
     if (!text && !template && !file) {
@@ -1491,22 +1492,9 @@ export const sendMessageController = async (req: Request, res: Response) => {
     if (!contact) {
       return res.status(404).json({ error: "Contact not found" });
     }
-    let fileUrl: string | null = null;
-    if (file) {
-      const formData = new FormData();
-      const fileStream = fs.readFileSync(file.path); // ✅ Use createReadStream()
-
-      formData.append("file", fileStream, {
-        filename: file.originalname,
-        contentType: file.mimetype, // ✅ Ensure correct MIME type
-      });
-      const uploadResponse = await axios.post(
-        `${process.env.BASE_URL}/upload`, // Change to your actual upload API URL
-        formData,
-        { headers: { ...formData.getHeaders() } }
-      );
-
-      fileUrl = uploadResponse.data.fileUrl; // Get uploaded file URL
+    let fileUrl = "";
+    if (req.file) {
+      fileUrl = await uploadFileToDigitalOceanHelper(req.file);
     }
     // ✅ Handle WhatsApp Template Messages
     let savedMessage;
@@ -1523,8 +1511,16 @@ export const sendMessageController = async (req: Request, res: Response) => {
 
       templateId = dbTemplate.id;
       templateDetails = dbTemplate;
+      const broadcast = await prisma.broadcast.create({
+        data: {
+          name: `Template: ${template}`,
+          templateName: template,
+          userId: user.userId,
+          phoneNumberId: dbUser.selectedPhoneNumberId,
+        }
+      });
      // await sendTemplate(contact.phoneNumber, template, chatbotId, templateDetails,dbUser.selectedPhoneNumberId);
-      const broadcastResult = await broadcastTemplate(contact.phoneNumber, template, chatbotId, templateDetails,dbUser.selectedPhoneNumberId);
+      const broadcastResult = await broadcastTemplate(contact.phoneNumber, template, chatbotId, broadcast.id,dbUser.selectedPhoneNumberId,templateParameters, fileUrl);
       
       // Check if broadcast was successful
       if (broadcastResult && broadcastResult.success === false) {

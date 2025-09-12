@@ -35,7 +35,7 @@ export const processWebhookMessage = async (recipient: string, message: any, age
       textMessage = message.text?.body || "";
     }
     // ✅ Handle Media Messages (image, video, audio, document)
-    else if (["image", "video", "audio", "document"].includes(message.type)) {
+    else if (["image", "video", "audio", "document","sticker"].includes(message.type)) {
       mediaType = message.type;
 
       if (message[message.type]?.id) {

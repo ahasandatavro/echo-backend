@@ -34,9 +34,10 @@ import {
   toggleContactFavorite
 } from "../controllers/contactController";
 import { authenticateJWT } from '../middlewares/authMiddleware';
-const router = Router();
-const upload = multer({ dest: "uploads/" });
-
+const storage = multer.memoryStorage(); // ⬅️ Enables buffer access
+const upload = multer({ storage }); // ⬅️ Enables buffer access
+const uploadDisk = multer({ dest: "uploads/" });
+const router: Router = Router();
 router.get("/", authenticateJWT, getAllContacts);
 router.get("/imported", authenticateJWT, getAllImportedContacts);
 router.get("/attributes", authenticateJWT, getFilteredAttributesByKeyword);
@@ -64,8 +65,8 @@ router.post("/:id/tags", authenticateJWT, addTag);
 router.delete("/:id/tags/:tag", authenticateJWT, removeTag);
 router.patch("/:id/favorite", authenticateJWT, toggleContactFavorite);
 
-router.post("/upload", authenticateJWT, upload.single("file"), uploadContacts);
-router.post("/upload-csv", authenticateJWT, upload.single("file"), uploadCSV);
+router.post("/upload", authenticateJWT, uploadDisk.single("file"), uploadContacts);
+router.post("/upload-csv", authenticateJWT, uploadDisk.single("file"), uploadCSV);
 router.post("/import", authenticateJWT, importContacts);
 
 router.get("/:contactId/chat-history", authenticateJWT, getChatHistory);
