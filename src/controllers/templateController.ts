@@ -3,15 +3,13 @@ import axios from "axios";
 import dotenv from "dotenv";
 import { preprocessHtmlForWhatsApp } from "../helpers";
 import { resolveContactAttributes } from "../helpers/validation";
-import fs from "fs";
 import FormData from "form-data";
 import { prisma } from "../models/prismaClient";
 import { Readable } from "stream";
-import { brodcastTemplate } from "../processors/template/templateProcessor";
-import { uploadFileToDigitalOcean } from "../routes/replyMaterialRoute";
 import { syncTemplates as syncTemplatesService } from "../services/templateService";
 import { checkBroadcastAccess, checkTemplateLimit } from "../utils/packageUtils";
 import { uploadFileToDigitalOceanHelper } from "../helpers";
+import { storeMessage } from "../processors/metaWebhook/webhookProcessor";
 interface ButtonData {
   id?: number;
   type: string;      // e.g. "Visit Website", "Call Phone", "Copy offer code", "Quick replies"
@@ -1785,7 +1783,12 @@ export const broadcastTemplate = async (
         "Content-Type": "application/json",
       },
     });
-
+await storeMessage({  recipient,
+  chatbotId: null,
+  messageType: "template",
+  text: `Template: ${selectedTemplate}`,
+  templateDetails: dbTpl
+}, phoneNumberId);
   } catch (error: any) {
     console.error("Error sending template message:", error.response?.data?.error?.message || error.message);
     console.error("Full error response:", JSON.stringify(error.response?.data, null, 2));

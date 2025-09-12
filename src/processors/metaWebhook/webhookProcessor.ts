@@ -1814,9 +1814,14 @@ export const storeMessage = async ({
         orderBy: {updatedAt: "desc"},
       });
       if (!conversation) {
+        const bp=await prisma.businessPhoneNumber.findFirst({
+          where: {
+            metaPhoneNumberId: agentPhoneNumberId
+          }
+        });
         // Create a new conversation if one isn't found
         conversation = await prisma.conversation.create({
-          data: {recipient, contactId: contact.id, chatbotId},
+          data: {recipient, contactId: contact.id, chatbotId, businessPhoneNumberId: bp?.id},
         });
         console.log("✅ New conversation created:", conversation);
       }

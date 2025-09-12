@@ -805,6 +805,11 @@ export const deleteContact = async (req: Request, res: Response) => {
       where: { contactId },
     });
 
+    // Delete related NodeVisits first (they reference conversations)
+    await prisma.nodeVisit.deleteMany({
+      where: { contactId },
+    });
+
     // Delete related Conversations
     await prisma.conversation.deleteMany({
       where: { contactId },

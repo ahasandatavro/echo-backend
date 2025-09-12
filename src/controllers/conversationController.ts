@@ -1,6 +1,8 @@
 import { prisma } from "../models/prismaClient";
 import { Request, Response } from 'express';
 import { sendTemplate } from "../processors/metaWebhook/webhookProcessor";
+import { broadcastTemplate } from "./templateController";
+import { uploadFileToDigitalOceanHelper } from "../helpers";
 /**
  * Fetch the latest chat status for a contact
  */
@@ -94,76 +96,50 @@ export const updateExpiredConversations = async () => {
 };
 
 
-// export const createNewConversation = async (req: Request, res: Response) => {
-//   const { contactId, templateName } = req.body;
-
-//   if (!contactId || !templateName) {
-//     return res.status(400).json({ message: "Contact ID and Template ID are required" });
-//   }
-
-//   try {
-//     // Check if the contact already exists
-//     const existingContact = await prisma.contact.findUnique({
-//       where: { id: contactId },
-//     });
-
-//     let newContact: any;
-
-//     if (!existingContact) {
-//       // Create the contact if it doesn't exist
-//       newContact = await prisma.contact.create({
-//         data: {
-//           id: contactId,
-//           phoneNumber: "",
-//           source: "WEB",
-//         },
-//       });
-//     }
-
-//     const contact = existingContact || newContact;
-
-//     // Send the template (wait for success)
-//     await sendTemplate(contact.phoneNumber, templateName, 0, {});
-
-//     // ✅ Create a new conversation
-//     const conversation = await prisma.conversation.create({
-//       data: {
-//         recipient: contact.phoneNumber,
-//         contactId: contact.id,
-//         chatbotId: 1, // or use a dynamic value if needed
-//         businessPhoneNumberId: 5, // or derive dynamically
-//       },
-//     });
-
-//     return res.status(200).json({
-//       message: "Template sent and conversation created",
-//       conversation,
-//     });
-//   } catch (err) {
-//     console.error(err);
-//     return res.status(500).json({ error: "Failed to create contact, send template, or create conversation" });
-//   }
-// };
-
-// Run expiration check every 15 minutes
-//setInterval(updateExpiredConversations, 15 * 60 * 1000);
-
 export const createNewConversation = async (req: Request, res: Response) => {
-  const { contactId, phoneNumber, templateName } = req.body;
- const reqUser:any = req.user;
- const dbUser = await prisma.user.findUnique({
-  where: { id: reqUser.userId },
-  select: { selectedPhoneNumberId: true },
- });
- const selectedPhoneNumberId = dbUser?.selectedPhoneNumberId;
-if(!selectedPhoneNumberId){
-  return res.status(400).json({ message: "No phone number selected for this user." });
-}
-  if (!templateName || (!contactId && !phoneNumber)) {
-    return res.status(400).json({ message: "Either contactId or phoneNumber and templateName are required" });
-  }
-
   try {
+    const reqUser: any = req.user;
+    const dbUser = await prisma.user.findUnique({
+      where: { id: reqUser.userId },
+      select: { selectedPhoneNumberId: true },
+    });
+    const selectedPhoneNumberId = dbUser?.selectedPhoneNumberId;
+    
+    if (!selectedPhoneNumberId) {
+      return res.status(400).json({ message: "No phone number selected for this user." });
+    }
+
+    // Extract data from request body (handles both JSON and form-data)
+    const { contactId, phoneNumber, templateName, templateParameters } = req.body;
+    
+    // Handle template parameters parsing (in case it comes as string from form-data)
+    let parsedTemplateParameters: Record<string, string> = {};
+    if (templateParameters) {
+      try {
+        parsedTemplateParameters = typeof templateParameters === 'string' 
+          ? JSON.parse(templateParameters) 
+          : templateParameters;
+      } catch (error) {
+        console.error("Error parsing template parameters:", error);
+        return res.status(400).json({ message: "Invalid template parameters format" });
+      }
+    }
+
+    // Handle file upload for header image
+    let fileUrl = "";
+    if (req.file) {
+      try {
+        fileUrl = await uploadFileToDigitalOceanHelper(req.file);
+      } catch (error) {
+        console.error("Error uploading file:", error);
+        return res.status(500).json({ message: "Failed to upload header image" });
+      }
+    }
+
+    if (!templateName || (!contactId && !phoneNumber)) {
+      return res.status(400).json({ message: "Either contactId or phoneNumber and templateName are required" });
+    }
+
     let contact;
 
     // Search contact by ID or phone number
@@ -171,24 +147,24 @@ if(!selectedPhoneNumberId){
       contact = await prisma.contact.findUnique({
         where: { id: contactId },
       });
-          // Block duplicate conversation
-    const existingConversation = await prisma.conversation.findFirst({
-      where: {
-        contactId: contact?.id,
-        recipient: contact?.phoneNumber,
-      },
-    });
-    if (existingConversation) {
-      return res.status(409).json({ message: "Conversation already exists for this contact" });
-    }
+      
+      // Block duplicate conversation
+      if (contact?.id) {
+        const existingConversation = await prisma.conversation.findFirst({
+          where: {
+            contactId: contact.id,
+            recipient: contact.phoneNumber,
+          },
+        });
+        if (existingConversation) {
+          return res.status(409).json({ message: "Conversation already exists for this contact" });
+        }
+      }
     } else if (phoneNumber) {
       contact = await prisma.contact.findFirst({
         where: { phoneNumber },
       });
     }
-
-
-
 
     // Create new contact if not found
     if (!contact) {
@@ -201,24 +177,72 @@ if(!selectedPhoneNumberId){
       });
     }
 
-    // Send the template
-    await sendTemplate(contact.phoneNumber, templateName, null, {},selectedPhoneNumberId);
+    // Create broadcast record
+    const broadcast = await prisma.broadcast.create({
+      data: {
+        name: `Template: ${templateName}`,
+        templateName: templateName,
+        userId: reqUser.userId,
+        phoneNumberId: selectedPhoneNumberId,
+        recipients: {
+          create: [{
+            contactId: contact.id
+          }]
+        }
+      }
+    });
 
+    // Send template with all parameters including fileUrl
+    await broadcastTemplate(
+      contact.phoneNumber, 
+      templateName, 
+      0, // chatbotId (0 for single conversation)
+      broadcast.id, // broadcastId from created broadcast
+      selectedPhoneNumberId,
+      parsedTemplateParameters,
+      fileUrl // Pass the uploaded file URL
+    );
+const bp=await prisma.businessPhoneNumber.findFirst({
+  where: {
+    metaPhoneNumberId: selectedPhoneNumberId
+  }
+});
     // Create conversation
+    const existingConversation = await prisma.conversation.findFirst({
+      where: {
+        recipient: contact.phoneNumber,
+        contactId: contact.id,
+        businessPhoneNumberId: bp?.id,
+        chatbotId: null,
+      },
+    });
+    if(existingConversation){
+      return res.status(200).json({
+        message: "Conversation already exists",
+        conversation: existingConversation,
+        broadcastId: broadcast.id,
+      });
+    }
+    else{ 
     const conversation = await prisma.conversation.create({
       data: {
         recipient: contact.phoneNumber,
         contactId: contact.id,
-        businessPhoneNumberId: 5, // optionally dynamic
+        businessPhoneNumberId: bp?.id, // optionally dynamic
+        chatbotId: null, // No chatbot for template-based conversations
       },
     });
+  }
 
     return res.status(200).json({
       message: "Template sent and conversation created",
-      conversation,
+      broadcastId: broadcast.id,
     });
   } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: "Failed to create contact, send template, or create conversation" });
+    console.error("Error in createNewConversation:", err);
+    return res.status(500).json({ 
+      error: "Failed to create contact, send template, or create conversation",
+      details: err instanceof Error ? err.message : "Unknown error"
+    });
   }
 };
