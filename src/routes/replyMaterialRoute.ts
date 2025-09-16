@@ -2,11 +2,9 @@ import express, { Request, Response } from 'express';
 import multer from 'multer';
 import axios from 'axios';
 import FormData from 'form-data';
-import { PrismaClient, MaterialType } from '@prisma/client';
+import { prisma, MaterialType } from '../models/prismaClient';
 import { checkFeatureAccess } from '../utils/packageUtils';
 import { uploadFileToDigitalOceanHelper } from '../helpers';
-
-const prisma = new PrismaClient();
 const router = express.Router();
 
 // Configure multer to use in-memory storage

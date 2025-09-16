@@ -1,8 +1,6 @@
 import { Request, Response } from 'express';
-import { PrismaClient, Prisma } from "@prisma/client";
+import {prisma} from "../models/prismaClient";
 import { checkFeatureAccess } from "../utils/packageUtils";
-
-const prisma = new PrismaClient();
 
 // Get all rules for the current user
 export const getAllRules = async (req: Request, res: Response) => {

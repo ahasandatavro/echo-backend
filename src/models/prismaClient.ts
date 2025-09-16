@@ -1,5 +1,8 @@
 import { PrismaClient } from "@prisma/client";
 
+// Re-export all Prisma types and enums for use throughout the application
+export * from "@prisma/client";
+
 // Create a singleton Prisma client to prevent multiple instances
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
