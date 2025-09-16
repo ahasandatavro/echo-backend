@@ -1,5 +1,5 @@
 import { fuzzy } from 'fast-fuzzy';
-import { MatchType } from '@prisma/client';
+import { MatchType } from '../models/prismaClient';
 
 export interface KeywordMatchResult {
   keyword: any;

@@ -15,11 +15,11 @@ import {
   Team,
   Template,
   User
-} from "@prisma/client";
+} from "../../models/prismaClient";
 import dayjs from 'dayjs';
 import timezone from 'dayjs/plugin/timezone';
 import utc from 'dayjs/plugin/utc';
-import {DefaultActionSettings} from '@prisma/client';
+import {DefaultActionSettings} from '../../models/prismaClient';
 import {bump} from "../../helpers";
 import {findMatchingKeyword} from "../../utils/keywordMatcher";
 import {cancelAndRescheduleWaitingMessage, cancelWaitingMessageForConversation} from "../../utils/waitingMessageUtils";

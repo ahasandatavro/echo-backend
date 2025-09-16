@@ -6,7 +6,7 @@ import {resolveContactAttributes, resolveVariables} from "../../helpers/validati
 import {ListMessage} from "../../interphases";
 import {performGoogleSheetAction, checkRulesForNodeAction} from "../../subProcessors/metaWebhook";
 import {MessageStatus} from "../../interphases"; // ✅ Import the correct enum
-import {Prisma} from "@prisma/client"; // ✅ Import Prisma types
+import {Prisma} from "../../models/prismaClient"; // ✅ Import Prisma types
 import {io} from "../../app";
 import {validateUserResponse} from "../../helpers/validation";
 import {processWebhookMessage} from "../inboxProcessor";

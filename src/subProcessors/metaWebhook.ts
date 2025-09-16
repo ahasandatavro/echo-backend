@@ -1,9 +1,7 @@
 import {google} from "googleapis";
 import {prisma} from '../models/prismaClient';
-import {BroadcastStatus} from "@prisma/client";
+import {BroadcastStatus, Rule, Prisma} from "../models/prismaClient";
 import {resolveContactAttributes, resolveVariables} from "../helpers/validation";
-import {Rule} from "@prisma/client";
-import {Prisma} from "@prisma/client";
 import {processBroadcastInteraction} from "../processors/mmLiteAnalytics"
 import {
   processChatFlow,
