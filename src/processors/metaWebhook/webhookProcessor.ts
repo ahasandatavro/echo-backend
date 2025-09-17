@@ -419,7 +419,7 @@ export const processNode = async (
           };
 
           // Simulate or perform Google Sheet operation
-          const googleSheetResult: boolean = await performGoogleSheetAction(payload, currentNode, recipient); // Define this function
+          const googleSheetResult: boolean = await performGoogleSheetAction(payload, currentNode, recipient, agentPhoneNumberId); // Define this function
           let nextEdge: any;
           if (googleSheetResult == true) {
             nextEdge = edges.find(

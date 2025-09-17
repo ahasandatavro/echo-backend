@@ -283,7 +283,8 @@ export const performGoogleSheetAction = async (
     variables: any[]
   },
   currentNode: any,
-  recipient: string
+  recipient: string,
+  agentPhoneNumberId: string | undefined
 ): Promise<any> => {
   try {
     // Step 1: Find the chatbot and its owner
@@ -342,7 +343,7 @@ export const performGoogleSheetAction = async (
             // Resolve variable if it contains "@"
             if (typeof variable.value === "string" && variable.value.includes("@")) {
               try {
-                const resolvedValue = await resolveVariables(variable.value, currentNode.chatId);
+                const resolvedValue = await resolveVariables(variable.value, currentNode.chatId, recipient, agentPhoneNumberId);
                 return resolvedValue || ""; // Ensure resolvedValue is a valid string
               } catch (error) {
                 console.error("Error resolving variable:", error);
