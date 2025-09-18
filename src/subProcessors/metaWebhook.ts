@@ -312,7 +312,7 @@ export const performGoogleSheetAction = async (
     auth.setCredentials({access_token: ownerAccessToken});
 
     const sheets = google.sheets({version: "v4", auth});
-
+    let refColumnIndex: any;
     const {action, spreadsheetId, sheetName, updateInAndBy, referenceColumn, variables} = payload;
 
     // Step 3: Perform the specified action
@@ -374,107 +374,149 @@ export const performGoogleSheetAction = async (
         console.log("Row successfully added.");
         return true;
 
-      case "update":
-        if (!referenceColumn || !referenceColumn.name || !referenceColumn.value) {
-          console.error("Invalid payload: Reference column data is missing.");
-          return false;
-        }
-
-        // Read existing rows
-        const readResponse = await sheets.spreadsheets.values.get({
-          spreadsheetId: spreadsheetId.id,
-          range: spreadsheetId.sheetName,
-        });
-
-        const rows = readResponse.data.values || [];
-        headerRow = rows[0];
-        let refColumnIndex = headerRow.indexOf(referenceColumn.name);
-
-        if (refColumnIndex === -1) {
-          console.error("Reference column not found in the sheet.");
-          return false;
-        }
-
-        // Find the row to update
-        const rowIndex = rows.findIndex(
-          (row: any) => row[refColumnIndex] === referenceColumn.value
-        );
-
-        if (rowIndex === -1) {
-          console.error("Row not found for the reference column value.");
-          return false;
-        }
-
-        // Update the row with resolved variables
-        for (const update of updateInAndBy || []) {
-          const updateIndex = headerRow.indexOf(update.name);
-          if (updateIndex !== -1) {
-            if (update.value.startsWith("@")) {
-              // Resolve variable if it starts with '@'
-              try {
-                const resolvedValue = await resolveVariables(update.value, currentNode.chatId);
-                rows[rowIndex][updateIndex] = resolvedValue || ""; // Replace with resolved value or empty string
-              } catch (error) {
-                console.error("Error resolving variable:", error);
-                rows[rowIndex][updateIndex] = ""; // Default to empty string on error
+        case "update": {
+          if (!referenceColumn || !referenceColumn.name || !referenceColumn.value) {
+            console.error("Invalid payload: Reference column data is missing.");
+            return false;
+          }
+        
+          const tabName = spreadsheetId.sheetName || sheetName;
+        
+          // Read all rows once (small sheets) — or narrow to A1:Z if you prefer
+          const readResponse = await sheets.spreadsheets.values.get({
+            spreadsheetId: spreadsheetId.id,
+            range: `${tabName}!A1:Z100000`,
+          });
+        
+          const rows = readResponse.data.values || [];
+          if (!rows.length) return false;
+        
+          const headerRow = rows[0];
+          const refColumnIndex = headerRow.indexOf(referenceColumn.name);
+          if (refColumnIndex === -1) {
+            console.error(`Reference column "${referenceColumn.name}" not found. Available: ${headerRow.join(", ")}`);
+            return false;
+          }
+        
+          // Normalize comparison (stringify + trim) so "123" === 123 and whitespace doesn't break it
+          const refVal = String(referenceColumn.value).trim();
+          const rowIndex = rows.findIndex((row, i) =>
+            i > 0 && String((row?.[refColumnIndex] ?? "")).trim() === refVal
+          );
+          if (rowIndex === -1) {
+            console.error("Row not found for the reference column value.");
+            return false;
+          }
+        
+          // Ensure the target row has at least header length
+          const target = Array.from({ length: headerRow.length }, (_, i) => rows[rowIndex]?.[i] ?? "");
+        
+          // Apply updates; resolve @vars / {{contactAttrs}} like in your "add" case
+          for (const update of updateInAndBy || []) {
+            const updateIndex = headerRow.indexOf(update.name);
+            if (updateIndex === -1) continue;
+        
+            let newVal = update.value;
+            try {
+              if (typeof newVal === "string" && newVal.startsWith("@")) {
+                newVal = await resolveVariables(newVal, currentNode.chatId, recipient, agentPhoneNumberId);
+              } else if (typeof newVal === "string" && newVal.includes("{{")) {
+                newVal = await resolveContactAttributes(newVal, recipient);
               }
-            } else {
-              // If no '@', use the value directly
-              rows[rowIndex][updateIndex] = update.value;
+            } catch (e) {
+              console.error("Error resolving variable:", e);
+              newVal = "";
+            }
+            target[updateIndex] = (typeof newVal === "string" || typeof newVal === "number") ? newVal : "";
+          }
+        
+          // Update ONLY the target row (1-based A1 notation)
+          const rowNumber = rowIndex + 1;
+          await sheets.spreadsheets.values.update({
+            spreadsheetId: spreadsheetId.id,
+            range: `${tabName}!A${rowNumber}:Z${rowNumber}`,
+            valueInputOption: "USER_ENTERED",
+            requestBody: { values: [target] },
+          });
+        
+          console.log("Row successfully updated.");
+          return true;
+        }
+        
+        case "delete": {
+          if (!referenceColumn || !referenceColumn.name || !referenceColumn.value) {
+            throw new Error("Invalid payload: Reference column data is missing.");
+          }
+        
+          const tabName = spreadsheetId.sheetName || sheetName;
+        
+          // 1) Get the real sheetId (gid) for this tab
+          const meta = await sheets.spreadsheets.get({ spreadsheetId: spreadsheetId.id });
+          const theSheet = meta.data.sheets?.find(
+            s => s.properties?.title === tabName
+          );
+        
+          const theSheetId = theSheet?.properties?.sheetId;
+          if (theSheetId === undefined) {
+            throw new Error(`Sheet "${tabName}" not found in spreadsheet.`);
+          }
+        
+          // 2) Read all rows from the tab
+          const read = await sheets.spreadsheets.values.get({
+            spreadsheetId: spreadsheetId.id,
+            range: `${tabName}!A1:Z100000`,
+          });
+          const rows = read.data.values || [];
+          if (rows.length === 0) return true; // nothing to do
+        
+          // 3) Find the reference column index in the header
+          const header = rows[0];
+          const refColIdx = header.indexOf(referenceColumn.name);
+          if (refColIdx === -1) {
+            throw new Error(`Reference column "${referenceColumn.name}" not found. Available: ${header.join(", ")}`);
+          }
+        
+          // 4) Collect all data-row indices (grid indices) that match the value
+          // grid index is 0-based including header; header is row 0 -> data starts at 1
+          const toDeleteGridIdx: number[] = [];
+          for (let i = 1; i < rows.length; i++) {
+            const cell = rows[i]?.[refColIdx];
+            // normalize both sides to string to avoid "123" vs 123 mismatches
+            if (String(cell) === String(referenceColumn.value)) {
+              toDeleteGridIdx.push(i);
             }
           }
+          if (toDeleteGridIdx.length === 0) return true;
+        
+          // 5) Build deleteDimension requests in DESC order so indices don’t shift
+          toDeleteGridIdx.sort((a, b) => b - a);
+          const requests = toDeleteGridIdx.map(idx => ({
+            deleteDimension: {
+              range: {
+                sheetId: theSheetId,
+                dimension: "ROWS",
+                startIndex: idx,       // inclusive
+                endIndex: idx + 1,     // exclusive
+              },
+            },
+          }));
+        
+          await sheets.spreadsheets.batchUpdate({
+            spreadsheetId: spreadsheetId.id,
+            requestBody: { requests },
+          });
+        
+          // 6) Optional verification
+          const verify = await sheets.spreadsheets.values.get({
+            spreadsheetId: spreadsheetId.id,
+            range: `${tabName}!A1:Z100000`,
+          });
+          const vrows = verify.data.values || [];
+          const remain = vrows.filter((r, i) => i > 0 && String(r?.[refColIdx]) === String(referenceColumn.value));
+          console.log(`Verification: ${remain.length} rows remain with "${referenceColumn.value}"`);
+          return remain.length === 0;
         }
-
-        // Write updated rows back to the spreadsheet
-        await sheets.spreadsheets.values.update({
-          spreadsheetId: spreadsheetId.id,
-          range: `${spreadsheetId.sheetName}!A1:Z${rows.length}`, // Adjust range as needed
-          valueInputOption: "USER_ENTERED",
-          requestBody: {values: rows},
-        });
-
-        console.log("Rows successfully updated.");
-        return true;
-
-      case "delete":
-        if (!referenceColumn || !referenceColumn.name || !referenceColumn.value) {
-          throw new Error("Invalid payload: Reference column data is missing.");
-        }
-
-        // Read existing rows
-        const deleteResponse = await sheets.spreadsheets.values.get({
-          spreadsheetId: spreadsheetId.id,
-          range: spreadsheetId.sheetName,
-        });
-
-        const rowsToDelete = deleteResponse.data.values || [];
-        refColumnIndex = rowsToDelete[0].indexOf(referenceColumn.name);
-
-        if (refColumnIndex === -1) {
-          throw new Error("Reference column not found in the sheet.");
-        }
-
-        // Find the row to delete
-        const rowIndexToDelete = rowsToDelete.findIndex(
-          (row: any) => row[refColumnIndex] === referenceColumn.value
-        );
-
-        if (rowIndexToDelete === -1) {
-          throw new Error("Row not found for deletion.");
-        }
-
-        rowsToDelete.splice(rowIndexToDelete, 1); // Remove the row
-
-        // Write the updated rows back to the spreadsheet
-        await sheets.spreadsheets.values.update({
-          spreadsheetId: spreadsheetId.id,
-          range: `${spreadsheetId.sheetName}!A1:Z${rowsToDelete.length}`, // Adjust range as needed
-          valueInputOption: "USER_ENTERED",
-          requestBody: {values: rowsToDelete},
-        });
-        console.log("Rows successfully deleted.");
-        return true;
-
+        
       default:
         console.error(`Invalid action "${action}" specified.`);
         return false;
