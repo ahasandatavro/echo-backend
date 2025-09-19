@@ -379,25 +379,25 @@ export const performGoogleSheetAction = async (
             console.error("Invalid payload: Reference column data is missing.");
             return false;
           }
-        
+
           const tabName = spreadsheetId.sheetName || sheetName;
-        
+
           // Read all rows once (small sheets) — or narrow to A1:Z if you prefer
           const readResponse = await sheets.spreadsheets.values.get({
             spreadsheetId: spreadsheetId.id,
             range: `${tabName}!A1:Z100000`,
           });
-        
+
           const rows = readResponse.data.values || [];
           if (!rows.length) return false;
-        
+
           const headerRow = rows[0];
           const refColumnIndex = headerRow.indexOf(referenceColumn.name);
           if (refColumnIndex === -1) {
             console.error(`Reference column "${referenceColumn.name}" not found. Available: ${headerRow.join(", ")}`);
             return false;
           }
-        
+
           // Normalize comparison (stringify + trim) so "123" === 123 and whitespace doesn't break it
           const refVal = String(referenceColumn.value).trim();
           const rowIndex = rows.findIndex((row, i) =>
@@ -407,15 +407,15 @@ export const performGoogleSheetAction = async (
             console.error("Row not found for the reference column value.");
             return false;
           }
-        
+
           // Ensure the target row has at least header length
           const target = Array.from({ length: headerRow.length }, (_, i) => rows[rowIndex]?.[i] ?? "");
-        
+
           // Apply updates; resolve @vars / {{contactAttrs}} like in your "add" case
           for (const update of updateInAndBy || []) {
             const updateIndex = headerRow.indexOf(update.name);
             if (updateIndex === -1) continue;
-        
+
             let newVal = update.value;
             try {
               if (typeof newVal === "string" && newVal.startsWith("@")) {
@@ -429,7 +429,7 @@ export const performGoogleSheetAction = async (
             }
             target[updateIndex] = (typeof newVal === "string" || typeof newVal === "number") ? newVal : "";
           }
-        
+
           // Update ONLY the target row (1-based A1 notation)
           const rowNumber = rowIndex + 1;
           await sheets.spreadsheets.values.update({
@@ -438,29 +438,29 @@ export const performGoogleSheetAction = async (
             valueInputOption: "USER_ENTERED",
             requestBody: { values: [target] },
           });
-        
+
           console.log("Row successfully updated.");
           return true;
         }
-        
+
         case "delete": {
           if (!referenceColumn || !referenceColumn.name || !referenceColumn.value) {
             throw new Error("Invalid payload: Reference column data is missing.");
           }
-        
+
           const tabName = spreadsheetId.sheetName || sheetName;
-        
+
           // 1) Get the real sheetId (gid) for this tab
           const meta = await sheets.spreadsheets.get({ spreadsheetId: spreadsheetId.id });
           const theSheet = meta.data.sheets?.find(
             s => s.properties?.title === tabName
           );
-        
+
           const theSheetId = theSheet?.properties?.sheetId;
           if (theSheetId === undefined) {
             throw new Error(`Sheet "${tabName}" not found in spreadsheet.`);
           }
-        
+
           // 2) Read all rows from the tab
           const read = await sheets.spreadsheets.values.get({
             spreadsheetId: spreadsheetId.id,
@@ -468,14 +468,14 @@ export const performGoogleSheetAction = async (
           });
           const rows = read.data.values || [];
           if (rows.length === 0) return true; // nothing to do
-        
+
           // 3) Find the reference column index in the header
           const header = rows[0];
           const refColIdx = header.indexOf(referenceColumn.name);
           if (refColIdx === -1) {
             throw new Error(`Reference column "${referenceColumn.name}" not found. Available: ${header.join(", ")}`);
           }
-        
+
           // 4) Collect all data-row indices (grid indices) that match the value
           // grid index is 0-based including header; header is row 0 -> data starts at 1
           const toDeleteGridIdx: number[] = [];
@@ -487,7 +487,7 @@ export const performGoogleSheetAction = async (
             }
           }
           if (toDeleteGridIdx.length === 0) return true;
-        
+
           // 5) Build deleteDimension requests in DESC order so indices don’t shift
           toDeleteGridIdx.sort((a, b) => b - a);
           const requests = toDeleteGridIdx.map(idx => ({
@@ -500,12 +500,12 @@ export const performGoogleSheetAction = async (
               },
             },
           }));
-        
+
           await sheets.spreadsheets.batchUpdate({
             spreadsheetId: spreadsheetId.id,
             requestBody: { requests },
           });
-        
+
           // 6) Optional verification
           const verify = await sheets.spreadsheets.values.get({
             spreadsheetId: spreadsheetId.id,
@@ -516,7 +516,7 @@ export const performGoogleSheetAction = async (
           console.log(`Verification: ${remain.length} rows remain with "${referenceColumn.value}"`);
           return remain.length === 0;
         }
-        
+
       default:
         console.error(`Invalid action "${action}" specified.`);
         return false;
@@ -785,7 +785,7 @@ function matchesEvent(uiCode: string, value: any): boolean {
         s.status === "sent" &&
         (
           !s.biz_opaque_callback_data ||             // no biz data at all
-          !/type=template/.test(s.biz_opaque_callback_data)  // or data present but no type=template
+          /chatId=\d+/.test(s.biz_opaque_callback_data)  // or data present but no type=template
         )
       );
 
@@ -794,7 +794,7 @@ function matchesEvent(uiCode: string, value: any): boolean {
       return statuses.some((s: any) =>
         s.status === "sent" &&
         typeof s.biz_opaque_callback_data === "string" &&
-        /type=template/.test(s.biz_opaque_callback_data)
+        /broadcastId=\d+/.test(s.biz_opaque_callback_data)
       );
 
     case "MSG_DELIVERED":
