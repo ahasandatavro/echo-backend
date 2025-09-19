@@ -160,6 +160,15 @@ export const deleteBusinessPhoneNumber = async (req: Request, res: Response) => 
       const conversationIds = conversations.map(conv => conv.id);
 
       if (conversationIds.length > 0) {
+        // Delete node visits related to conversations (must be done before deleting conversations due to foreign key constraint)
+        await tx.nodeVisit.deleteMany({
+          where: {
+            conversationId: {
+              in: conversationIds
+            }
+          }
+        });
+
         // Delete variables related to conversations
         await tx.variable.deleteMany({
           where: {

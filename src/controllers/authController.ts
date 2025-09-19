@@ -427,22 +427,6 @@ export const getAccessToken = async (
       }
     );
 
-    await axios.post(
-      `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`,
-      {
-        messaging_product: "whatsapp",
-        recipient_type: "individual",
-        to: process.env.WHATSAPP_USER_NUMBER,
-        type: "text",
-        text: { body: "Welcome to zilochat" },
-      },
-      {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${businessToken}`,
-        },
-      }
-    );
 
     const phoneDataResponse = await axios.get(
       `https://graph.facebook.com/v16.0/${phoneNumberId}`,
