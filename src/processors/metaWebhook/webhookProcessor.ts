@@ -1568,13 +1568,13 @@ export const sendMessageWithButtons = async (
         },
       }
     );
-    await storeMessage({
-      recipient,
-      chatbotId: buttonMessage.chatId,
-      messageType: "button",
-      text: bodyText,
-      buttonOptions,
-    }, agentPhoneNumberId);
+    // await storeMessage({
+    //   recipient,
+    //   chatbotId: buttonMessage.chatId,
+    //   messageType: "button",
+    //   text: bodyText,
+    //   buttonOptions,
+    // }, agentPhoneNumberId);
   } catch (error) {
     console.error("Error sending button message:", error);
   }
