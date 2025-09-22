@@ -842,7 +842,15 @@ export const triggerMyWebhooks = async (change: any) => {
     // Use the new logging function
     await executeWebhookWithLogging(
       hook,
-      {eventType: graphField},
+      {
+        eventType: graphField,
+        exactEventType: hook.eventTypes,
+        agentPhoneNumber: agentPhoneNumber,
+        contact: change.value?.contacts?.[0]?.profile?.name||change.value?.statuses?.[0]?.recipient_id,
+        message: change.value?.messages?.[0],
+        wamid: change.value?.statuses?.[0]?.id,
+        timestamp: change.value?.statuses?.[0]?.timestamp
+      },
       graphField,
       hook.businessPhoneNumberId
     );
