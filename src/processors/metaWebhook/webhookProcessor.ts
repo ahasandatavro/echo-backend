@@ -1655,7 +1655,16 @@ export const sendQuestion = async (
 ) => {
   try {
     const url = `${metaWhatsAppAPI.baseURL}/${agentPhoneNumberId}/messages`;
-    const textBody = convertHtmlToWhatsAppText(questionMessage.text);
+    
+    // Resolve variables in the question text
+    let resolvedText = questionMessage.text;
+    if (questionMessage.text && questionMessage.text.includes("@")) {
+      resolvedText = await resolveVariables(questionMessage.text, questionMessage.chatId, recipient, agentPhoneNumberId || "");
+    }
+    if (questionMessage.text && questionMessage.text.includes("{{")) {
+      resolvedText = await resolveContactAttributes(questionMessage.text, recipient);
+    }
+    const textBody = convertHtmlToWhatsAppText(resolvedText);
 
     // Filter out only well-formed buttons
     const validOptions = questionMessage.buttons.filter(
@@ -1681,7 +1690,7 @@ export const sendQuestion = async (
         });
       }
 
-      // now send plain‐text fallback
+      // now send plain‐text fallback (using already resolved text)
       const textPayload = {
         messaging_product: "whatsapp",
         to: recipient,
@@ -1701,7 +1710,7 @@ export const sendQuestion = async (
         recipient,
         chatbotId: questionMessage.chatId,
         messageType: "question",
-        text: questionMessage.text,
+        text: resolvedText,
       }, agentPhoneNumberId);
       return;
     }
@@ -1754,7 +1763,7 @@ export const sendQuestion = async (
       recipient,
       chatbotId: questionMessage.chatId,
       messageType: "question",
-      text: questionMessage.text,
+      text: resolvedText,
     }, agentPhoneNumberId);
   } catch (error: any) {
     console.error(
