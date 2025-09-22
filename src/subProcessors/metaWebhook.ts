@@ -758,20 +758,91 @@ const graphFieldMap: Record<string, string> = {
 };
 
 /**
+ * Check if there are any previous messages between the contact and business phone number
+ */
+async function hasPreviousMessages(contactPhoneNumber: string, businessPhoneNumberId: string): Promise<boolean> {
+  try {
+    // Get the business phone number record
+    const businessPhoneNumber = await prisma.businessPhoneNumber.findFirst({
+      where: { metaPhoneNumberId: businessPhoneNumberId }
+    });
+
+    if (!businessPhoneNumber) {
+      return false;
+    }
+
+    // Find the contact
+    const contact = await prisma.contact.findUnique({
+      where: { phoneNumber: contactPhoneNumber }
+    });
+
+    if (!contact) {
+      return false;
+    }
+
+    // Check for any previous messages in conversations associated with this business phone number
+    const previousMessages = await prisma.message.findFirst({
+      where: {
+        contactId: contact.id,
+        conversation: {
+          businessPhoneNumberId: businessPhoneNumber.id
+        }
+      }
+    });
+
+    return !!previousMessages;
+  } catch (error) {
+    console.error('Error checking previous messages:', error);
+    return false;
+  }
+}
+
+/**
  * Decide whether this payload should trigger the hook for the given UI-code.
  */
-function matchesEvent(uiCode: string, value: any): boolean {
+async function matchesEvent(uiCode: string, value: any): Promise<boolean> {
   const msgs = Array.isArray(value.messages) ? value.messages : [];
   const statuses = Array.isArray(value.statuses) ? value.statuses : [];
 
   switch (uiCode) {
     case "MSG_RECEIVED":
-    case "NEW_CONTACT_MSG":
       // any inbound (non-template) message
       return msgs.some((m: any) =>
         m.from !== value.metadata.display_phone_number &&
         m.type !== "template"
       );
+
+    case "NEW_CONTACT_MSG":
+      // Check if this is an inbound non-template message AND if there are no previous messages
+      const hasInboundMessage = msgs.some((m: any) =>
+        m.from !== value.metadata.display_phone_number &&
+        m.type !== "template"
+      );
+      
+      if (!hasInboundMessage) {
+        return false;
+      }
+
+      // Get the first inbound message to check contact
+      const inboundMessage = msgs.find((m: any) =>
+        m.from !== value.metadata.display_phone_number &&
+        m.type !== "template"
+      );
+
+      if (!inboundMessage) {
+        return false;
+      }
+
+      // Check if there are any previous messages between this contact and business
+      const phoneNumberId = value?.metadata?.phone_number_id;
+      const contactPhoneNumber = inboundMessage.from;
+      
+      if (!phoneNumberId || !contactPhoneNumber) {
+        return false;
+      }
+
+      const hasPrevious = await hasPreviousMessages(contactPhoneNumber, phoneNumberId);
+      return !hasPrevious; // Only trigger for NEW contacts (no previous messages)
 
     case "MSG_REPLIED":
       // user reply (inbound), template or text
@@ -836,7 +907,7 @@ export const triggerMyWebhooks = async (change: any) => {
 
   // 3) for each hook, only fire if matchesEvent says "yes"
   await Promise.all(hooks.map(async hook => {
-    if (!matchesEvent(hook.eventTypes, change.value)) {
+    if (!(await matchesEvent(hook.eventTypes, change.value))) {
       return; // skip it
     }
     // Use the new logging function

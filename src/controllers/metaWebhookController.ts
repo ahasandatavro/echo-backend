@@ -35,8 +35,8 @@ export const handleIncomingMessage = async (req: Request, res: Response) => {
       if (!changes || !Array.isArray(changes)) continue;
 
       for (const change of changes) {
-        await processWebhookChange(change, io);
         await triggerMyWebhooks(change);
+        await processWebhookChange(change, io);
       }
     }
 
