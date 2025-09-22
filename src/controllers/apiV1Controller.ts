@@ -312,23 +312,40 @@ export const getContacts = async (req: Request, res: Response) => {
 // GET /:tenantId/api/v1/getMedia
 export const getMedia = async (req: Request, res: Response) => {
   const fileName = req.query.fileName as string;
+  const user: any = req.user;
 
   if (!fileName) {
     return res.status(400).json({ message: "fileName query parameter is required" });
   }
 
-  const downloadParams = {
-    Bucket: process.env.DO_SPACES_BUCKET || "",
-    Key: fileName,
-  };
+  if (!user || !user.userId) {
+    return res.status(401).json({ message: "User authentication required" });
+  }
 
   try {
-    const data = await s3.getObject(downloadParams).promise();
-    res.setHeader("Content-Type", data.ContentType || "application/octet-stream");
-    res.send(data.Body);
+    // Check if the media exists in the database for this user
+    const mediaRecord = await prisma.media.findFirst({
+      where: {
+        fileName: fileName,
+        userId: user.userId,
+      },
+    });
+
+    if (!mediaRecord) {
+      return res.status(404).json({ message: "Media file not found or access denied" });
+    }
+
+    // Return the media URL from the database
+    res.status(200).json({
+      url: mediaRecord.url,
+      fileName: mediaRecord.fileName,
+      fileType: mediaRecord.fileType,
+      fileSize: mediaRecord.fileSize,
+      mimeType: mediaRecord.mimeType,
+    });
   } catch (error) {
-    console.error("Error fetching file:", error);
-    res.status(404).json({ message: "File not found", error });
+    console.error("Error fetching media:", error);
+    res.status(500).json({ message: "Error fetching media", error: (error as any)?.message });
   }
 };
 // POST /:tenantId/api/v1/updateContactAttributes
