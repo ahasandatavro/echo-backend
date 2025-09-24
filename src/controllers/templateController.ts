@@ -1873,6 +1873,12 @@ if (job) {
         where: { id: broadcast.id },
           data: { name }
         });
+        
+      res.status(200).json({
+        success: true,
+        broadcastId: broadcast.id,
+        message: "Broadcast scheduled successfully!"
+      });
       }
     }
   } catch (error: any) {
