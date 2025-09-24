@@ -32,6 +32,9 @@ export const getUsers = async (req: Request, res: Response): Promise<void> => {
     const where: any = {};
     if (selectedPhoneNumberId) {
       where.selectedPhoneNumberId = selectedPhoneNumberId;
+    } else {
+      // If no selectedPhoneNumberId, return only the current user
+      where.id = user.userId;
     }
     if (search) {
       where.OR = [
