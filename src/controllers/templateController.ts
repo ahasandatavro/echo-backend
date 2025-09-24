@@ -333,13 +333,13 @@ export const createTemplate = async (req: Request, res: Response) => {
     }
 
     // Validate language code format (ISO 639-1 format: xx_XX)
-    const validLanguagePattern = /^[a-z]{2}_[A-Z]{2}$/;
-    if (!validLanguagePattern.test(language)) {
-      return res.status(400).json({
-        error: "Invalid language code format",
-        details: "Language must be in ISO 639-1 format (e.g., 'en_US', 'es_ES')"
-      });
-    }
+    // const validLanguagePattern = /^[a-z]{2}_[A-Z]{2}$/;
+    // if (!validLanguagePattern.test(language)) {
+    //   return res.status(400).json({
+    //     error: "Invalid language code format",
+    //     details: "Language must be in ISO 639-1 format (e.g., 'en_US', 'es_ES')"
+    //   });
+    // }
     const saveAsDraftInitial =
       draft === true || draft === 'true';
 
