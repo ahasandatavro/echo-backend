@@ -347,7 +347,7 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
                   // Add the team to contact's teams if not already assigned
                   const isTeamAssigned = contact.assignedTeams.some(t => t.id === routingMaterial.teamId);
 
-                  if (!isTeamAssigned && routingMaterial.teamId) {
+                  if ( routingMaterial.teamId) {
                     await prisma.contact.update({
                       where: {id: contact.id},
                       data: {
@@ -375,22 +375,7 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
                       }
                     });
                   }
-                } else {
-                  // Create contact with team assignment
-                  if (routingMaterial.teamId) {
-                    await prisma.contact.create({
-                      data: {
-                        phoneNumber: recipient,
-                        name: "Unknown",
-                        source: "WhatsApp",
-                        assignedTeams: {
-                          connect: {id: routingMaterial.teamId}
-                        }
-                      }
-                    });
-                    console.log(`Created contact ${recipient} with team ID ${routingMaterial.teamId}`);
-                  }
-                }
+                } 
               }
               break;
 
