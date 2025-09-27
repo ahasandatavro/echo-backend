@@ -1738,9 +1738,54 @@ export const importContacts = async (req: Request, res: Response) => {
       return res.status(400).json({ error: "No valid records found" });
     }
 
-    // Count how many new contacts will be created (excluding updates)
+    // Phone number validation function
+    const validatePhoneNumber = (phone: string): { isValid: boolean; error?: string } => {
+      if (!phone || typeof phone !== 'string') {
+        return { isValid: false, error: 'Phone number is required' };
+      }
+
+      // Remove all spaces, dashes, parentheses, plus signs
+      const cleanPhone = phone.replace(/[\s\-().+]/g, '');
+      
+      // Check if it contains only digits
+      if (!/^\d+$/.test(cleanPhone)) {
+        return { isValid: false, error: 'Phone number should contain only numbers' };
+      }
+
+      // Basic length validation (7-15 digits is reasonable for international numbers)
+      if (cleanPhone.length < 7 || cleanPhone.length > 15) {
+        return { isValid: false, error: 'Phone number must be between 7 and 15 digits' };
+      }
+
+      return { isValid: true };
+    };
+
+    // Separate valid and invalid contacts
+    const validRecords: any[] = [];
+    const invalidRecords: any[] = [];
+
+    records.forEach((record, index) => {
+      // Get the phone number field based on mapping
+      const phoneFieldName = mappedColumns.phoneNumber;
+      const phoneValue = phoneFieldName ? record[phoneFieldName] : null;
+      
+      // Validate phone number
+      const validation = validatePhoneNumber(phoneValue);
+      
+      if (validation.isValid) {
+        validRecords.push(record);
+      } else {
+        invalidRecords.push({
+          rowIndex: index,
+          data: record,
+          error: validation.error || 'Invalid phone number'
+        });
+      }
+    });
+
+    // Count how many new contacts will be created (excluding updates) - only from valid records
     let newContactsCount = 0;
-    for (const record of records) {
+    for (const record of validRecords) {
       const contactData: any = {};
       
       // Map fields according to user's selection
@@ -1777,19 +1822,22 @@ export const importContacts = async (req: Request, res: Response) => {
       });
     }
 
-    // Process records in batches
+    // Process only valid records in batches
     const batchSize = 50;
     const results = {
       total: records.length,
+      validContacts: validRecords.length,
+      invalidContacts: invalidRecords.length,
       successful: 0,
       failed: 0,
       new: 0,
       updated: 0,
-      failures: [] as Array<{ rowIndex: number; data: any; error: string }>
+      failures: [...invalidRecords] as Array<{ rowIndex: number; data: any; error: string }>
     };
 
-    for (let i = 0; i < records.length; i += batchSize) {
-      const batch = records.slice(i, i + batchSize);
+    // Process valid records only
+    for (let i = 0; i < validRecords.length; i += batchSize) {
+      const batch = validRecords.slice(i, i + batchSize);
       
       // Process each contact in the batch
       const batchPromises = batch.map(async (record, index) => {
@@ -1835,6 +1883,10 @@ export const importContacts = async (req: Request, res: Response) => {
           if (!contactData.name || !contactData.phoneNumber) {
             throw new Error("Name and phone number are required");
           }
+
+          // Clean the phone number for storage
+          const cleanPhone = contactData.phoneNumber.replace(/[\s\-().+]/g, '');
+          contactData.phoneNumber = cleanPhone;
 
           // Assign default userId if none is provided
           if (!contactData.userId && defaultUserId) {
