@@ -382,7 +382,24 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
             case "Notification":
               // For Notification type, we don't need immediate action in the webhook,
               // as this would typically generate notifications elsewhere in the system
-              console.log(`Notification routing triggered for ${recipient} with material ID ${routingMaterial.id}`);
+              const contactRecord = await prisma.contact.findUnique({
+                where: {phoneNumber: recipient},
+                select: {id: true}
+              });
+              if (!contactRecord) {
+                throw new Error(`Contact with phoneNumber ${recipient} not found.`);
+              }
+              await prisma.chatStatusHistory.create({
+                data: {
+                  contactId: contactRecord?.id || 0,
+                  newStatus: "Notified",
+                  type: "notification",
+                  note: `New notification from ${recipient}`,
+                  changedById: null,
+                  changedAt: new Date(),
+                }
+              })
+             // console.log(`Notification routing triggered for ${recipient} with material ID ${routingMaterial.id}`);
               break;
           }
 
