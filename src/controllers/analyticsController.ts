@@ -461,7 +461,7 @@ export const getChatbotAnalytics = async (req: Request, res: Response) => {
         const edges = await prisma.edge.findMany({ where: { chatId: chatbot.id } });
         const sourceIds = new Set(edges.map((e) => e.sourceId));
         const lastNodes = nodeIds.filter((id) => !sourceIds.has(id));
-        lastNodeId = lastNodes.length === 1 ? lastNodes[0] : undefined;
+        lastNodeId = lastNodes.length>= 1 ? lastNodes[0] : undefined;
       }
       userMap.forEach((conv) => {
         if (lastNodeId && conv.lastNodeId === lastNodeId) {
