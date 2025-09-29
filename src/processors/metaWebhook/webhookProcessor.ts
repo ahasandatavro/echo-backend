@@ -118,6 +118,10 @@ export const processNode = async (
     await closePreviousNodeVisit(conversationId, contactId);
     await createNodeVisit(conversationId, currentNode.id, contactId);
     await bump(currentNode.chatId, "stepsFinished");
+    await prisma.conversation.update({
+      where: {id: conversationId},
+      data: {lastNodeId: currentNode.id},
+    });
     if (currentNode.type === "start") {
       const outgoingEdge = edges.find(
         (edge) => edge.sourceId === currentNode.id
