@@ -18,7 +18,7 @@ export const getAllRules = async (req: Request, res: Response) => {
       where: { metaPhoneNumberId: businessPhoneNumberId||"" },
     });
     if (!bp) {
-      return res.status(404).json({ error: 'Business phone number not found' });
+      return res.status(400).json({ error: 'Please connect your phone number to Zilo to use this feature' });
     }
     const rules = await prisma.rule.findMany({
       where: { businessPhoneNumberId: bp.id },
