@@ -1862,11 +1862,7 @@ export const storeMessage = async ({
         attachment: attachmentUrl || null,
       },
     });
-    io.emit("newMessage", {
-      recipient: contact.phoneNumber,
-      message: savedMessage,
-      template: templateDetails || null
-    });
+
     return savedMessage;
   } catch (error) {
     console.error("❌ Error storing message:", error);

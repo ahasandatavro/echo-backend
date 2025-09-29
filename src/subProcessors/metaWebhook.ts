@@ -1094,11 +1094,11 @@ export const processMessageUpdate = async (value: any, io: any) => {
   });
 
   const recipients = notifyUsers.map((u) => u.email);
-  io.emit("newMessage", {
-    recipients, // ✅ Emit to team-level
-    recipient: sender,//from which contact
-    message: processedMessage,
-  });
+  // io.emit("newMessage", {
+  //   recipients, // ✅ Emit to team-level
+  //   recipient: sender,//from which contact
+  //   message: processedMessage,
+  // });
 
 //cheks whether the message is a text/button reply/list reply/question response/matches to existing keyword and transfer to logics accordingly
   await handleConversationFlow(sender, message, phoneNumberId);
