@@ -589,7 +589,7 @@ export const handleChatbotTrigger = async (text: string, recipient: string, phon
     where: {metaPhoneNumberId: phoneNumberId},
   });
   let conversation = await prisma.conversation.findFirst({
-    where: {recipient, businessPhoneNumberId: bp?.id, chatbotId: chatbot?.id},
+    where: {recipient, businessPhoneNumberId: bp?.id},
     orderBy: {
       updatedAt: 'desc', // Orders by the most recently updated conversation
     },
