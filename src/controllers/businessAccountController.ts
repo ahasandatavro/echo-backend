@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { prisma } from "../models/prismaClient";
 import { uploadFileToDigitalOcean } from "../routes/replyMaterialRoute";
+import { convertWorkingHoursToUTC, convertWorkingHoursFromUTC, getUserTimezone, WorkingHours, isValidTimezone, isFrontendSupportedTimezone } from "../utils/timezoneUtils";
 export const updateBusinessSettings = async (req: Request, res: Response) => {
   try {
     // `req.user` is set by your auth middleware
@@ -28,6 +29,14 @@ export const updateBusinessSettings = async (req: Request, res: Response) => {
       supportButtonWebsite,
     } = req.body;
 
+    // Validate timezone if provided
+    if (timeZone && !isValidTimezone(timeZone)) {
+      return res.status(400).json({
+        error: "Invalid timezone",
+        details: `Timezone "${timeZone}" is not a valid IANA timezone identifier`
+      });
+    }
+
     // Find the BusinessAccount using the selectedWabaId (stored in metaWabaId)
     let businessAccount = await prisma.businessAccount.findFirst({
       where: { metaWabaId: dbUser.selectedWabaId },
@@ -44,6 +53,12 @@ export const updateBusinessSettings = async (req: Request, res: Response) => {
     if (workingHours) {
       parsedWorkingHours =
         typeof workingHours === "string" ? JSON.parse(workingHours) : workingHours;
+
+      // Convert working hours from user's timezone to UTC for storage
+      if (parsedWorkingHours && timeZone) {
+        console.log(`🔄 Converting working hours from ${timeZone} to UTC for storage`);
+        parsedWorkingHours = convertWorkingHoursToUTC(parsedWorkingHours as WorkingHours, timeZone) as any;
+      }
     }
 
     // Update the found business account
@@ -101,11 +116,18 @@ export const getBusinessSettings = async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Business settings not found" });
     }
 
+    // Convert working hours from UTC back to user's timezone for display
+    let displayWorkingHours = businessAccount.workingHours;
+    if (businessAccount.workingHours && businessAccount.timeZone && businessAccount.timeZone !== 'UTC') {
+      console.log(`🔄 Converting working hours from UTC to ${businessAccount.timeZone} for display`);
+      displayWorkingHours = convertWorkingHoursFromUTC(businessAccount.workingHours as WorkingHours, businessAccount.timeZone) as any;
+    }
+
     // Return all fields, including new ones
     res.json({
       id: businessAccount.id,
       timeZone: businessAccount.timeZone,
-      workingHours: businessAccount.workingHours,
+      workingHours: displayWorkingHours,
       language: businessAccount.language,
       contentDirection: businessAccount.contentDirection,
       holidayMode: businessAccount.holidayMode,
@@ -125,31 +147,31 @@ export const saveAccountDetails = async (req: Request, res: Response) => {
 
     // Validate required fields
     if (!timeZone || !contentDirection || !language) {
-      return res.status(400).json({ 
-        error: "Missing required fields", 
-        required: ["timeZone", "contentDirection", "language"] 
+      return res.status(400).json({
+        error: "Missing required fields",
+        required: ["timeZone", "contentDirection", "language"]
       });
     }
 
     // Validate content direction
     const validContentDirections = ["ltr", "rtl"];
     if (!validContentDirections.includes(contentDirection)) {
-      return res.status(400).json({ 
-        error: "Invalid content direction. Must be 'ltr' or 'rtl'" 
+      return res.status(400).json({
+        error: "Invalid content direction. Must be 'ltr' or 'rtl'"
       });
     }
 
     // Validate timezone format (basic validation)
     if (typeof timeZone !== "string" || timeZone.length === 0) {
-      return res.status(400).json({ 
-        error: "Invalid timezone format" 
+      return res.status(400).json({
+        error: "Invalid timezone format"
       });
     }
 
     // Validate language format (basic validation)
     if (typeof language !== "string" || language.length === 0) {
-      return res.status(400).json({ 
-        error: "Invalid language format" 
+      return res.status(400).json({
+        error: "Invalid language format"
       });
     }
 
@@ -200,9 +222,9 @@ export const saveAccountDetails = async (req: Request, res: Response) => {
     }
   } catch (error: any) {
     console.error("Error saving account details:", error);
-    res.status(500).json({ 
-      error: "Internal server error", 
-      details: error.message 
+    res.status(500).json({
+      error: "Internal server error",
+      details: error.message
     });
   }
 };
@@ -226,9 +248,9 @@ export const getAccountDetails = async (req: Request, res: Response) => {
     });
 
     if (!businessAccount) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         error: "Account details not found",
-        message: "No account details have been set for this user" 
+        message: "No account details have been set for this user"
       });
     }
 
