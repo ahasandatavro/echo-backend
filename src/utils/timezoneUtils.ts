@@ -139,18 +139,11 @@ function convertTimeToUTC(timeString: string, userTimezone: string): string {
   try {
     const [hours, minutes] = timeString.split(':').map(Number);
     
-    // Get timezone offset in hours (simplified approach)
+    // Get timezone offset in hours
     const offsetHours = getTimezoneOffsetHours(userTimezone);
     
     // Convert to UTC by subtracting the offset
     let utcHours = hours - offsetHours;
-    
-    // Handle day wrapping
-    if (utcHours >= 24) {
-      utcHours -= 24;
-    } else if (utcHours < 0) {
-      utcHours += 24;
-    }
     
     // Handle fractional hours (e.g., 5.5 hours = 5 hours 30 minutes)
     let utcHoursInt = Math.floor(utcHours);
@@ -167,12 +160,18 @@ function convertTimeToUTC(timeString: string, userTimezone: string): string {
         utcMinutes = utcMinutes % 60;
       }
       
-      // Handle day wrapping again after minute adjustment
-      if (utcHoursInt >= 24) {
-        utcHoursInt -= 24;
-      } else if (utcHoursInt < 0) {
-        utcHoursInt += 24;
+      // Handle minute underflow
+      if (utcMinutes < 0) {
+        utcHoursInt -= Math.ceil(Math.abs(utcMinutes) / 60);
+        utcMinutes = 60 + (utcMinutes % 60);
       }
+    }
+    
+    // Handle day wrapping
+    if (utcHoursInt >= 24) {
+      utcHoursInt -= 24;
+    } else if (utcHoursInt < 0) {
+      utcHoursInt += 24;
     }
     
     const result = `${utcHoursInt.toString().padStart(2, '0')}:${utcMinutes.toString().padStart(2, '0')}`;
@@ -194,18 +193,11 @@ function convertTimeFromUTC(timeString: string, userTimezone: string): string {
   try {
     const [hours, minutes] = timeString.split(':').map(Number);
     
-    // Get timezone offset in hours (simplified approach)
+    // Get timezone offset in hours
     const offsetHours = getTimezoneOffsetHours(userTimezone);
     
     // Convert from UTC to user timezone by adding the offset
     let localHours = hours + offsetHours;
-    
-    // Handle day wrapping
-    if (localHours >= 24) {
-      localHours -= 24;
-    } else if (localHours < 0) {
-      localHours += 24;
-    }
     
     // Handle fractional hours (e.g., 5.5 hours = 5 hours 30 minutes)
     let localHoursInt = Math.floor(localHours);
@@ -222,12 +214,18 @@ function convertTimeFromUTC(timeString: string, userTimezone: string): string {
         localMinutes = localMinutes % 60;
       }
       
-      // Handle day wrapping again after minute adjustment
-      if (localHoursInt >= 24) {
-        localHoursInt -= 24;
-      } else if (localHoursInt < 0) {
-        localHoursInt += 24;
+      // Handle minute underflow
+      if (localMinutes < 0) {
+        localHoursInt -= Math.ceil(Math.abs(localMinutes) / 60);
+        localMinutes = 60 + (localMinutes % 60);
       }
+    }
+    
+    // Handle day wrapping
+    if (localHoursInt >= 24) {
+      localHoursInt -= 24;
+    } else if (localHoursInt < 0) {
+      localHoursInt += 24;
     }
     
     const result = `${localHoursInt.toString().padStart(2, '0')}:${localMinutes.toString().padStart(2, '0')}`;
@@ -240,29 +238,141 @@ function convertTimeFromUTC(timeString: string, userTimezone: string): string {
 }
 
 /**
- * Get timezone offset in hours (simplified)
+ * Get timezone offset in hours using JavaScript's Intl API
+ * This approach is compatible with the frontend's timezone selection
  * @param timezone - IANA timezone identifier
  * @returns Offset in hours (positive for ahead of UTC, negative for behind)
  */
 function getTimezoneOffsetHours(timezone: string): number {
-  // Simplified timezone offsets (you can expand this list)
-  const timezoneOffsets: { [key: string]: number } = {
-    'UTC': 0,
-    'America/New_York': -5,      // EST (UTC-5)
-    'America/Chicago': -6,       // CST (UTC-6)
-    'America/Denver': -7,        // MST (UTC-7)
-    'America/Los_Angeles': -8,   // PST (UTC-8)
-    'Europe/London': 0,          // GMT/BST (UTC+0)
-    'Europe/Paris': 1,           // CET (UTC+1)
-    'Europe/Berlin': 1,          // CET (UTC+1)
-    'Asia/Tokyo': 9,             // JST (UTC+9)
-    'Asia/Shanghai': 8,          // CST (UTC+8)
-    'Asia/Kolkata': 5.5,         // IST (UTC+5:30)
-    'Australia/Sydney': 10,      // AEST (UTC+10)
-    'Pacific/Auckland': 12       // NZST (UTC+12)
-  };
-  
-  return timezoneOffsets[timezone] || 0;
+  try {
+    // Use JavaScript's Intl API to get the actual timezone offset
+    // This is more accurate than hardcoded values and handles DST automatically
+    const now = new Date();
+    
+    // Create a date formatter for the specific timezone
+    const formatter = new Intl.DateTimeFormat('en', {
+      timeZone: timezone,
+      timeZoneName: 'longOffset'
+    });
+    
+    // Get the timezone offset by comparing UTC time with timezone time
+    const utcTime = new Date(now.toISOString());
+    const timeInTimezone = new Date(now.toLocaleString('en-US', { timeZone: timezone }));
+    const timeInUTC = new Date(now.toLocaleString('en-US', { timeZone: 'UTC' }));
+    
+    // Calculate the offset in hours
+    const offsetMs = timeInTimezone.getTime() - timeInUTC.getTime();
+    const offsetHours = offsetMs / (1000 * 60 * 60);
+    
+    console.log(`🌍 Timezone ${timezone} offset: ${offsetHours} hours`);
+    return offsetHours;
+  } catch (error) {
+    console.error(`❌ Error getting timezone offset for ${timezone}:`, error);
+    
+    // Fallback to a comprehensive lookup for common timezones
+    // This matches the timezones from your frontend EXTENDED_COMMON_TZS list
+    const fallbackOffsets: { [key: string]: number } = {
+      // Americas & US/Canada
+      'Pacific/Honolulu': -10,
+      'America/Anchorage': -9,
+      'America/Los_Angeles': -8,
+      'America/Phoenix': -7,
+      'America/Denver': -7,
+      'America/Chicago': -6,
+      'America/New_York': -5,
+      'America/Toronto': -5,
+      'America/Winnipeg': -6,
+      'America/Edmonton': -7,
+      'America/Vancouver': -8,
+      'America/Halifax': -4,
+      'America/St_Johns': -3.5,
+      'America/Mexico_City': -6,
+      'America/Bogota': -5,
+      'America/Lima': -5,
+      'America/Caracas': -4,
+      'America/Santiago': -3,
+      'America/Buenos_Aires': -3,
+      'America/Sao_Paulo': -3,
+      'America/Montevideo': -3,
+      
+      // Europe (inc. UTC)
+      'UTC': 0,
+      'Europe/Lisbon': 0,
+      'Europe/London': 0,
+      'Europe/Dublin': 0,
+      'Europe/Madrid': 1,
+      'Europe/Paris': 1,
+      'Europe/Brussels': 1,
+      'Europe/Amsterdam': 1,
+      'Europe/Berlin': 1,
+      'Europe/Rome': 1,
+      'Europe/Zurich': 1,
+      'Europe/Stockholm': 1,
+      'Europe/Vienna': 1,
+      'Europe/Prague': 1,
+      'Europe/Warsaw': 1,
+      'Europe/Budapest': 1,
+      'Europe/Athens': 2,
+      'Europe/Istanbul': 3,
+      'Europe/Helsinki': 2,
+      'Europe/Bucharest': 2,
+      'Europe/Moscow': 3,
+      
+      // Africa
+      'Africa/Casablanca': 1,
+      'Africa/Algiers': 1,
+      'Africa/Lagos': 1,
+      'Africa/Accra': 0,
+      'Africa/Cairo': 2,
+      'Africa/Johannesburg': 2,
+      'Africa/Nairobi': 3,
+      
+      // Middle East
+      'Asia/Jerusalem': 2,
+      'Asia/Amman': 2,
+      'Asia/Beirut': 2,
+      'Asia/Baghdad': 3,
+      'Asia/Riyadh': 3,
+      'Asia/Tehran': 3.5,
+      'Asia/Dubai': 4,
+      
+      // South Asia
+      'Asia/Karachi': 5,
+      'Asia/Kolkata': 5.5,
+      'Asia/Colombo': 5.5,
+      'Asia/Kathmandu': 5.75,
+      'Asia/Dhaka': 6,
+      'Asia/Yangon': 6.5,
+      
+      // SE Asia & East Asia
+      'Asia/Bangkok': 7,
+      'Asia/Jakarta': 7,
+      'Asia/Kuala_Lumpur': 8,
+      'Asia/Singapore': 8,
+      'Asia/Manila': 8,
+      'Asia/Shanghai': 8,
+      'Asia/Taipei': 8,
+      'Asia/Tokyo': 9,
+      'Asia/Seoul': 9,
+      'Australia/Perth': 8,
+      
+      // Australia & Pacific
+      'Australia/Darwin': 9.5,
+      'Australia/Adelaide': 9.5,
+      'Australia/Brisbane': 10,
+      'Australia/Sydney': 10,
+      'Australia/Melbourne': 10,
+      'Pacific/Guam': 10,
+      'Pacific/Port_Moresby': 10,
+      'Pacific/Noumea': 11,
+      'Pacific/Auckland': 12,
+      'Pacific/Fiji': 12,
+    };
+    
+    const offset = fallbackOffsets[timezone] || 0;
+    console.log(`🌍 Using fallback offset for ${timezone}: ${offset} hours`);
+    return offset;
+  }
 }
 
 /**
@@ -305,6 +415,114 @@ export function isValidTimezone(timezone: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Check if a timezone is supported by the frontend's timezone selection
+ * This matches the EXTENDED_COMMON_TZS list from the frontend
+ * @param timezone - Timezone string to check
+ * @returns True if supported by frontend, false otherwise
+ */
+export function isFrontendSupportedTimezone(timezone: string): boolean {
+  const supportedTimezones = [
+    // Americas & US/Canada
+    'Pacific/Honolulu',
+    'America/Anchorage',
+    'America/Los_Angeles',
+    'America/Phoenix',
+    'America/Denver',
+    'America/Chicago',
+    'America/New_York',
+    'America/Toronto',
+    'America/Winnipeg',
+    'America/Edmonton',
+    'America/Vancouver',
+    'America/Halifax',
+    'America/St_Johns',
+    'America/Mexico_City',
+    'America/Bogota',
+    'America/Lima',
+    'America/Caracas',
+    'America/Santiago',
+    'America/Buenos_Aires',
+    'America/Sao_Paulo',
+    'America/Montevideo',
+    
+    // Europe (inc. UTC)
+    'UTC',
+    'Europe/Lisbon',
+    'Europe/London',
+    'Europe/Dublin',
+    'Europe/Madrid',
+    'Europe/Paris',
+    'Europe/Brussels',
+    'Europe/Amsterdam',
+    'Europe/Berlin',
+    'Europe/Rome',
+    'Europe/Zurich',
+    'Europe/Stockholm',
+    'Europe/Vienna',
+    'Europe/Prague',
+    'Europe/Warsaw',
+    'Europe/Budapest',
+    'Europe/Athens',
+    'Europe/Istanbul',
+    'Europe/Helsinki',
+    'Europe/Bucharest',
+    'Europe/Moscow',
+    
+    // Africa
+    'Africa/Casablanca',
+    'Africa/Algiers',
+    'Africa/Lagos',
+    'Africa/Accra',
+    'Africa/Cairo',
+    'Africa/Johannesburg',
+    'Africa/Nairobi',
+    
+    // Middle East
+    'Asia/Jerusalem',
+    'Asia/Amman',
+    'Asia/Beirut',
+    'Asia/Baghdad',
+    'Asia/Riyadh',
+    'Asia/Tehran',
+    'Asia/Dubai',
+    
+    // South Asia
+    'Asia/Karachi',
+    'Asia/Kolkata',
+    'Asia/Colombo',
+    'Asia/Kathmandu',
+    'Asia/Dhaka',
+    'Asia/Yangon',
+    
+    // SE Asia & East Asia
+    'Asia/Bangkok',
+    'Asia/Jakarta',
+    'Asia/Kuala_Lumpur',
+    'Asia/Singapore',
+    'Asia/Manila',
+    'Asia/Shanghai',
+    'Asia/Taipei',
+    'Asia/Tokyo',
+    'Asia/Seoul',
+    'Australia/Perth',
+    
+    // Australia & Pacific
+    'Australia/Darwin',
+    'Australia/Adelaide',
+    'Australia/Brisbane',
+    'Australia/Sydney',
+    'Australia/Melbourne',
+    'Pacific/Guam',
+    'Pacific/Port_Moresby',
+    'Pacific/Noumea',
+    'Pacific/Auckland',
+    'Pacific/Fiji',
+  ];
+  
+  return supportedTimezones.includes(timezone);
 }
 
 /**
