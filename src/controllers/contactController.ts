@@ -120,6 +120,7 @@ export const getAllContacts = async (req: Request, res: Response) => {
         id: true,
         name: true,
         phoneNumber: true,
+        source: true,
         attributes: true,
         subscribed: true,
         sendSMS: true,
