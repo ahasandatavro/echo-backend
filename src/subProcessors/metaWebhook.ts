@@ -1036,14 +1036,6 @@ export const processMessageUpdate = async (value: any, io: any) => {
 // 🔔 Step 4: Emit only to those eligible
   const messageAssignedEmails = finalRecipients.map((u) => u.email);
 
-  if (messageAssignedEmails.length > 0) {
-    io.emit("messageAssigned", {
-      recipients: messageAssignedEmails,
-      contactName: finalContact.name || finalContact.phoneNumber,
-      contactId: finalContact.id,
-      from: sender,
-    });
-  }
   if (!sender) return;
 
 
