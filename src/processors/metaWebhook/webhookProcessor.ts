@@ -332,9 +332,27 @@ export const processNode = async (
     if (currentNode.type === "list") {
       const listData = currentNode.data?.list_data;
       if (listData) {
+        // Resolve variables in header text
+        let resolvedHeaderText = listData?.headerText;
+        if (resolvedHeaderText && resolvedHeaderText.includes("@")) {
+          resolvedHeaderText = await resolveVariables(resolvedHeaderText, currentNode?.chatId || currentNode?.chatbotId, recipient, agentPhoneNumberId);
+        }
+        if (resolvedHeaderText && resolvedHeaderText.includes("{{")) {
+          resolvedHeaderText = await resolveContactAttributes(resolvedHeaderText, recipient);
+        }
+
+        // Resolve variables in body text
+        let resolvedBodyText = listData.bodyText;
+        if (resolvedBodyText && resolvedBodyText.includes("@")) {
+          resolvedBodyText = await resolveVariables(resolvedBodyText, currentNode?.chatId || currentNode?.chatbotId, recipient, agentPhoneNumberId);
+        }
+        if (resolvedBodyText && resolvedBodyText.includes("{{")) {
+          resolvedBodyText = await resolveContactAttributes(resolvedBodyText, recipient);
+        }
+
         const listMessage: ListMessage = {
-          text: convertHtmlToWhatsAppText(listData.bodyText) || "Please select an option:",
-          header: listData?.headerText,
+          text: convertHtmlToWhatsAppText(resolvedBodyText) || "Please select an option:",
+          header: resolvedHeaderText,
           footer: listData?.footerText,
           buttonText: listData?.buttonText || "Options",
           sections: listData?.sections || [],
