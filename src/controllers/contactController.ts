@@ -498,9 +498,9 @@ export const createContact = async (req: Request, res: Response) => {
 
   try {
     // Get the currently logged-in user if userId is not provided
+    const reqUser: any = req.user;
     let contactUserId = userId;
     if (!contactUserId) {
-      const reqUser: any = req.user;
       if (reqUser && reqUser.userId) {
         contactUserId = reqUser.userId;
       }
@@ -511,6 +511,14 @@ export const createContact = async (req: Request, res: Response) => {
       where: { phoneNumber },
       select: { id: true, createdById: true }
     });
+
+    // Check if existing contact was created by the same user
+    if (existingContact && existingContact.createdById === reqUser.userId) {
+      return res.status(400).json({
+        error: "Contact already exists",
+        message: "A contact with this phone number already exists update instead"
+      });
+    }
 
     // Only check limit if this is a new contact
     if (!existingContact) {
