@@ -13,6 +13,8 @@ import {
   updateAttribute,
   getNotes,
   addNote,
+  editNote,
+  deleteNote,
   getTags,
   addTag,
   removeTag,
@@ -58,6 +60,8 @@ router.get("/:id/attributes", authenticateJWT, getAttributes);
 router.put("/:id/attributes", authenticateJWT, updateAttribute);
 router.get("/:id/notes", authenticateJWT, getNotes);
 router.post("/:id/notes", authenticateJWT, addNote);
+router.put("/:id/notes/:noteId", authenticateJWT, editNote);
+router.delete("/:id/notes/:noteId", authenticateJWT, deleteNote);
 router.get("/:id/assignments", authenticateJWT, getCurrentAssignments);
 router.get("/:id/status", getContactStatus);
 

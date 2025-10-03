@@ -1340,6 +1340,69 @@ export const addNote = async (req: Request, res: Response) => {
   }
 };
 
+export const editNote = async (req: Request, res: Response) => {
+  try {
+    const { noteId } = req.params;
+    const { note } = req.body;
+    const contactId = parseInt(req.params.id);
+
+    if (!note)
+      return res.status(400).json({ error: "Note content is required" });
+
+    // Check if the note exists and belongs to the contact
+    const existingNote = await prisma.note.findFirst({
+      where: {
+        id: parseInt(noteId),
+        contactId: contactId,
+      },
+    });
+
+    if (!existingNote) {
+      return res.status(404).json({ error: "Note not found" });
+    }
+
+    // Update the note
+    const updatedNote = await prisma.note.update({
+      where: { id: parseInt(noteId) },
+      data: { content: note },
+    });
+
+    res.json({ message: "Note updated", note: updatedNote });
+  } catch (error) {
+    console.error("Error editing note:", error);
+    res.status(500).json({ error: "Failed to edit note" });
+  }
+};
+
+export const deleteNote = async (req: Request, res: Response) => {
+  try {
+    const { noteId } = req.params;
+    const contactId = parseInt(req.params.id);
+
+    // Check if the note exists and belongs to the contact
+    const existingNote = await prisma.note.findFirst({
+      where: {
+        id: parseInt(noteId),
+        contactId: contactId,
+      },
+    });
+
+    if (!existingNote) {
+      return res.status(404).json({ error: "Note not found" });
+    }
+
+    // Delete the note
+    await prisma.note.delete({
+      where: { id: parseInt(noteId) },
+    });
+
+    res.json({ message: "Note deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting note:", error);
+    res.status(500).json({ error: "Failed to delete note" });
+  }
+};
+
 export const getTags = async (req: Request, res: Response) => {
   try {
     const contactId = parseInt(req.params.id);
