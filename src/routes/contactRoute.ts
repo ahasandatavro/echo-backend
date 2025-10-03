@@ -21,6 +21,7 @@ import {
   expireInactiveChats,
   sendMessageController,
   getAllImportedContacts,
+  getAllSubscribedContacts,
   uploadCSV,
   importContacts,
   triggerChatbotByPhoneNumber,
@@ -40,6 +41,7 @@ const uploadDisk = multer({ dest: "uploads/" });
 const router: Router = Router();
 router.get("/", authenticateJWT, getAllContacts);
 router.get("/imported", authenticateJWT, getAllImportedContacts);
+router.get("/subscribed", authenticateJWT, getAllSubscribedContacts);
 router.get("/attributes", authenticateJWT, getFilteredAttributesByKeyword);
 router.get("/attribute-options", authenticateJWT, getAttributeOptionsForUser);
 router.get("/countries", authenticateJWT, getCountriesByPhoneNumber);

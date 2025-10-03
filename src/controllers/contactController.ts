@@ -311,6 +311,7 @@ export const getAllImportedContacts = async (req: Request, res: Response) => {
       conversationContacts = await prisma.contact.findMany({
         where: {
           id: { in: uniqueConversationContactIds },
+          subscribed: true,
           ...favoriteFilter,
           ...searchFilter,
         },
@@ -352,6 +353,227 @@ export const getAllImportedContacts = async (req: Request, res: Response) => {
       ? await prisma.contact.count({
           where: {
             id: { in: uniqueConversationContactIds },
+            subscribed: true,
+            ...favoriteFilter,
+            ...searchFilter,
+          },
+        })
+      : 0;
+
+    const totalContacts = totalCreatedContacts + totalConversationContacts;
+    const totalPages = Math.ceil(totalContacts / limitNumber);
+
+    // ✅ Format attributes into array of {key, value} objects
+    const formattedContacts = contacts.map((contact) => ({
+      ...contact,
+      attributes: Array.isArray(contact.attributes)
+        ? contact.attributes
+        : Object.entries(contact.attributes || {}).map(([key, value]) => ({
+            key,
+            value,
+          })),
+    }));
+
+    res.json({
+      contacts: formattedContacts,
+      pagination: {
+        currentPage: pageNumber,
+        totalPages,
+        totalContacts,
+        limit: limitNumber,
+        hasNextPage: pageNumber < totalPages,
+        hasPreviousPage: pageNumber > 1,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching contacts:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+export const getAllSubscribedContacts = async (req: Request, res: Response) => {
+  try {
+    const user: any = req.user;
+
+    const dbUser = await prisma.user.findFirst({
+      where: { id: user.userId },
+      select: {
+        id: true,
+        agent: true,
+        createdById: true,
+        selectedPhoneNumberId: true,
+      },
+    });
+    if (!dbUser) return res.status(404).json({ error: "User not found" });
+
+    let userIdsToInclude: number[] = [];
+
+    if (dbUser.agent) {
+      // ✅ If agent: include self + same creator + fellow agents
+      const agents = await prisma.user.findMany({
+        where: {
+          createdById: dbUser.createdById || undefined,
+          agent: true,
+        },
+        select: { id: true },
+      });
+
+      userIdsToInclude = [
+        ...agents.map((a) => a.id),
+        dbUser.createdById!,
+        dbUser.id,
+      ];
+    } else {
+      // ✅ If creator: include self + agents created by them
+      const agents = await prisma.user.findMany({
+        where: {
+          createdById: dbUser.id,
+          agent: true,
+        },
+        select: { id: true },
+      });
+
+      userIdsToInclude = [dbUser.id, ...agents.map((a) => a.id)];
+    }
+
+    // Get query parameters
+    const { favorite, search, page = '1', limit = '20' } = req.query;
+    const pageNumber = parseInt(page as string, 10);
+    const limitNumber = parseInt(limit as string, 10);
+    const offset = (pageNumber - 1) * limitNumber;
+    
+    let favoriteFilter = {};
+    let searchFilter = {};
+    
+    if (favorite !== undefined) {
+      const isFavorite = favorite === 'true';
+      favoriteFilter = { favorite: isFavorite };
+    }
+
+    if (search && typeof search === 'string' && search.trim()) {
+      const searchTerm = search.trim();
+      searchFilter = {
+        OR: [
+          {
+            name: {
+              contains: searchTerm,
+              mode: 'insensitive',
+            },
+          },
+          {
+            phoneNumber: {
+              contains: searchTerm,
+              mode: 'insensitive',
+            },
+          },
+        ],
+      };
+    }
+
+    // Step 1: Get business phone number ID for conversation contacts
+    // Only proceed if user has a selected phone number
+    let businessPhone = null;
+    let conversationContactIds: number[] = [];
+    
+    if (dbUser?.selectedPhoneNumberId) {
+      businessPhone = await prisma.businessPhoneNumber.findFirst({
+        where: { metaPhoneNumberId: dbUser.selectedPhoneNumberId },
+        select: { id: true },
+      });
+
+      // Step 2: Get conversation contact IDs (recipients who messaged this business phone)
+      if (businessPhone) {
+        const conversationContacts = await prisma.conversation.findMany({
+          where: { businessPhoneNumberId: businessPhone.id },
+          select: { contactId: true },
+          distinct: ["contactId"],
+        });
+        conversationContactIds = conversationContacts.map((c) => c.contactId).filter((id) => id !== null);
+      }
+    }
+
+    // Step 3: Fetch all contacts created by any of the users in the set with search and pagination
+    const createdContacts = await prisma.contact.findMany({
+      where: {
+        createdById: {
+          in: userIdsToInclude,
+        },
+        subscribed: true,
+        ...favoriteFilter,
+        ...searchFilter,
+      },
+      select: {
+        id: true,
+        name: true,
+        phoneNumber: true,
+        attributes: true,
+        subscribed: true,
+        sendSMS: true,
+        ticketStatus: true,
+        favorite: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+      skip: offset,
+      take: limitNumber,
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    // Step 4: Fetch conversation contacts (recipients) that aren't already in createdContacts
+    const existingContactIds = new Set(createdContacts.map(c => c.id));
+    const uniqueConversationContactIds = conversationContactIds.filter(id => !existingContactIds.has(id));
+    
+    let conversationContacts: any[] = [];
+    if (uniqueConversationContactIds.length > 0) {
+      conversationContacts = await prisma.contact.findMany({
+        where: {
+          id: { in: uniqueConversationContactIds },
+          subscribed: true,
+          ...favoriteFilter,
+          ...searchFilter,
+        },
+        select: {
+          id: true,
+          name: true,
+          phoneNumber: true,
+          attributes: true,
+          subscribed: true,
+          sendSMS: true,
+          ticketStatus: true,
+          favorite: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+        skip: offset,
+        take: limitNumber,
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+    }
+
+    // Step 5: Combine both sets of contacts
+    const contacts = [...createdContacts, ...conversationContacts];
+
+    // Get total count for pagination
+    const totalCreatedContacts = await prisma.contact.count({
+      where: {
+        createdById: {
+          in: userIdsToInclude,
+        },
+        subscribed: true,
+        ...favoriteFilter,
+        ...searchFilter,
+      },
+    });
+
+    const totalConversationContacts = (uniqueConversationContactIds.length > 0 && dbUser?.selectedPhoneNumberId)
+      ? await prisma.contact.count({
+          where: {
+            id: { in: uniqueConversationContactIds },
+            subscribed: true,
             ...favoriteFilter,
             ...searchFilter,
           },

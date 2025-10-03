@@ -582,6 +582,7 @@ export const processNode = async (
           create: {
             phoneNumber: recipient,
             subscribed: true,
+            sendSMS: true,
             source: "WhatsApp", // Default value if new contact
           },
         });
@@ -637,7 +638,8 @@ export const processNode = async (
           update: {subscribed: false, sendSMS: false}, // Update if found
           create: {
             phoneNumber: recipient,
-            subscribed: true,
+            subscribed: false,
+            sendSMS: false,
             source: "WhatsApp", // Default value if new contact
           },
         });
