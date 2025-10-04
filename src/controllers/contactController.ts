@@ -437,7 +437,7 @@ export const getAllSubscribedContacts = async (req: Request, res: Response) => {
     }
 
     // Get query parameters
-    const { favorite, search, page = '1', limit = '20' } = req.query;
+    const { favorite, search, page = '1', limit = '10' } = req.query;
     const pageNumber = parseInt(page as string, 10);
     const limitNumber = parseInt(limit as string, 10);
     const offset = (pageNumber - 1) * limitNumber;
@@ -471,7 +471,6 @@ export const getAllSubscribedContacts = async (req: Request, res: Response) => {
     }
 
     // Step 1: Get business phone number ID for conversation contacts
-    // Only proceed if user has a selected phone number
     let businessPhone = null;
     let conversationContactIds: number[] = [];
     
@@ -492,8 +491,8 @@ export const getAllSubscribedContacts = async (req: Request, res: Response) => {
       }
     }
 
-    // Step 3: Fetch all contacts created by any of the users in the set with search and pagination
-    const createdContacts = await prisma.contact.findMany({
+    // Step 3: Fetch ALL created contacts (no pagination here)
+    const allCreatedContacts = await prisma.contact.findMany({
       where: {
         createdById: {
           in: userIdsToInclude,
@@ -514,20 +513,18 @@ export const getAllSubscribedContacts = async (req: Request, res: Response) => {
         createdAt: true,
         updatedAt: true,
       },
-      skip: offset,
-      take: limitNumber,
       orderBy: {
         createdAt: 'desc',
       },
     });
 
-    // Step 4: Fetch conversation contacts (recipients) that aren't already in createdContacts
-    const existingContactIds = new Set(createdContacts.map(c => c.id));
+    // Step 4: Fetch ALL conversation contacts that aren't already in created contacts
+    const existingContactIds = new Set(allCreatedContacts.map(c => c.id));
     const uniqueConversationContactIds = conversationContactIds.filter(id => !existingContactIds.has(id));
     
-    let conversationContacts: any[] = [];
+    let allConversationContacts: any[] = [];
     if (uniqueConversationContactIds.length > 0) {
-      conversationContacts = await prisma.contact.findMany({
+      allConversationContacts = await prisma.contact.findMany({
         where: {
           id: { in: uniqueConversationContactIds },
           subscribed: true,
@@ -546,45 +543,25 @@ export const getAllSubscribedContacts = async (req: Request, res: Response) => {
           createdAt: true,
           updatedAt: true,
         },
-        skip: offset,
-        take: limitNumber,
         orderBy: {
           createdAt: 'desc',
         },
       });
     }
 
-    // Step 5: Combine both sets of contacts
-    const contacts = [...createdContacts, ...conversationContacts];
+    // Step 5: Combine and sort all contacts by createdAt
+    const allContacts = [...allCreatedContacts, ...allConversationContacts]
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-    // Get total count for pagination
-    const totalCreatedContacts = await prisma.contact.count({
-      where: {
-        createdById: {
-          in: userIdsToInclude,
-        },
-        subscribed: true,
-        ...favoriteFilter,
-        ...searchFilter,
-      },
-    });
+    // Step 6: Apply pagination to the combined result
+    const paginatedContacts = allContacts.slice(offset, offset + limitNumber);
 
-    const totalConversationContacts = (uniqueConversationContactIds.length > 0 && dbUser?.selectedPhoneNumberId)
-      ? await prisma.contact.count({
-          where: {
-            id: { in: uniqueConversationContactIds },
-            subscribed: true,
-            ...favoriteFilter,
-            ...searchFilter,
-          },
-        })
-      : 0;
-
-    const totalContacts = totalCreatedContacts + totalConversationContacts;
+    // Step 7: Calculate pagination metadata
+    const totalContacts = allContacts.length;
     const totalPages = Math.ceil(totalContacts / limitNumber);
 
     // ✅ Format attributes into array of {key, value} objects
-    const formattedContacts = contacts.map((contact) => ({
+    const formattedContacts = paginatedContacts.map((contact) => ({
       ...contact,
       attributes: Array.isArray(contact.attributes)
         ? contact.attributes
