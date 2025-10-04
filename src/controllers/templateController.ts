@@ -9,7 +9,8 @@ import { Readable } from "stream";
 import { syncTemplates as syncTemplatesService } from "../services/templateService";
 import { checkBroadcastAccess, checkTemplateLimit } from "../utils/packageUtils";
 import { uploadFileToDigitalOceanHelper } from "../helpers";
-import { storeMessage } from "../processors/metaWebhook/webhookProcessor";
+import { storeMessage, storeTemplateMessage } from "../processors/metaWebhook/webhookProcessor";
+
 interface ButtonData {
   id?: number;
   type: string;      // e.g. "Visit Website", "Call Phone", "Copy offer code", "Quick replies"
@@ -1783,11 +1784,16 @@ export const broadcastTemplate = async (
         "Content-Type": "application/json",
       },
     });
-await storeMessage({  recipient,
+ const brodcastRecepient = await prisma.broadcastRecipient.findFirst({
+  where: { broadcastId: broadcastId },
+ });
+ const status=brodcastRecepient?.status=="DELIVERED"||brodcastRecepient?.status=="READ"?"Delivered":"Failed";
+await storeTemplateMessage({  recipient,
   chatbotId: null,
   messageType: "template",
   text: `Template: ${selectedTemplate}`,
-  templateDetails: dbTpl
+  templateDetails: dbTpl,
+  brodcastStatus: status
 }, phoneNumberId);
   } catch (error: any) {
     console.error("Error sending template message:", error.response?.data?.error?.message || error.message);

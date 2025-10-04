@@ -1831,13 +1831,6 @@ export const sendMessageController = async (req: Request, res: Response) => {
         templateId: templateId,
         templateDetails: templateDetails
       };  
-      await storeMessage({
-        recipient: contact.phoneNumber,
-        chatbotId,
-        messageType: "template",
-        text: `Template: sent`,
-        templateDetails: templateDetails
-      }, dbUser.selectedPhoneNumberId);
     }
     // ✅ Handle Regular Messages (Text, Media)
     else {

@@ -1892,6 +1892,104 @@ export const storeMessage = async ({
     console.error("❌ Error storing message:", error);
   }
 };
+export const storeTemplateMessage = async ({
+  recipient,
+  chatbotId,
+  messageType,
+  text,
+  status = MessageStatus.SENT,
+  buttonOptions,
+  listItems,
+  templateDetails,
+  brodcastStatus
+}: {
+recipient: string;
+chatbotId?: number | null;
+messageType: string;
+text?: string;
+status?: MessageStatus;
+buttonOptions?: { id: string; title: string }[]; // Store button options as JSON
+listItems?: { id: string; title: string; description?: string }[]; // Store list items as JSON
+templateDetails?: any;
+brodcastStatus?: string;
+}, agentPhoneNumberId?: string) => {
+try {
+// Attempt to find an existing contact by phone number
+let contact = await prisma.contact.findUnique({
+where: {phoneNumber: recipient},
+});
+let conversation;
+
+if (!contact) {
+// If no contact exists, create it along with a nested conversation
+const newContact = await prisma.contact.create({
+data: {
+phoneNumber: recipient,
+name: "Unknown",
+source: "WhatsApp",
+conversations: {
+create: {recipient, chatbotId},
+},
+},
+include: {conversations: true}, // Include nested conversation(s)
+});
+contact = newContact;
+// Retrieve the nested conversation that was just created
+conversation = newContact.conversations[0];
+console.log("✅ New contact and conversation created:", contact, conversation);
+} else {
+// If the contact exists, try to find an existing conversation linked to it
+conversation = await prisma.conversation.findFirst({
+where: {recipient, contactId: contact.id},
+orderBy: {updatedAt: "desc"},
+});
+if (!conversation) {
+const bp=await prisma.businessPhoneNumber.findFirst({
+where: {
+metaPhoneNumberId: agentPhoneNumberId
+}
+});
+// Create a new conversation if one isn't found
+conversation = await prisma.conversation.create({
+data: {recipient, contactId: contact.id, chatbotId, businessPhoneNumberId: bp?.id},
+});
+console.log("✅ New conversation created:", conversation);
+}
+}
+let attachmentUrl;
+if (text?.startsWith("Image:") || text?.startsWith("Audio:") || text?.startsWith("Video:") || text?.startsWith("Document:") || text?.startsWith("Sticker:")) {
+const parts = text.split(/:(.+)/); // Split at the first colon only
+attachmentUrl = parts[1]?.trim();
+text="";
+}
+// Create a new message attached to the conversation and contact
+const savedMessage = await prisma.message.create({
+data: {
+conversationId: conversation.id,
+contactId: contact.id,
+chatbotId,
+sender: "user",
+text,
+messageType,
+buttonOptions: buttonOptions && buttonOptions.length > 0 ? buttonOptions : Prisma.JsonNull,
+listItems: listItems && listItems.length > 0 ? listItems : Prisma.JsonNull,
+status,
+brodcastStatus,
+time: new Date(),
+templateId: templateDetails?.id || null,
+attachment: attachmentUrl || null,
+},
+});
+io.emit("newMessage", {
+recipient: contact.phoneNumber,
+message: savedMessage,
+template: templateDetails || null
+});
+return savedMessage;
+} catch (error) {
+console.error("❌ Error storing message:", error);
+}
+};
 
 // Functions for handling webhook verification
 export const processWebhookChange = async (change: any, io: any) => {
