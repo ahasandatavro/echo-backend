@@ -12,7 +12,12 @@ import {
   assignOperatorValidation,
   assignTeamValidation,
   phoneNumberIdValidation,
-  whatsappNumberPathValidation
+  whatsappNumberPathValidation,
+  getContactsQueryValidation,
+  getChatbotsQueryValidation,
+  getMediaQueryValidation,
+  getMessagesQueryValidation,
+  getMessageTemplatesQueryValidation
 } from '../utils/joiSchemas';
 
 const router = express.Router();
@@ -21,10 +26,26 @@ const storage = multer.memoryStorage(); // ⬅️ Enables buffer access
 const upload = multer({ storage });
 
 // -------------------- WhatsApp API --------------------
-router.get("/:phoneNumberId/getMessages/:whatsappNumber", apiV1Controller.getMessages);
-router.get("/:phoneNumberId/getMessageTemplates", apiV1Controller.getMessageTemplates);
-router.get("/:phoneNumberId/getContacts", apiV1Controller.getContacts);
-router.get("/getMedia", apiV1Controller.getMedia);
+router.get("/:phoneNumberId/getMessages/:whatsappNumber", 
+  validatePathParams(phoneNumberIdValidation),
+  validatePathParams(whatsappNumberPathValidation),
+  validateQueryParams(getMessagesQueryValidation),
+  apiV1Controller.getMessages
+);
+router.get("/:phoneNumberId/getMessageTemplates", 
+  validatePathParams(phoneNumberIdValidation),
+  validateQueryParams(getMessageTemplatesQueryValidation),
+  apiV1Controller.getMessageTemplates
+);
+router.get("/:phoneNumberId/getContacts", 
+  validatePathParams(phoneNumberIdValidation),
+  validateQueryParams(getContactsQueryValidation),
+  apiV1Controller.getContacts
+);
+router.get("/getMedia", 
+  validateQueryParams(getMediaQueryValidation),
+  apiV1Controller.getMedia
+);
 
 router.post("/:phoneNumberId/updateContactAttributes/:whatsappNumber", apiV1Controller.updateContactAttributes);
 router.post("/:phoneNumberId/updateContactAttributesForMultiContacts", apiV1Controller.updateContactAttributesForMultiContacts);
@@ -78,7 +99,11 @@ router.post("/:phoneNumberId/assignTeam",
 );
 router.post("/:phoneNumberId/updateChatStatus", apiV1Controller.updateChatStatus);
 
-router.get("/:phoneNumberId/chatbots", apiV1Controller.getChatbots);
+router.get("/:phoneNumberId/chatbots", 
+  validatePathParams(phoneNumberIdValidation),
+  validateQueryParams(getChatbotsQueryValidation),
+  apiV1Controller.getChatbots
+);
 router.post("/:phoneNumberId/chatbots/start", 
   validatePathParams(phoneNumberIdValidation),
   validateQueryParams(chatbotStartValidation),

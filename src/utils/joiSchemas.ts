@@ -257,3 +257,109 @@ export const whatsappNumberPathValidation = Joi.object({
       'string.pattern.base': 'WhatsApp number must be in international format without + or 00'
     })
 });
+
+// GET API Validations
+
+// 1. Get Contacts Query Parameters Validation
+export const getContactsQueryValidation = Joi.object({
+  pageSize: Joi.number().integer().min(1).max(100).default(20).optional()
+    .messages({
+      'number.min': 'Page size must be at least 1',
+      'number.max': 'Page size cannot exceed 100'
+    }),
+  pageNumber: Joi.number().integer().min(1).default(1).optional()
+    .messages({
+      'number.min': 'Page number must be at least 1'
+    }),
+  name: Joi.string().trim().min(1).max(255).optional()
+    .messages({
+      'string.min': 'Name filter cannot be empty',
+      'string.max': 'Name filter cannot exceed 255 characters'
+    }),
+  attribute: Joi.string().custom((value, helpers) => {
+    try {
+      const parsed = JSON.parse(value);
+      if (!Array.isArray(parsed)) {
+        return helpers.error('any.invalid');
+      }
+      // Validate each filter object
+      for (const filter of parsed) {
+        if (!filter.operator || !filter.name || !filter.value) {
+          return helpers.error('any.invalid');
+        }
+        if (!['contain', 'equals', 'starts_with', 'ends_with'].includes(filter.operator)) {
+          return helpers.error('any.invalid');
+        }
+      }
+      return value;
+    } catch (error) {
+      return helpers.error('any.invalid');
+    }
+  }).optional()
+    .messages({
+      'any.invalid': 'Attribute filter must be valid JSON array with objects containing operator, name, and value fields'
+    }),
+  createdDate: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$|^\d{2}-\d{2}-\d{4}$/).optional()
+    .messages({
+      'string.pattern.base': 'Created date must be in YYYY-MM-DD or MM-DD-YYYY format'
+    })
+});
+
+// 2. Get Chatbots Query Parameters Validation
+export const getChatbotsQueryValidation = Joi.object({
+  phoneNumberId: Joi.string().min(1).required()
+    .messages({
+      'string.min': 'Phone Number ID cannot be empty'
+    }),
+  page: Joi.number().integer().min(1).default(1).optional()
+    .messages({
+      'number.min': 'Page number must be at least 1'
+    }),
+  limit: Joi.number().integer().min(1).max(100).default(10).optional()
+    .messages({
+      'number.min': 'Limit must be at least 1',
+      'number.max': 'Limit cannot exceed 100'
+    }),
+  search: Joi.string().trim().min(1).max(255).optional()
+    .messages({
+      'string.min': 'Search term cannot be empty',
+      'string.max': 'Search term cannot exceed 255 characters'
+    })
+});
+
+// 3. Get Media Query Parameters Validation
+export const getMediaQueryValidation = Joi.object({
+  fileName: Joi.string().min(1).max(255).required()
+    .messages({
+      'string.min': 'File name cannot be empty',
+      'string.max': 'File name cannot exceed 255 characters'
+    })
+});
+
+// Additional GET API validations for other endpoints
+
+// Get Messages Query Parameters Validation (for completeness)
+export const getMessagesQueryValidation = Joi.object({
+  page: Joi.number().integer().min(1).default(1).optional(),
+  limit: Joi.number().integer().min(1).max(100).default(20).optional(),
+  search: Joi.string().trim().min(1).max(255).optional(),
+  messageType: Joi.string().valid('text', 'image', 'audio', 'video', 'document', 'template', 'interactive').optional(),
+  startDate: Joi.date().iso().optional(),
+  endDate: Joi.date().iso().min(Joi.ref('startDate')).optional()
+    .messages({
+      'date.min': 'End date must be after start date'
+    })
+});
+
+// Get Message Templates Query Parameters Validation
+export const getMessageTemplatesQueryValidation = Joi.object({
+  page: Joi.number().integer().min(1).default(1).optional(),
+  limit: Joi.number().integer().min(1).max(100).default(20).optional(),
+  search: Joi.string().trim().min(1).max(255).optional(),
+  category: Joi.string().valid('MARKETING', 'UTILITY', 'AUTHENTICATION').optional(),
+  status: Joi.string().valid('APPROVED', 'PENDING', 'REJECTED').optional(),
+  language: Joi.string().pattern(/^[a-z]{2}_[A-Z]{2}$/).optional()
+    .messages({
+      'string.pattern.base': 'Language must be in ISO format (e.g., en_US, es_ES)'
+    })
+});
