@@ -1706,25 +1706,28 @@ export const broadcastTemplate = async (
       }
 
       if (c.type === "BUTTONS" && Array.isArray(c.buttons) && c.buttons.length > 0) {
-        c.buttons.forEach((btn, buttonIndex) => {
+        for (const [buttonIndex, btn] of c.buttons.entries()) {
           if (btn.type === "URL" && btn.url) {
             const matches = Array.from(btn.url.matchAll(/\{\{(\d+)\}\}/g));
             if (matches.length > 0) {
-              const params = matches.map(m => {
+              const params = matches.map(async m => {
                 const paramNum = m[1];
                 const key = `button_${buttonIndex}_${paramNum}`;
+                const paramText = templateParameters?.[key] ?? "";
+                const resolvedText = await resolveContactAttributes(paramText, recipient);
                 return {
                   type: "text" as const,
-                  text: templateParameters?.[key] ?? ""
+                  text: resolvedText
                 };
               });
               // Only add button component if we have parameters
-              if (params.some(param => param.text && param.text.trim() !== "")) {
+              const resolvedParams = await Promise.all(params);
+              if (resolvedParams.some(param => param.text && param.text.trim() !== "")) {
                 sendComponents.push({
                   type: "button",
                   sub_type: "url",
                   index: buttonIndex.toString(),
-                  parameters: params
+                  parameters: resolvedParams
                 });
               }
             }
@@ -1756,7 +1759,7 @@ export const broadcastTemplate = async (
               index: buttonIndex.toString()
             });
           }
-        });
+        };
       }
     }
 
