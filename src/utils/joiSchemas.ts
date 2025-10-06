@@ -16,7 +16,7 @@ export const billingInformationValidation = Joi.object({
 });
 
 // WhatsApp number pattern validation
-const whatsappNumberPattern = /^[1-9]\d{1,14}$/;
+const whatsappNumberPattern = /^[0-9]\d{1,14}$/;
 const templateNamePattern = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
 
 // 1. Chatbot Start Validation
