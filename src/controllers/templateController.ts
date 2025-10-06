@@ -1714,7 +1714,7 @@ export const broadcastTemplate = async (
                 const paramNum = m[1];
                 const key = `button_${buttonIndex}_${paramNum}`;
                 const paramText = templateParameters?.[key] ?? "";
-                const resolvedText = await resolveContactAttributes(paramText, recipient);
+                const resolvedText = await resolveContactAttributes(paramText, recipient, true);
                 return {
                   type: "text" as const,
                   text: resolvedText
