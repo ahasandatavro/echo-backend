@@ -194,6 +194,10 @@ export const deleteNodeByChatId = async (req: Request, res: Response) => {
       where: { chatId },
     });
 
+    const deletedVariables = await prisma.variable.deleteMany({
+      where: { chatbotId: chatId },
+    });
+
     // Optionally delete the chatbot itself (if applicable)
     const deletedChatbot = await prisma.chatbot.delete({
       where: { id: chatId },
