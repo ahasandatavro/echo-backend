@@ -103,7 +103,7 @@ export const sendInteractiveButtonMessageValidation = Joi.object({
       then: Joi.string().optional(),
       otherwise: Joi.forbidden()
     })
-  }).optional(),
+  }).unknown().optional(),
   body: Joi.string().min(1).max(1024).required()
     .messages({
       'string.min': 'Body text cannot be empty',
