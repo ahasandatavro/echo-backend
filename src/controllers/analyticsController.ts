@@ -448,7 +448,7 @@ export const getChatbotAnalytics = async (req: Request, res: Response) => {
       // Unique users (contacts)
       const userMap = new Map();
       conversations.forEach((conv) => {
-        if (conv.contactId) userMap.set(conv.contactId, conv);
+        if (conv.recipient) userMap.set(conv.recipient, conv);
       });
       const totalUsers = userMap.size;
       // Completed users: those whose lastNodeId equals the last node in the flow
