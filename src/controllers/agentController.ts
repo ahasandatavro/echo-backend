@@ -77,7 +77,6 @@ export const createAgent = async (req: Request, res: Response) => {
                 phoneNumber,
                 agent: true, // Mark as an agent
                 createdById: userId, // Link to creator
-                businessAccount: { connect: creator.businessAccount.map(ba => ({ id: ba.id })) },
                 selectedPhoneNumberId: creator.selectedPhoneNumberId,
                 selectedWabaId: creator.selectedWabaId,
                 emailVerified: false,
