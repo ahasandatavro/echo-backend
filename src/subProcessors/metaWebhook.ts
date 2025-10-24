@@ -726,7 +726,51 @@ export const processWebhookChange = async (change: any, io: any) => {
       // Handle history event
       console.log("History event:", change.value);
       break;
-
+      case "business_capability_update": 
+        const v = change.value || {};
+  
+        // detect current and previous limits
+        const currentLimit =
+          v.messaging_limit ||
+          v.max_daily_conversations_per_business ||
+          v.new_limit ||
+          "UNKNOWN";
+        const previousLimit =
+          v.previous_limit ||
+          v.previous_max_daily_conversations_per_business ||
+          "N/A";
+  
+        const summary = `🚀 WhatsApp messaging limit changed: ${previousLimit} ➜ ${currentLimit}`;
+        console.log(summary);
+        
+        // Store the messaging limit tier in the database
+        try {
+          // Get phone number ID from metadata if available
+          const phoneNumberId = change.value?.metadata?.phone_number_id;
+          
+          if (phoneNumberId && currentLimit !== "UNKNOWN") {
+            // Find the business phone number and update the messaging limit tier
+            const businessPhoneNumber = await prisma.businessPhoneNumber.findFirst({
+              where: { metaPhoneNumberId: phoneNumberId }
+            });
+            
+            if (businessPhoneNumber) {
+              await prisma.businessPhoneNumber.update({
+                where: { id: businessPhoneNumber.id },
+                data: { messagingLimitTier: currentLimit }
+              });
+              console.log(`Updated messaging limit tier for phone number ${phoneNumberId}: ${currentLimit}`);
+            } else {
+              console.warn(`Business phone number not found for phone number ID: ${phoneNumberId}`);
+            }
+          } else {
+            console.log("No phone number ID found in metadata or current limit is unknown");
+          }
+        } catch (error) {
+          console.error("Error updating messaging limit tier:", error);
+        }
+        
+        break;
     case "template_category_update":
       // Handle template category update
       await updateTemplateCategoryInDb(change.value);
