@@ -637,7 +637,7 @@ export const handleChatbotTrigger = async (text: string, recipient: string, phon
   if (chatbot) {
     await prisma.conversation.update({
       where: {id: conversation.id},
-      data: {answeringQuestion: false},
+      data: {answeringQuestion: false, chatbotId: chatbot.id},
     });
     await processChatFlow(chatbot.id, recipient, phoneNumberId);
   }
