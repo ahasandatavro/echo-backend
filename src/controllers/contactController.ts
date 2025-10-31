@@ -1835,6 +1835,7 @@ export const sendMessageController = async (req: Request, res: Response) => {
       }
 
       // Send message to WhatsApp using your existing function
+      if (text && !text.startsWith("TriggerChatbot:")){
       await sendMessage(
         contact.phoneNumber,
         { type: messageType, ...messageContent },
@@ -1842,7 +1843,7 @@ export const sendMessageController = async (req: Request, res: Response) => {
         user.userId,
         false,
         dbUser.selectedPhoneNumberId
-      );
+      );}
     }
 
 
