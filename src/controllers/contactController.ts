@@ -294,6 +294,7 @@ export const getAllImportedContacts = async (req: Request, res: Response) => {
         favorite: true,
         createdAt: true,
         updatedAt: true,
+        source: true,
       },
       skip: offset,
       take: limitNumber,
@@ -326,6 +327,7 @@ export const getAllImportedContacts = async (req: Request, res: Response) => {
           favorite: true,
           createdAt: true,
           updatedAt: true,
+          source:true
         },
         skip: offset,
         take: limitNumber,
@@ -1412,9 +1414,9 @@ export const addTag = async (req: Request, res: Response) => {
     if (!contact) return res.status(404).json({ message: "Contact not found" });
 
     // Use the contact's userId or get from the current user
-    let userId = contact.userId;
+    const reqUser: any = req.user;
+    let userId = reqUser.userId;
     if (!userId) {
-      const reqUser: any = req.user;
       if (reqUser && reqUser.userId) {
         userId = reqUser.userId;
         

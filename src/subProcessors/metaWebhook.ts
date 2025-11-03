@@ -1428,6 +1428,8 @@ const evaluateRuleConditions = async (
           attrValue = contact.sendSMS;
           break;
         case "Source":
+          attrValue = contact.source;
+          break;
         case "Channel":
           attrValue = contact.source;
           break;
@@ -2513,6 +2515,8 @@ const evaluateRuleConditionsForNodeAction = async (
           attrValue = contact.sendSMS;
           break;
         case "Source":
+          attrValue = contact.source;
+          break;
         case "Channel":
           attrValue = contact.source;
           break;
