@@ -702,7 +702,7 @@ export const isValidWebhookRequest = (entry: any): boolean => {
   return entry && Array.isArray(entry);
 };
 
-export const processWebhookChange = async (change: any, io: any) => {
+export const  processWebhookChange = async (change: any, io: any) => {
   // console.log("Meta event:", JSON.stringify(change, null, 2));
   switch (change.field) {
     case "message_template_status_update":
@@ -1335,17 +1335,25 @@ const evaluateRuleConditions = async (
   // 1️⃣ Keyword Filter
   if (conditions.keywordFilter) {
     const text = message?.text?.body || "";
+    const { keywords, threshold, matchType } = conditions.keywordFilter;
 
-    // Get all keywords to perform advanced matching
-    const allKeywords = await prisma.keyword.findMany();
+    if (keywords) {
+      // Parse comma-separated keywords and create keyword objects
+      const keywordArray = keywords.split(',').map((kw: string, index: number) => ({
+        id: index,
+        value: kw.trim(),
+        matchType: matchType || 'FUZZY',
+        fuzzyPercent: threshold || 80
+      }));
 
-    // Use the new matching logic to find the best matching keyword
-    const matchResult = findMatchingKeyword(text, allKeywords);
-    const keyword = matchResult?.keyword;
+      // Use the matching logic to find if any keyword matches
+      const matchResult = findMatchingKeyword(text, keywordArray);
 
-    if (keyword) {
-      return false;
 
+      // Return false if NO match found (condition not met)
+      if (!matchResult) {
+        return false;
+      }
     }
   }
   if (conditions.contactFilter) {
