@@ -1356,17 +1356,24 @@ const evaluateRuleConditions = async (
       }
     }
   }
-  if (conditions.contactFilter) {
+  if (conditions.selectedFilter === "contact") {
     const {operator, value} = conditions.contactFilter;
     const contactPhoneNumber = contact.phoneNumber;
+    const contactCreationTime = contact.createdAt;
+
+    // Calculate time difference in seconds since contact creation
+    const now = new Date();
+    const timeDifferenceInSeconds = (now.getTime() - new Date(contactCreationTime).getTime()) / 1000;
 
     switch (operator) {
       case "exists":
-        if (!contactPhoneNumber) return false;
+        // Contact "exists" if it was created more than 30 seconds ago
+        if (timeDifferenceInSeconds < 0.20) return false;
         break;
 
       case "not_exists":
-        if (contactPhoneNumber) return false;
+        // Contact "not_exists" if it was created less than 30 seconds ago (new contact)
+        if (timeDifferenceInSeconds >= 0.20) return false;
         break;
 
       case "equals":
@@ -2453,13 +2460,20 @@ const evaluateRuleConditionsForNodeAction = async (
   if (conditions.contactFilter) {
     const {operator, value} = conditions.contactFilter;
     const contactPhoneNumber = contact.phoneNumber;
+    const contactCreationTime = contact.createdAt;
+
+    // Calculate time difference in seconds since contact creation
+    const now = new Date();
+    const timeDifferenceInSeconds = (now.getTime() - new Date(contactCreationTime).getTime()) / 1000;
 
     switch (operator) {
       case "exists":
-        if (!contactPhoneNumber) return false;
+        // Contact "exists" if it was created more than 30 seconds ago
+        if (timeDifferenceInSeconds < 0.20) return false;
         break;
       case "not_exists":
-        if (contactPhoneNumber) return false;
+        // Contact "not_exists" if it was created less than 30 seconds ago (new contact)
+        if (timeDifferenceInSeconds >= 0.20) return false;
         break;
       case "equals":
         if (contactPhoneNumber !== value) return false;
