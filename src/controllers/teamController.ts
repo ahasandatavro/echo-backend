@@ -6,9 +6,16 @@ export const getTeams = async (req: Request, res: Response): Promise<void> => {
   try {
     const { page = "1", limit = "5", search = "" } = req.query;
     const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
+    const user: any = req.user;
 
-    // Build where object for search
-    const where: any = {};
+    // Build where object for search and user filtering
+    const where: any = {
+      users: {
+        some: {
+          id: user.userId
+        }
+      }
+    };
     if (search) {
       where.name = { contains: search as string, mode: "insensitive" };
     }

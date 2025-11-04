@@ -130,7 +130,10 @@ export const processWebhookMessage = async (recipient: string, message: any, age
         messageType: mediaType || "text",
       },
     });
-
+   await prisma.conversation.update({
+    where: {id: conversation.id},
+    data: {},
+   });
     return {
       id: message.id,
       sender: "them",

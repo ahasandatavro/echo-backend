@@ -283,7 +283,8 @@ export const performGoogleSheetAction = async (
     variables: any[]
   },
   currentNode: any,
-  recipient: string
+  recipient: string,
+  agentPhoneNumberId: string | undefined
 ): Promise<any> => {
   try {
     // Step 1: Find the chatbot and its owner
@@ -311,7 +312,7 @@ export const performGoogleSheetAction = async (
     auth.setCredentials({access_token: ownerAccessToken});
 
     const sheets = google.sheets({version: "v4", auth});
-
+    let refColumnIndex: any;
     const {action, spreadsheetId, sheetName, updateInAndBy, referenceColumn, variables} = payload;
 
     // Step 3: Perform the specified action
@@ -342,7 +343,7 @@ export const performGoogleSheetAction = async (
             // Resolve variable if it contains "@"
             if (typeof variable.value === "string" && variable.value.includes("@")) {
               try {
-                const resolvedValue = await resolveVariables(variable.value, currentNode.chatId);
+                const resolvedValue = await resolveVariables(variable.value, currentNode.chatId, recipient, agentPhoneNumberId);
                 return resolvedValue || ""; // Ensure resolvedValue is a valid string
               } catch (error) {
                 console.error("Error resolving variable:", error);
@@ -373,106 +374,148 @@ export const performGoogleSheetAction = async (
         console.log("Row successfully added.");
         return true;
 
-      case "update":
+      case "update": {
         if (!referenceColumn || !referenceColumn.name || !referenceColumn.value) {
           console.error("Invalid payload: Reference column data is missing.");
           return false;
         }
 
-        // Read existing rows
+        const tabName = spreadsheetId.sheetName || sheetName;
+
+        // Read all rows once (small sheets) — or narrow to A1:Z if you prefer
         const readResponse = await sheets.spreadsheets.values.get({
           spreadsheetId: spreadsheetId.id,
-          range: spreadsheetId.sheetName,
+          range: `${tabName}!A1:Z100000`,
         });
 
         const rows = readResponse.data.values || [];
-        headerRow = rows[0];
-        let refColumnIndex = headerRow.indexOf(referenceColumn.name);
+        if (!rows.length) return false;
 
+        const headerRow = rows[0];
+        const refColumnIndex = headerRow.indexOf(referenceColumn.name);
         if (refColumnIndex === -1) {
-          console.error("Reference column not found in the sheet.");
+          console.error(`Reference column "${referenceColumn.name}" not found. Available: ${headerRow.join(", ")}`);
           return false;
         }
 
-        // Find the row to update
-        const rowIndex = rows.findIndex(
-          (row: any) => row[refColumnIndex] === referenceColumn.value
+        // Normalize comparison (stringify + trim) so "123" === 123 and whitespace doesn't break it
+        const refVal = String(referenceColumn.value).trim();
+        const rowIndex = rows.findIndex((row, i) =>
+          i > 0 && String((row?.[refColumnIndex] ?? "")).trim() === refVal
         );
-
         if (rowIndex === -1) {
           console.error("Row not found for the reference column value.");
           return false;
         }
 
-        // Update the row with resolved variables
+        // Ensure the target row has at least header length
+        const target = Array.from({length: headerRow.length}, (_, i) => rows[rowIndex]?.[i] ?? "");
+
+        // Apply updates; resolve @vars / {{contactAttrs}} like in your "add" case
         for (const update of updateInAndBy || []) {
           const updateIndex = headerRow.indexOf(update.name);
-          if (updateIndex !== -1) {
-            if (update.value.startsWith("@")) {
-              // Resolve variable if it starts with '@'
-              try {
-                const resolvedValue = await resolveVariables(update.value, currentNode.chatId);
-                rows[rowIndex][updateIndex] = resolvedValue || ""; // Replace with resolved value or empty string
-              } catch (error) {
-                console.error("Error resolving variable:", error);
-                rows[rowIndex][updateIndex] = ""; // Default to empty string on error
-              }
-            } else {
-              // If no '@', use the value directly
-              rows[rowIndex][updateIndex] = update.value;
+          if (updateIndex === -1) continue;
+
+          let newVal = update.value;
+          try {
+            if (typeof newVal === "string" && newVal.startsWith("@")) {
+              newVal = await resolveVariables(newVal, currentNode.chatId, recipient, agentPhoneNumberId);
+            } else if (typeof newVal === "string" && newVal.includes("{{")) {
+              newVal = await resolveContactAttributes(newVal, recipient);
             }
+          } catch (e) {
+            console.error("Error resolving variable:", e);
+            newVal = "";
           }
+          target[updateIndex] = (typeof newVal === "string" || typeof newVal === "number") ? newVal : "";
         }
 
-        // Write updated rows back to the spreadsheet
+        // Update ONLY the target row (1-based A1 notation)
+        const rowNumber = rowIndex + 1;
         await sheets.spreadsheets.values.update({
           spreadsheetId: spreadsheetId.id,
-          range: `${spreadsheetId.sheetName}!A1:Z${rows.length}`, // Adjust range as needed
+          range: `${tabName}!A${rowNumber}:Z${rowNumber}`,
           valueInputOption: "USER_ENTERED",
-          requestBody: {values: rows},
+          requestBody: {values: [target]},
         });
 
-        console.log("Rows successfully updated.");
+        console.log("Row successfully updated.");
         return true;
+      }
 
-      case "delete":
+      case "delete": {
         if (!referenceColumn || !referenceColumn.name || !referenceColumn.value) {
           throw new Error("Invalid payload: Reference column data is missing.");
         }
 
-        // Read existing rows
-        const deleteResponse = await sheets.spreadsheets.values.get({
-          spreadsheetId: spreadsheetId.id,
-          range: spreadsheetId.sheetName,
-        });
+        const tabName = spreadsheetId.sheetName || sheetName;
 
-        const rowsToDelete = deleteResponse.data.values || [];
-        refColumnIndex = rowsToDelete[0].indexOf(referenceColumn.name);
-
-        if (refColumnIndex === -1) {
-          throw new Error("Reference column not found in the sheet.");
-        }
-
-        // Find the row to delete
-        const rowIndexToDelete = rowsToDelete.findIndex(
-          (row: any) => row[refColumnIndex] === referenceColumn.value
+        // 1) Get the real sheetId (gid) for this tab
+        const meta = await sheets.spreadsheets.get({spreadsheetId: spreadsheetId.id});
+        const theSheet = meta.data.sheets?.find(
+          s => s.properties?.title === tabName
         );
 
-        if (rowIndexToDelete === -1) {
-          throw new Error("Row not found for deletion.");
+        const theSheetId = theSheet?.properties?.sheetId;
+        if (theSheetId === undefined) {
+          throw new Error(`Sheet "${tabName}" not found in spreadsheet.`);
         }
 
-        rowsToDelete.splice(rowIndexToDelete, 1); // Remove the row
-
-        // Write the updated rows back to the spreadsheet
-        await sheets.spreadsheets.values.update({
+        // 2) Read all rows from the tab
+        const read = await sheets.spreadsheets.values.get({
           spreadsheetId: spreadsheetId.id,
-          range: `${spreadsheetId.sheetName}!A1:Z${rowsToDelete.length}`, // Adjust range as needed
-          valueInputOption: "USER_ENTERED",
-          requestBody: {values: rowsToDelete},
+          range: `${tabName}!A1:Z100000`,
         });
-        console.log("Rows successfully deleted.");
-        return true;
+        const rows = read.data.values || [];
+        if (rows.length === 0) return true; // nothing to do
+
+        // 3) Find the reference column index in the header
+        const header = rows[0];
+        const refColIdx = header.indexOf(referenceColumn.name);
+        if (refColIdx === -1) {
+          throw new Error(`Reference column "${referenceColumn.name}" not found. Available: ${header.join(", ")}`);
+        }
+
+        // 4) Collect all data-row indices (grid indices) that match the value
+        // grid index is 0-based including header; header is row 0 -> data starts at 1
+        const toDeleteGridIdx: number[] = [];
+        for (let i = 1; i < rows.length; i++) {
+          const cell = rows[i]?.[refColIdx];
+          // normalize both sides to string to avoid "123" vs 123 mismatches
+          if (String(cell) === String(referenceColumn.value)) {
+            toDeleteGridIdx.push(i);
+          }
+        }
+        if (toDeleteGridIdx.length === 0) return true;
+
+        // 5) Build deleteDimension requests in DESC order so indices don’t shift
+        toDeleteGridIdx.sort((a, b) => b - a);
+        const requests = toDeleteGridIdx.map(idx => ({
+          deleteDimension: {
+            range: {
+              sheetId: theSheetId,
+              dimension: "ROWS",
+              startIndex: idx,       // inclusive
+              endIndex: idx + 1,     // exclusive
+            },
+          },
+        }));
+
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId: spreadsheetId.id,
+          requestBody: {requests},
+        });
+
+        // 6) Optional verification
+        const verify = await sheets.spreadsheets.values.get({
+          spreadsheetId: spreadsheetId.id,
+          range: `${tabName}!A1:Z100000`,
+        });
+        const vrows = verify.data.values || [];
+        const remain = vrows.filter((r, i) => i > 0 && String(r?.[refColIdx]) === String(referenceColumn.value));
+        console.log(`Verification: ${remain.length} rows remain with "${referenceColumn.value}"`);
+        return remain.length === 0;
+      }
 
       default:
         console.error(`Invalid action "${action}" specified.`);
@@ -546,7 +589,7 @@ export const handleChatbotTrigger = async (text: string, recipient: string, phon
     where: {metaPhoneNumberId: phoneNumberId},
   });
   let conversation = await prisma.conversation.findFirst({
-    where: {recipient, businessPhoneNumberId: bp?.id, chatbotId: chatbot?.id},
+    where: {recipient, businessPhoneNumberId: bp?.id},
     orderBy: {
       updatedAt: 'desc', // Orders by the most recently updated conversation
     },
@@ -659,7 +702,7 @@ export const isValidWebhookRequest = (entry: any): boolean => {
   return entry && Array.isArray(entry);
 };
 
-export const processWebhookChange = async (change: any, io: any) => {
+export const  processWebhookChange = async (change: any, io: any) => {
   // console.log("Meta event:", JSON.stringify(change, null, 2));
   switch (change.field) {
     case "message_template_status_update":
@@ -715,20 +758,91 @@ const graphFieldMap: Record<string, string> = {
 };
 
 /**
+ * Check if there are any previous messages between the contact and business phone number
+ */
+async function hasPreviousMessages(contactPhoneNumber: string, businessPhoneNumberId: string): Promise<boolean> {
+  try {
+    // Get the business phone number record
+    const businessPhoneNumber = await prisma.businessPhoneNumber.findFirst({
+      where: { metaPhoneNumberId: businessPhoneNumberId }
+    });
+
+    if (!businessPhoneNumber) {
+      return false;
+    }
+
+    // Find the contact
+    const contact = await prisma.contact.findUnique({
+      where: { phoneNumber: contactPhoneNumber }
+    });
+
+    if (!contact) {
+      return false;
+    }
+
+    // Check for any previous messages in conversations associated with this business phone number
+    const previousMessages = await prisma.message.findFirst({
+      where: {
+        contactId: contact.id,
+        conversation: {
+          businessPhoneNumberId: businessPhoneNumber.id
+        }
+      }
+    });
+
+    return !!previousMessages;
+  } catch (error) {
+    console.error('Error checking previous messages:', error);
+    return false;
+  }
+}
+
+/**
  * Decide whether this payload should trigger the hook for the given UI-code.
  */
-function matchesEvent(uiCode: string, value: any): boolean {
+async function matchesEvent(uiCode: string, value: any): Promise<boolean> {
   const msgs = Array.isArray(value.messages) ? value.messages : [];
   const statuses = Array.isArray(value.statuses) ? value.statuses : [];
 
   switch (uiCode) {
     case "MSG_RECEIVED":
-    case "NEW_CONTACT_MSG":
       // any inbound (non-template) message
       return msgs.some((m: any) =>
         m.from !== value.metadata.display_phone_number &&
         m.type !== "template"
       );
+
+    case "NEW_CONTACT_MSG":
+      // Check if this is an inbound non-template message AND if there are no previous messages
+      const hasInboundMessage = msgs.some((m: any) =>
+        m.from !== value.metadata.display_phone_number &&
+        m.type !== "template"
+      );
+      
+      if (!hasInboundMessage) {
+        return false;
+      }
+
+      // Get the first inbound message to check contact
+      const inboundMessage = msgs.find((m: any) =>
+        m.from !== value.metadata.display_phone_number &&
+        m.type !== "template"
+      );
+
+      if (!inboundMessage) {
+        return false;
+      }
+
+      // Check if there are any previous messages between this contact and business
+      const phoneNumberId = value?.metadata?.phone_number_id;
+      const contactPhoneNumber = inboundMessage.from;
+      
+      if (!phoneNumberId || !contactPhoneNumber) {
+        return false;
+      }
+
+      const hasPrevious = await hasPreviousMessages(contactPhoneNumber, phoneNumberId);
+      return !hasPrevious; // Only trigger for NEW contacts (no previous messages)
 
     case "MSG_REPLIED":
       // user reply (inbound), template or text
@@ -742,7 +856,7 @@ function matchesEvent(uiCode: string, value: any): boolean {
         s.status === "sent" &&
         (
           !s.biz_opaque_callback_data ||             // no biz data at all
-          !/type=template/.test(s.biz_opaque_callback_data)  // or data present but no type=template
+          /chatId=\d+/.test(s.biz_opaque_callback_data)  // or data present but no type=template
         )
       );
 
@@ -751,7 +865,7 @@ function matchesEvent(uiCode: string, value: any): boolean {
       return statuses.some((s: any) =>
         s.status === "sent" &&
         typeof s.biz_opaque_callback_data === "string" &&
-        /type=template/.test(s.biz_opaque_callback_data)
+        /broadcastId=\d+/.test(s.biz_opaque_callback_data)
       );
 
     case "MSG_DELIVERED":
@@ -793,13 +907,21 @@ export const triggerMyWebhooks = async (change: any) => {
 
   // 3) for each hook, only fire if matchesEvent says "yes"
   await Promise.all(hooks.map(async hook => {
-    if (!matchesEvent(hook.eventTypes, change.value)) {
+    if (!(await matchesEvent(hook.eventTypes, change.value))) {
       return; // skip it
     }
     // Use the new logging function
     await executeWebhookWithLogging(
       hook,
-      {eventType: graphField},
+      {
+        eventType: graphField,
+        exactEventType: hook.eventTypes,
+        agentPhoneNumber: agentPhoneNumber,
+        contact: change.value?.contacts?.[0]?.profile?.name||change.value?.statuses?.[0]?.recipient_id,
+        message: change.value?.messages?.[0],
+        wamid: change.value?.statuses?.[0]?.id,
+        timestamp: change.value?.statuses?.[0]?.timestamp
+      },
       graphField,
       hook.businessPhoneNumberId
     );
@@ -914,14 +1036,6 @@ export const processMessageUpdate = async (value: any, io: any) => {
 // 🔔 Step 4: Emit only to those eligible
   const messageAssignedEmails = finalRecipients.map((u) => u.email);
 
-  if (messageAssignedEmails.length > 0) {
-    io.emit("messageAssigned", {
-      recipients: messageAssignedEmails,
-      contactName: finalContact.name || finalContact.phoneNumber,
-      contactId: finalContact.id,
-      from: sender,
-    });
-  }
   if (!sender) return;
 
 
@@ -1221,30 +1335,45 @@ const evaluateRuleConditions = async (
   // 1️⃣ Keyword Filter
   if (conditions.keywordFilter) {
     const text = message?.text?.body || "";
+    const { keywords, threshold, matchType } = conditions.keywordFilter;
 
-    // Get all keywords to perform advanced matching
-    const allKeywords = await prisma.keyword.findMany();
+    if (keywords) {
+      // Parse comma-separated keywords and create keyword objects
+      const keywordArray = keywords.split(',').map((kw: string, index: number) => ({
+        id: index,
+        value: kw.trim(),
+        matchType: matchType || 'FUZZY',
+        fuzzyPercent: threshold || 80
+      }));
 
-    // Use the new matching logic to find the best matching keyword
-    const matchResult = findMatchingKeyword(text, allKeywords);
-    const keyword = matchResult?.keyword;
+      // Use the matching logic to find if any keyword matches
+      const matchResult = findMatchingKeyword(text, keywordArray);
 
-    if (keyword) {
-      return false;
 
+      // Return false if NO match found (condition not met)
+      if (!matchResult) {
+        return false;
+      }
     }
   }
-  if (conditions.contactFilter) {
+  if (conditions.selectedFilter === "contact") {
     const {operator, value} = conditions.contactFilter;
     const contactPhoneNumber = contact.phoneNumber;
+    const contactCreationTime = contact.createdAt;
+
+    // Calculate time difference in seconds since contact creation
+    const now = new Date();
+    const timeDifferenceInSeconds = (now.getTime() - new Date(contactCreationTime).getTime()) / 1000;
 
     switch (operator) {
       case "exists":
-        if (!contactPhoneNumber) return false;
+        // Contact "exists" if it was created more than 30 seconds ago
+        if (timeDifferenceInSeconds < 0.20) return false;
         break;
 
       case "not_exists":
-        if (contactPhoneNumber) return false;
+        // Contact "not_exists" if it was created less than 30 seconds ago (new contact)
+        if (timeDifferenceInSeconds >= 0.20) return false;
         break;
 
       case "equals":
@@ -1299,6 +1428,8 @@ const evaluateRuleConditions = async (
           attrValue = contact.sendSMS;
           break;
         case "Source":
+          attrValue = contact.source;
+          break;
         case "Channel":
           attrValue = contact.source;
           break;
@@ -1365,8 +1496,8 @@ const evaluateRuleConditions = async (
 
       // Get user's timezone for working hours check
       const user = await prisma.user.findFirst({
-        where: { selectedPhoneNumberId: phoneNumberId },
-        include: { businessAccount: true }
+        where: {selectedPhoneNumberId: phoneNumberId},
+        include: {businessAccount: true}
       });
       const userTimezone = user?.businessAccount?.[0]?.timeZone || 'UTC';
 
@@ -1378,7 +1509,7 @@ const evaluateRuleConditions = async (
       console.log(`   - Working Hours:`, JSON.stringify(workingHours, null, 2));
 
       // Use the enhanced isWithinWorkingHours function with timezone support
-      const { isWithinWorkingHours } = await import('../processors/metaWebhook/keywordProcessor');
+      const {isWithinWorkingHours} = await import('../processors/metaWebhook/keywordProcessor');
       const isWithin = isWithinWorkingHours(workingHours, userTimezone);
 
       console.log(`📊 Rule working hours check result: ${isWithin ? 'WITHIN HOURS' : 'OUTSIDE HOURS'}`);
@@ -2331,13 +2462,20 @@ const evaluateRuleConditionsForNodeAction = async (
   if (conditions.contactFilter) {
     const {operator, value} = conditions.contactFilter;
     const contactPhoneNumber = contact.phoneNumber;
+    const contactCreationTime = contact.createdAt;
+
+    // Calculate time difference in seconds since contact creation
+    const now = new Date();
+    const timeDifferenceInSeconds = (now.getTime() - new Date(contactCreationTime).getTime()) / 1000;
 
     switch (operator) {
       case "exists":
-        if (!contactPhoneNumber) return false;
+        // Contact "exists" if it was created more than 30 seconds ago
+        if (timeDifferenceInSeconds < 0.20) return false;
         break;
       case "not_exists":
-        if (contactPhoneNumber) return false;
+        // Contact "not_exists" if it was created less than 30 seconds ago (new contact)
+        if (timeDifferenceInSeconds >= 0.20) return false;
         break;
       case "equals":
         if (contactPhoneNumber !== value) return false;
@@ -2377,6 +2515,8 @@ const evaluateRuleConditionsForNodeAction = async (
           attrValue = contact.sendSMS;
           break;
         case "Source":
+          attrValue = contact.source;
+          break;
         case "Channel":
           attrValue = contact.source;
           break;

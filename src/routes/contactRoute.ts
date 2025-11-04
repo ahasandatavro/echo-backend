@@ -13,6 +13,8 @@ import {
   updateAttribute,
   getNotes,
   addNote,
+  editNote,
+  deleteNote,
   getTags,
   addTag,
   removeTag,
@@ -21,6 +23,7 @@ import {
   expireInactiveChats,
   sendMessageController,
   getAllImportedContacts,
+  getAllSubscribedContacts,
   uploadCSV,
   importContacts,
   triggerChatbotByPhoneNumber,
@@ -40,6 +43,7 @@ const uploadDisk = multer({ dest: "uploads/" });
 const router: Router = Router();
 router.get("/", authenticateJWT, getAllContacts);
 router.get("/imported", authenticateJWT, getAllImportedContacts);
+router.get("/subscribed", authenticateJWT, getAllSubscribedContacts);
 router.get("/attributes", authenticateJWT, getFilteredAttributesByKeyword);
 router.get("/attribute-options", authenticateJWT, getAttributeOptionsForUser);
 router.get("/countries", authenticateJWT, getCountriesByPhoneNumber);
@@ -56,6 +60,8 @@ router.get("/:id/attributes", authenticateJWT, getAttributes);
 router.put("/:id/attributes", authenticateJWT, updateAttribute);
 router.get("/:id/notes", authenticateJWT, getNotes);
 router.post("/:id/notes", authenticateJWT, addNote);
+router.put("/:id/notes/:noteId", authenticateJWT, editNote);
+router.delete("/:id/notes/:noteId", authenticateJWT, deleteNote);
 router.get("/:id/assignments", authenticateJWT, getCurrentAssignments);
 router.get("/:id/status", getContactStatus);
 

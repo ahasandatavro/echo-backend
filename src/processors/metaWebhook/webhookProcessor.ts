@@ -118,6 +118,10 @@ export const processNode = async (
     await closePreviousNodeVisit(conversationId, contactId);
     await createNodeVisit(conversationId, currentNode.id, contactId);
     await bump(currentNode.chatId, "stepsFinished");
+    await prisma.conversation.update({
+      where: {id: conversationId},
+      data: {lastNodeId: currentNode.id},
+    });
     if (currentNode.type === "start") {
       const outgoingEdge = edges.find(
         (edge) => edge.sourceId === currentNode.id
@@ -328,9 +332,27 @@ export const processNode = async (
     if (currentNode.type === "list") {
       const listData = currentNode.data?.list_data;
       if (listData) {
+        // Resolve variables in header text
+        let resolvedHeaderText = listData?.headerText;
+        if (resolvedHeaderText && resolvedHeaderText.includes("@")) {
+          resolvedHeaderText = await resolveVariables(resolvedHeaderText, currentNode?.chatId || currentNode?.chatbotId, recipient, agentPhoneNumberId);
+        }
+        if (resolvedHeaderText && resolvedHeaderText.includes("{{")) {
+          resolvedHeaderText = await resolveContactAttributes(resolvedHeaderText, recipient);
+        }
+
+        // Resolve variables in body text
+        let resolvedBodyText = listData.bodyText;
+        if (resolvedBodyText && resolvedBodyText.includes("@")) {
+          resolvedBodyText = await resolveVariables(resolvedBodyText, currentNode?.chatId || currentNode?.chatbotId, recipient, agentPhoneNumberId);
+        }
+        if (resolvedBodyText && resolvedBodyText.includes("{{")) {
+          resolvedBodyText = await resolveContactAttributes(resolvedBodyText, recipient);
+        }
+
         const listMessage: ListMessage = {
-          text: convertHtmlToWhatsAppText(listData.bodyText) || "Please select an option:",
-          header: listData?.headerText,
+          text: convertHtmlToWhatsAppText(resolvedBodyText) || "Please select an option:",
+          header: resolvedHeaderText,
           footer: listData?.footerText,
           buttonText: listData?.buttonText || "Options",
           sections: listData?.sections || [],
@@ -419,7 +441,7 @@ export const processNode = async (
           };
 
           // Simulate or perform Google Sheet operation
-          const googleSheetResult: boolean = await performGoogleSheetAction(payload, currentNode, recipient); // Define this function
+          const googleSheetResult: boolean = await performGoogleSheetAction(payload, currentNode, recipient, agentPhoneNumberId); // Define this function
           let nextEdge: any;
           if (googleSheetResult == true) {
             nextEdge = edges.find(
@@ -560,6 +582,7 @@ export const processNode = async (
           create: {
             phoneNumber: recipient,
             subscribed: true,
+            sendSMS: true,
             source: "WhatsApp", // Default value if new contact
           },
         });
@@ -615,7 +638,8 @@ export const processNode = async (
           update: {subscribed: false, sendSMS: false}, // Update if found
           create: {
             phoneNumber: recipient,
-            subscribed: true,
+            subscribed: false,
+            sendSMS: false,
             source: "WhatsApp", // Default value if new contact
           },
         });
@@ -1568,13 +1592,13 @@ export const sendMessageWithButtons = async (
         },
       }
     );
-    await storeMessage({
-      recipient,
-      chatbotId: buttonMessage.chatId,
-      messageType: "button",
-      text: bodyText,
-      buttonOptions,
-    }, agentPhoneNumberId);
+    // await storeMessage({
+    //   recipient,
+    //   chatbotId: buttonMessage.chatId,
+    //   messageType: "button",
+    //   text: bodyText,
+    //   buttonOptions,
+    // }, agentPhoneNumberId);
   } catch (error) {
     console.error("Error sending button message:", error);
   }
@@ -1655,7 +1679,16 @@ export const sendQuestion = async (
 ) => {
   try {
     const url = `${metaWhatsAppAPI.baseURL}/${agentPhoneNumberId}/messages`;
-    const textBody = convertHtmlToWhatsAppText(questionMessage.text);
+    
+    // Resolve variables in the question text
+    let resolvedText = questionMessage.text;
+    if (questionMessage.text && questionMessage.text.includes("@")) {
+      resolvedText = await resolveVariables(questionMessage.text, questionMessage.chatId, recipient, agentPhoneNumberId || "");
+    }
+    if (questionMessage.text && questionMessage.text.includes("{{")) {
+      resolvedText = await resolveContactAttributes(questionMessage.text, recipient);
+    }
+    const textBody = convertHtmlToWhatsAppText(resolvedText);
 
     // Filter out only well-formed buttons
     const validOptions = questionMessage.buttons.filter(
@@ -1681,7 +1714,7 @@ export const sendQuestion = async (
         });
       }
 
-      // now send plain‐text fallback
+      // now send plain‐text fallback (using already resolved text)
       const textPayload = {
         messaging_product: "whatsapp",
         to: recipient,
@@ -1701,7 +1734,7 @@ export const sendQuestion = async (
         recipient,
         chatbotId: questionMessage.chatId,
         messageType: "question",
-        text: questionMessage.text,
+        text: resolvedText,
       }, agentPhoneNumberId);
       return;
     }
@@ -1754,7 +1787,7 @@ export const sendQuestion = async (
       recipient,
       chatbotId: questionMessage.chatId,
       messageType: "question",
-      text: questionMessage.text,
+      text: resolvedText,
     }, agentPhoneNumberId);
   } catch (error: any) {
     console.error(
@@ -1858,6 +1891,104 @@ export const storeMessage = async ({
   } catch (error) {
     console.error("❌ Error storing message:", error);
   }
+};
+export const storeTemplateMessage = async ({
+  recipient,
+  chatbotId,
+  messageType,
+  text,
+  status = MessageStatus.SENT,
+  buttonOptions,
+  listItems,
+  templateDetails,
+  brodcastStatus
+}: {
+recipient: string;
+chatbotId?: number | null;
+messageType: string;
+text?: string;
+status?: MessageStatus;
+buttonOptions?: { id: string; title: string }[]; // Store button options as JSON
+listItems?: { id: string; title: string; description?: string }[]; // Store list items as JSON
+templateDetails?: any;
+brodcastStatus?: string;
+}, agentPhoneNumberId?: string) => {
+try {
+// Attempt to find an existing contact by phone number
+let contact = await prisma.contact.findUnique({
+where: {phoneNumber: recipient},
+});
+let conversation;
+
+if (!contact) {
+// If no contact exists, create it along with a nested conversation
+const newContact = await prisma.contact.create({
+data: {
+phoneNumber: recipient,
+name: "Unknown",
+source: "WhatsApp",
+conversations: {
+create: {recipient, chatbotId},
+},
+},
+include: {conversations: true}, // Include nested conversation(s)
+});
+contact = newContact;
+// Retrieve the nested conversation that was just created
+conversation = newContact.conversations[0];
+console.log("✅ New contact and conversation created:", contact, conversation);
+} else {
+// If the contact exists, try to find an existing conversation linked to it
+conversation = await prisma.conversation.findFirst({
+where: {recipient, contactId: contact.id},
+orderBy: {updatedAt: "desc"},
+});
+if (!conversation) {
+const bp=await prisma.businessPhoneNumber.findFirst({
+where: {
+metaPhoneNumberId: agentPhoneNumberId
+}
+});
+// Create a new conversation if one isn't found
+conversation = await prisma.conversation.create({
+data: {recipient, contactId: contact.id, chatbotId, businessPhoneNumberId: bp?.id},
+});
+console.log("✅ New conversation created:", conversation);
+}
+}
+let attachmentUrl;
+if (text?.startsWith("Image:") || text?.startsWith("Audio:") || text?.startsWith("Video:") || text?.startsWith("Document:") || text?.startsWith("Sticker:")) {
+const parts = text.split(/:(.+)/); // Split at the first colon only
+attachmentUrl = parts[1]?.trim();
+text="";
+}
+// Create a new message attached to the conversation and contact
+const savedMessage = await prisma.message.create({
+data: {
+conversationId: conversation.id,
+contactId: contact.id,
+chatbotId,
+sender: "user",
+text,
+messageType,
+buttonOptions: buttonOptions && buttonOptions.length > 0 ? buttonOptions : Prisma.JsonNull,
+listItems: listItems && listItems.length > 0 ? listItems : Prisma.JsonNull,
+status,
+brodcastStatus,
+time: new Date(),
+templateId: templateDetails?.id || null,
+attachment: attachmentUrl || null,
+},
+});
+io.emit("newMessage", {
+recipient: contact.phoneNumber,
+message: savedMessage,
+template: templateDetails || null
+});
+return savedMessage;
+} catch (error) {
+console.error("❌ Error storing message:", error);
+}
 };
 
 // Functions for handling webhook verification

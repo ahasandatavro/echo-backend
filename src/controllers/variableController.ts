@@ -13,19 +13,35 @@ export const getVariables = async (req: Request, res: Response): Promise<void> =
 
 // Create a new variable
 export const createVariable = async (req: Request, res: Response): Promise<void> => {
-  const { name, value, chatbotId, conversationId, nodeId } = req.body;
+  const { name, value, chatbotId, conversationId, nodeId,previousName } = req.body;
   try {
+    if (previousName) {
+    const existingVariable=await prisma.variable.findFirst({
+      where: {
+        name: previousName,
+        chatbotId,
+      },
+    });
+    if (existingVariable) {
+      await prisma.variable.update({
+        where: { id: existingVariable.id },
+        data: { name },
+      });
+      res.status(200).json({ message: 'Variable updated successfully' });
+    }}
+    else{
     const newVariable = await prisma.variable.create({
       data: {
         name,
         value,
         chatbotId,
         conversationId,
-        nodeId,
+        nodeId, 
       },
     });
     res.status(201).json(newVariable);
-  } catch (error: any) {
+  }}
+ catch (error: any) {
     res.status(500).json({ error: 'Failed to create variable', details: error.message });
   }
 };

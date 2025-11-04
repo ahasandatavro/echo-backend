@@ -248,6 +248,7 @@ model Message {
   contact        Contact       @relation(fields: [contactId], references: [id])
   conversation   Conversation? @relation(fields: [conversationId], references: [id])
   template       Template?     @relation(fields: [templateId], references: [id])
+  brodcastStatus String?
 }
 
 model Broadcast {

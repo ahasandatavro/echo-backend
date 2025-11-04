@@ -261,7 +261,8 @@ export const resolveVariables = async (text: string, chatbotId: number, recipien
 
 export const resolveContactAttributes = async (
   text: string,
-  recipient: string
+  recipient: string,
+  dynamicURL?: boolean
 ): Promise<string> => {
   try {
     // Find the contact by phoneNumber
@@ -282,7 +283,11 @@ export const resolveContactAttributes = async (
 
       // Special fields
       if (key === 'name') {
-        replacement = contact.name ?? '';
+        if (dynamicURL) {
+          replacement=encodeURIComponent(contact.name ?? '');
+        } else {
+          replacement = contact.name ?? '';
+        }
       } else if (key === 'phoneNumber') {
         replacement = contact.phoneNumber;
       } else if (contact.attributes) {

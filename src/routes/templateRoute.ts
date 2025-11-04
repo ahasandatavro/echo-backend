@@ -12,7 +12,8 @@ import {
   updateBroadcast,
   getAllApprovedTemplates,
   syncTemplatesController,
-  getBroadcastById
+  getBroadcastById,
+  checkTemplateEditable
 } from "../controllers/templateController";
 import multer from "multer";
 import { authenticateJWT } from "../middlewares/authMiddleware";
@@ -37,6 +38,7 @@ router.put("/brodcast/:id", authenticateJWT, updateBroadcast);
 router.delete("/brodcast/:id", authenticateJWT, deleteBroadcast);
 router.get("/brodcast/:id/stats", authenticateJWT, getBroadcastStats);
 router.get("/:templateName", authenticateJWT, getTemplateByName);
+router.get("/:templateName/editable", authenticateJWT, checkTemplateEditable);
 router.delete("/:templateName", authenticateJWT, deleteTemplate);
 
 

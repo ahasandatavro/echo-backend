@@ -347,7 +347,7 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
                   // Add the team to contact's teams if not already assigned
                   const isTeamAssigned = contact.assignedTeams.some(t => t.id === routingMaterial.teamId);
 
-                  if (!isTeamAssigned && routingMaterial.teamId) {
+                  if ( routingMaterial.teamId) {
                     await prisma.contact.update({
                       where: {id: contact.id},
                       data: {
@@ -375,29 +375,31 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
                       }
                     });
                   }
-                } else {
-                  // Create contact with team assignment
-                  if (routingMaterial.teamId) {
-                    await prisma.contact.create({
-                      data: {
-                        phoneNumber: recipient,
-                        name: "Unknown",
-                        source: "WhatsApp",
-                        assignedTeams: {
-                          connect: {id: routingMaterial.teamId}
-                        }
-                      }
-                    });
-                    console.log(`Created contact ${recipient} with team ID ${routingMaterial.teamId}`);
-                  }
-                }
+                } 
               }
               break;
 
             case "Notification":
               // For Notification type, we don't need immediate action in the webhook,
               // as this would typically generate notifications elsewhere in the system
-              console.log(`Notification routing triggered for ${recipient} with material ID ${routingMaterial.id}`);
+              const contactRecord = await prisma.contact.findUnique({
+                where: {phoneNumber: recipient},
+                select: {id: true}
+              });
+              if (!contactRecord) {
+                throw new Error(`Contact with phoneNumber ${recipient} not found.`);
+              }
+              await prisma.chatStatusHistory.create({
+                data: {
+                  contactId: contactRecord?.id || 0,
+                  newStatus: "Notified",
+                  type: "notification",
+                  note: `New notification from ${recipient}`,
+                  changedById: null,
+                  changedAt: new Date(),
+                }
+              })
+             // console.log(`Notification routing triggered for ${recipient} with material ID ${routingMaterial.id}`);
               break;
           }
 
@@ -481,8 +483,6 @@ const checkAndSendDefaultMaterial = async (
           if (sent) return true;
         }
       }
-    } else {
-      return false;
     }
   }
 
@@ -755,7 +755,7 @@ export const isWithinWorkingHours = (workingHours: WorkingHours, userTimezone?: 
   console.log(`🌍 Timezone-aware working hours check for: ${userTimezone}`);
   console.log(`   - NOTE: Working hours are stored in UTC in database`);
   console.log(`   - Converting current time to user timezone for comparison`);
-  
+
   try {
     // Get current time in user's timezone
     const now = dayjs().tz(userTimezone);
@@ -778,16 +778,16 @@ export const isWithinWorkingHours = (workingHours: WorkingHours, userTimezone?: 
       // 1. Create UTC time objects from the stored times
       // 2. Convert them to the user's timezone for comparison
       // 3. Handle date boundaries properly for overnight shifts
-      
+
       // For overnight shifts, we need to check both current day and previous day
       // because working hours like 11:00 PM - 11:30 PM span across midnight
       const currentDate = now.format('YYYY-MM-DD');
       const previousDate = now.subtract(1, 'day').format('YYYY-MM-DD');
-      
+
       // Try current date first
       let fromUTC = dayjs.utc(`${currentDate} ${timeSlot.from}`);
       let toUTC = dayjs.utc(`${currentDate} ${timeSlot.to}`);
-      
+
       // Convert UTC times to user's timezone for display and comparison
       let fromLocal = fromUTC.tz(userTimezone);
       let toLocal = toUTC.tz(userTimezone);
@@ -803,7 +803,7 @@ export const isWithinWorkingHours = (workingHours: WorkingHours, userTimezone?: 
       let isWithinSlot = false;
       const fromLocalDate = fromLocal.format('YYYY-MM-DD');
       const toLocalDate = toLocal.format('YYYY-MM-DD');
-      
+
       if (fromLocalDate === toLocalDate) {
         // Same day slot
         isWithinSlot = now.isAfter(fromLocal) && now.isBefore(toLocal);
@@ -816,11 +816,11 @@ export const isWithinWorkingHours = (workingHours: WorkingHours, userTimezone?: 
       // If not within current date slot, try previous date slot
       if (!isWithinSlot) {
         console.log(`🔄 Trying previous day slot for overnight working hours...`);
-        
+
         // Try with previous date as base
         fromUTC = dayjs.utc(`${previousDate} ${timeSlot.from}`);
         toUTC = dayjs.utc(`${previousDate} ${timeSlot.to}`);
-        
+
         fromLocal = fromUTC.tz(userTimezone);
         toLocal = toUTC.tz(userTimezone);
 
@@ -831,7 +831,7 @@ export const isWithinWorkingHours = (workingHours: WorkingHours, userTimezone?: 
 
         const fromLocalDatePrev = fromLocal.format('YYYY-MM-DD');
         const toLocalDatePrev = toLocal.format('YYYY-MM-DD');
-        
+
         if (fromLocalDatePrev === toLocalDatePrev) {
           // Same day slot
           isWithinSlot = now.isAfter(fromLocal) && now.isBefore(toLocal);
@@ -839,12 +839,12 @@ export const isWithinWorkingHours = (workingHours: WorkingHours, userTimezone?: 
           // Cross-day slot
           isWithinSlot = now.isAfter(fromLocal) || now.isBefore(toLocal);
         }
-        
+
         if (isWithinSlot) {
           console.log(`✅ Current time is within previous day's working hours slot`);
         }
       }
-      
+
       console.log(`⏰ Checking time slot: ${timeSlot.from}-${timeSlot.to} UTC → ${fromLocal.format('HH:mm')}-${toLocal.format('HH:mm')} ${userTimezone}`);
       console.log(`   - From (UTC): ${fromUTC.format('YYYY-MM-DD HH:mm:ss')} UTC`);
       console.log(`   - From (local): ${fromLocal.format('YYYY-MM-DD HH:mm:ss')} ${userTimezone}`);

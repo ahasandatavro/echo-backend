@@ -120,6 +120,7 @@ export const getAllContacts = async (req: Request, res: Response) => {
         id: true,
         name: true,
         phoneNumber: true,
+        source: true,
         attributes: true,
         subscribed: true,
         sendSMS: true,
@@ -293,6 +294,7 @@ export const getAllImportedContacts = async (req: Request, res: Response) => {
         favorite: true,
         createdAt: true,
         updatedAt: true,
+        source: true,
       },
       skip: offset,
       take: limitNumber,
@@ -310,6 +312,7 @@ export const getAllImportedContacts = async (req: Request, res: Response) => {
       conversationContacts = await prisma.contact.findMany({
         where: {
           id: { in: uniqueConversationContactIds },
+          subscribed: true,
           ...favoriteFilter,
           ...searchFilter,
         },
@@ -324,6 +327,7 @@ export const getAllImportedContacts = async (req: Request, res: Response) => {
           favorite: true,
           createdAt: true,
           updatedAt: true,
+          source:true
         },
         skip: offset,
         take: limitNumber,
@@ -351,6 +355,7 @@ export const getAllImportedContacts = async (req: Request, res: Response) => {
       ? await prisma.contact.count({
           where: {
             id: { in: uniqueConversationContactIds },
+            subscribed: true,
             ...favoriteFilter,
             ...searchFilter,
           },
@@ -362,6 +367,203 @@ export const getAllImportedContacts = async (req: Request, res: Response) => {
 
     // ✅ Format attributes into array of {key, value} objects
     const formattedContacts = contacts.map((contact) => ({
+      ...contact,
+      attributes: Array.isArray(contact.attributes)
+        ? contact.attributes
+        : Object.entries(contact.attributes || {}).map(([key, value]) => ({
+            key,
+            value,
+          })),
+    }));
+
+    res.json({
+      contacts: formattedContacts,
+      pagination: {
+        currentPage: pageNumber,
+        totalPages,
+        totalContacts,
+        limit: limitNumber,
+        hasNextPage: pageNumber < totalPages,
+        hasPreviousPage: pageNumber > 1,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching contacts:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+export const getAllSubscribedContacts = async (req: Request, res: Response) => {
+  try {
+    const user: any = req.user;
+
+    const dbUser = await prisma.user.findFirst({
+      where: { id: user.userId },
+      select: {
+        id: true,
+        agent: true,
+        createdById: true,
+        selectedPhoneNumberId: true,
+      },
+    });
+    if (!dbUser) return res.status(404).json({ error: "User not found" });
+
+    let userIdsToInclude: number[] = [];
+
+    if (dbUser.agent) {
+      // ✅ If agent: include self + same creator + fellow agents
+      const agents = await prisma.user.findMany({
+        where: {
+          createdById: dbUser.createdById || undefined,
+          agent: true,
+        },
+        select: { id: true },
+      });
+
+      userIdsToInclude = [
+        ...agents.map((a) => a.id),
+        dbUser.createdById!,
+        dbUser.id,
+      ];
+    } else {
+      // ✅ If creator: include self + agents created by them
+      const agents = await prisma.user.findMany({
+        where: {
+          createdById: dbUser.id,
+          agent: true,
+        },
+        select: { id: true },
+      });
+
+      userIdsToInclude = [dbUser.id, ...agents.map((a) => a.id)];
+    }
+
+    // Get query parameters
+    const { favorite, search, page = '1', limit = '10' } = req.query;
+    const pageNumber = parseInt(page as string, 10);
+    const limitNumber = parseInt(limit as string, 10);
+    const offset = (pageNumber - 1) * limitNumber;
+    
+    let favoriteFilter = {};
+    let searchFilter = {};
+    
+    if (favorite !== undefined) {
+      const isFavorite = favorite === 'true';
+      favoriteFilter = { favorite: isFavorite };
+    }
+
+    if (search && typeof search === 'string' && search.trim()) {
+      const searchTerm = search.trim();
+      searchFilter = {
+        OR: [
+          {
+            name: {
+              contains: searchTerm,
+              mode: 'insensitive',
+            },
+          },
+          {
+            phoneNumber: {
+              contains: searchTerm,
+              mode: 'insensitive',
+            },
+          },
+        ],
+      };
+    }
+
+    // Step 1: Get business phone number ID for conversation contacts
+    let businessPhone = null;
+    let conversationContactIds: number[] = [];
+    
+    if (dbUser?.selectedPhoneNumberId) {
+      businessPhone = await prisma.businessPhoneNumber.findFirst({
+        where: { metaPhoneNumberId: dbUser.selectedPhoneNumberId },
+        select: { id: true },
+      });
+
+      // Step 2: Get conversation contact IDs (recipients who messaged this business phone)
+      if (businessPhone) {
+        const conversationContacts = await prisma.conversation.findMany({
+          where: { businessPhoneNumberId: businessPhone.id },
+          select: { contactId: true },
+          distinct: ["contactId"],
+        });
+        conversationContactIds = conversationContacts.map((c) => c.contactId).filter((id) => id !== null);
+      }
+    }
+
+    // Step 3: Fetch ALL created contacts (no pagination here)
+    const allCreatedContacts = await prisma.contact.findMany({
+      where: {
+        createdById: {
+          in: userIdsToInclude,
+        },
+        subscribed: true,
+        ...favoriteFilter,
+        ...searchFilter,
+      },
+      select: {
+        id: true,
+        name: true,
+        phoneNumber: true,
+        attributes: true,
+        subscribed: true,
+        sendSMS: true,
+        ticketStatus: true,
+        favorite: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    // Step 4: Fetch ALL conversation contacts that aren't already in created contacts
+    const existingContactIds = new Set(allCreatedContacts.map(c => c.id));
+    const uniqueConversationContactIds = conversationContactIds.filter(id => !existingContactIds.has(id));
+    
+    let allConversationContacts: any[] = [];
+    if (uniqueConversationContactIds.length > 0) {
+      allConversationContacts = await prisma.contact.findMany({
+        where: {
+          id: { in: uniqueConversationContactIds },
+          subscribed: true,
+          ...favoriteFilter,
+          ...searchFilter,
+        },
+        select: {
+          id: true,
+          name: true,
+          phoneNumber: true,
+          attributes: true,
+          subscribed: true,
+          sendSMS: true,
+          ticketStatus: true,
+          favorite: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+    }
+
+    // Step 5: Combine and sort all contacts by createdAt
+    const allContacts = [...allCreatedContacts, ...allConversationContacts]
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    // Step 6: Apply pagination to the combined result
+    const paginatedContacts = allContacts.slice(offset, offset + limitNumber);
+
+    // Step 7: Calculate pagination metadata
+    const totalContacts = allContacts.length;
+    const totalPages = Math.ceil(totalContacts / limitNumber);
+
+    // ✅ Format attributes into array of {key, value} objects
+    const formattedContacts = paginatedContacts.map((contact) => ({
       ...contact,
       attributes: Array.isArray(contact.attributes)
         ? contact.attributes
@@ -497,9 +699,9 @@ export const createContact = async (req: Request, res: Response) => {
 
   try {
     // Get the currently logged-in user if userId is not provided
+    const reqUser: any = req.user;
     let contactUserId = userId;
     if (!contactUserId) {
-      const reqUser: any = req.user;
       if (reqUser && reqUser.userId) {
         contactUserId = reqUser.userId;
       }
@@ -510,6 +712,14 @@ export const createContact = async (req: Request, res: Response) => {
       where: { phoneNumber },
       select: { id: true, createdById: true }
     });
+
+    // Check if existing contact was created by the same user
+    if (existingContact && existingContact.createdById === reqUser.userId) {
+      return res.status(400).json({
+        error: "Contact already exists",
+        message: "A contact with this phone number already exists update instead"
+      });
+    }
 
     // Only check limit if this is a new contact
     if (!existingContact) {
@@ -1109,6 +1319,69 @@ export const addNote = async (req: Request, res: Response) => {
   }
 };
 
+export const editNote = async (req: Request, res: Response) => {
+  try {
+    const { noteId } = req.params;
+    const { note } = req.body;
+    const contactId = parseInt(req.params.id);
+
+    if (!note)
+      return res.status(400).json({ error: "Note content is required" });
+
+    // Check if the note exists and belongs to the contact
+    const existingNote = await prisma.note.findFirst({
+      where: {
+        id: parseInt(noteId),
+        contactId: contactId,
+      },
+    });
+
+    if (!existingNote) {
+      return res.status(404).json({ error: "Note not found" });
+    }
+
+    // Update the note
+    const updatedNote = await prisma.note.update({
+      where: { id: parseInt(noteId) },
+      data: { content: note },
+    });
+
+    res.json({ message: "Note updated", note: updatedNote });
+  } catch (error) {
+    console.error("Error editing note:", error);
+    res.status(500).json({ error: "Failed to edit note" });
+  }
+};
+
+export const deleteNote = async (req: Request, res: Response) => {
+  try {
+    const { noteId } = req.params;
+    const contactId = parseInt(req.params.id);
+
+    // Check if the note exists and belongs to the contact
+    const existingNote = await prisma.note.findFirst({
+      where: {
+        id: parseInt(noteId),
+        contactId: contactId,
+      },
+    });
+
+    if (!existingNote) {
+      return res.status(404).json({ error: "Note not found" });
+    }
+
+    // Delete the note
+    await prisma.note.delete({
+      where: { id: parseInt(noteId) },
+    });
+
+    res.json({ message: "Note deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting note:", error);
+    res.status(500).json({ error: "Failed to delete note" });
+  }
+};
+
 export const getTags = async (req: Request, res: Response) => {
   try {
     const contactId = parseInt(req.params.id);
@@ -1141,9 +1414,9 @@ export const addTag = async (req: Request, res: Response) => {
     if (!contact) return res.status(404).json({ message: "Contact not found" });
 
     // Use the contact's userId or get from the current user
-    let userId = contact.userId;
+    const reqUser: any = req.user;
+    let userId = reqUser.userId;
     if (!userId) {
-      const reqUser: any = req.user;
       if (reqUser && reqUser.userId) {
         userId = reqUser.userId;
         
@@ -1537,13 +1810,6 @@ export const sendMessageController = async (req: Request, res: Response) => {
         templateId: templateId,
         templateDetails: templateDetails
       };  
-      await storeMessage({
-        recipient: contact.phoneNumber,
-        chatbotId,
-        messageType: "template",
-        text: `Template: sent`,
-        templateDetails: templateDetails
-      }, dbUser.selectedPhoneNumberId);
     }
     // ✅ Handle Regular Messages (Text, Media)
     else {
@@ -1738,9 +2004,54 @@ export const importContacts = async (req: Request, res: Response) => {
       return res.status(400).json({ error: "No valid records found" });
     }
 
-    // Count how many new contacts will be created (excluding updates)
+    // Phone number validation function
+    const validatePhoneNumber = (phone: string): { isValid: boolean; error?: string } => {
+      if (!phone || typeof phone !== 'string') {
+        return { isValid: false, error: 'Phone number is required' };
+      }
+
+      // Remove all spaces, dashes, parentheses, plus signs
+      const cleanPhone = phone.replace(/[\s\-().+]/g, '');
+      
+      // Check if it contains only digits
+      if (!/^\d+$/.test(cleanPhone)) {
+        return { isValid: false, error: 'Phone number should contain only numbers' };
+      }
+
+      // Basic length validation (7-15 digits is reasonable for international numbers)
+      if (cleanPhone.length < 7 || cleanPhone.length > 15) {
+        return { isValid: false, error: 'Phone number must be between 7 and 15 digits' };
+      }
+
+      return { isValid: true };
+    };
+
+    // Separate valid and invalid contacts
+    const validRecords: any[] = [];
+    const invalidRecords: any[] = [];
+
+    records.forEach((record, index) => {
+      // Get the phone number field based on mapping
+      const phoneFieldName = mappedColumns.phoneNumber;
+      const phoneValue = phoneFieldName ? record[phoneFieldName] : null;
+      
+      // Validate phone number
+      const validation = validatePhoneNumber(phoneValue);
+      
+      if (validation.isValid) {
+        validRecords.push(record);
+      } else {
+        invalidRecords.push({
+          rowIndex: index,
+          data: record,
+          error: validation.error || 'Invalid phone number'
+        });
+      }
+    });
+
+    // Count how many new contacts will be created (excluding updates) - only from valid records
     let newContactsCount = 0;
-    for (const record of records) {
+    for (const record of validRecords) {
       const contactData: any = {};
       
       // Map fields according to user's selection
@@ -1777,19 +2088,22 @@ export const importContacts = async (req: Request, res: Response) => {
       });
     }
 
-    // Process records in batches
+    // Process only valid records in batches
     const batchSize = 50;
     const results = {
       total: records.length,
+      validContacts: validRecords.length,
+      invalidContacts: invalidRecords.length,
       successful: 0,
       failed: 0,
       new: 0,
       updated: 0,
-      failures: [] as Array<{ rowIndex: number; data: any; error: string }>
+      failures: [...invalidRecords] as Array<{ rowIndex: number; data: any; error: string }>
     };
 
-    for (let i = 0; i < records.length; i += batchSize) {
-      const batch = records.slice(i, i + batchSize);
+    // Process valid records only
+    for (let i = 0; i < validRecords.length; i += batchSize) {
+      const batch = validRecords.slice(i, i + batchSize);
       
       // Process each contact in the batch
       const batchPromises = batch.map(async (record, index) => {
@@ -1835,6 +2149,10 @@ export const importContacts = async (req: Request, res: Response) => {
           if (!contactData.name || !contactData.phoneNumber) {
             throw new Error("Name and phone number are required");
           }
+
+          // Clean the phone number for storage
+          const cleanPhone = contactData.phoneNumber.replace(/[\s\-().+]/g, '');
+          contactData.phoneNumber = cleanPhone;
 
           // Assign default userId if none is provided
           if (!contactData.userId && defaultUserId) {

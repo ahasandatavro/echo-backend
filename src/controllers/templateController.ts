@@ -9,7 +9,8 @@ import { Readable } from "stream";
 import { syncTemplates as syncTemplatesService } from "../services/templateService";
 import { checkBroadcastAccess, checkTemplateLimit } from "../utils/packageUtils";
 import { uploadFileToDigitalOceanHelper } from "../helpers";
-import { storeMessage } from "../processors/metaWebhook/webhookProcessor";
+import { storeMessage, storeTemplateMessage } from "../processors/metaWebhook/webhookProcessor";
+
 interface ButtonData {
   id?: number;
   type: string;      // e.g. "Visit Website", "Call Phone", "Copy offer code", "Quick replies"
@@ -333,13 +334,13 @@ export const createTemplate = async (req: Request, res: Response) => {
     }
 
     // Validate language code format (ISO 639-1 format: xx_XX)
-    const validLanguagePattern = /^[a-z]{2}_[A-Z]{2}$/;
-    if (!validLanguagePattern.test(language)) {
-      return res.status(400).json({
-        error: "Invalid language code format",
-        details: "Language must be in ISO 639-1 format (e.g., 'en_US', 'es_ES')"
-      });
-    }
+    // const validLanguagePattern = /^[a-z]{2}_[A-Z]{2}$/;
+    // if (!validLanguagePattern.test(language)) {
+    //   return res.status(400).json({
+    //     error: "Invalid language code format",
+    //     details: "Language must be in ISO 639-1 format (e.g., 'en_US', 'es_ES')"
+    //   });
+    // }
     const saveAsDraftInitial =
       draft === true || draft === 'true';
 
@@ -1705,25 +1706,28 @@ export const broadcastTemplate = async (
       }
 
       if (c.type === "BUTTONS" && Array.isArray(c.buttons) && c.buttons.length > 0) {
-        c.buttons.forEach((btn, buttonIndex) => {
+        for (const [buttonIndex, btn] of c.buttons.entries()) {
           if (btn.type === "URL" && btn.url) {
             const matches = Array.from(btn.url.matchAll(/\{\{(\d+)\}\}/g));
             if (matches.length > 0) {
-              const params = matches.map(m => {
+              const params = matches.map(async m => {
                 const paramNum = m[1];
                 const key = `button_${buttonIndex}_${paramNum}`;
+                const paramText = templateParameters?.[key] ?? "";
+                const resolvedText = await resolveContactAttributes(paramText, recipient, true);
                 return {
                   type: "text" as const,
-                  text: templateParameters?.[key] ?? ""
+                  text: resolvedText
                 };
               });
               // Only add button component if we have parameters
-              if (params.some(param => param.text && param.text.trim() !== "")) {
+              const resolvedParams = await Promise.all(params);
+              if (resolvedParams.some(param => param.text && param.text.trim() !== "")) {
                 sendComponents.push({
                   type: "button",
                   sub_type: "url",
                   index: buttonIndex.toString(),
-                  parameters: params
+                  parameters: resolvedParams
                 });
               }
             }
@@ -1755,7 +1759,7 @@ export const broadcastTemplate = async (
               index: buttonIndex.toString()
             });
           }
-        });
+        };
       }
     }
 
@@ -1783,11 +1787,16 @@ export const broadcastTemplate = async (
         "Content-Type": "application/json",
       },
     });
-await storeMessage({  recipient,
+ const brodcastRecepient = await prisma.broadcastRecipient.findFirst({
+  where: { broadcastId: broadcastId },
+ });
+ const status=brodcastRecepient?.status=="DELIVERED"||brodcastRecepient?.status=="READ"?"Delivered":"Failed";
+await storeTemplateMessage({  recipient,
   chatbotId: null,
   messageType: "template",
   text: `Template: ${selectedTemplate}`,
-  templateDetails: dbTpl
+  templateDetails: dbTpl,
+  brodcastStatus: status
 }, phoneNumberId);
   } catch (error: any) {
     console.error("Error sending template message:", error.response?.data?.error?.message || error.message);
@@ -1873,6 +1882,12 @@ if (job) {
         where: { id: broadcast.id },
           data: { name }
         });
+        
+      res.status(200).json({
+        success: true,
+        broadcastId: broadcast.id,
+        message: "Broadcast scheduled successfully!"
+      });
       }
     }
   } catch (error: any) {
@@ -2210,6 +2225,93 @@ export const trackTemplateClick = async (req: Request, res: Response) => {
     console.error("Error tracking template click:", error);
     res.status(500).json({
       error: "Failed to track template click",
+      details: error.message
+    });
+  }
+};
+
+export const checkTemplateEditable = async (req: Request, res: Response) => {
+  try {
+    const user: any = req.user;
+    const { templateName } = req.params;
+
+    // // Get user's selected WABA ID
+    // const userRecord = await prisma.user.findUnique({
+    //   where: { id: user.userId },
+    //   select: {
+    //     selectedWabaId: true,
+    //   },
+    // });
+
+    // if (!userRecord?.selectedWabaId) {
+    //   return res.status(400).json({
+    //     error: "No WABA ID selected",
+    //     details: "Please select a WhatsApp Business Account first"
+    //   });
+    // }
+
+    // Find the template
+    const template = await prisma.template.findFirst({
+      where: { 
+        name: templateName
+      },
+      select: {
+        id: true,
+        name: true,
+        updatedAt: true,
+        createdAt: true,
+        status: true
+      }
+    });
+
+    if (!template) {
+      return res.status(404).json({
+        error: "Template not found",
+        details: `Template "${templateName}" not found`
+      });
+    }
+
+    // Check if template was edited less than 24 hours ago
+    const now = new Date();
+    const twentyFourHoursAgo = new Date(now.getTime() - (24 * 60 * 60 * 1000));
+    
+    // Check if this is the first time by comparing if updatedAt is very close to createdAt
+    // If the difference is less than 1 minute, consider it as first time (not edited after creation)
+    const timeDifference = Math.abs(template.updatedAt.getTime() - template.createdAt.getTime());
+    const isFirstTime = timeDifference < 60000; // Allow 1 minute difference for first time
+    
+    // Only apply 24-hour restriction if:
+    // 1. Template has been edited before (not first time)
+    // 2. Template was edited less than 24 hours ago
+    // 3. Template status is APPROVED
+    if (!isFirstTime && template.updatedAt > twentyFourHoursAgo && template.status === "APPROVED") {
+      return res.status(400).json({
+        error: "Template cannot be edited",
+        details: "Template was edited less than 24 hours ago. Please wait before making changes.",
+        lastEdited: template.updatedAt,
+        hoursSinceEdit: Math.round((now.getTime() - template.updatedAt.getTime()) / (1000 * 60 * 60) * 100) / 100
+      });
+    }
+
+    // Template is editable
+    res.status(200).json({
+      success: true,
+      message: "Template is editable",
+      template: {
+        id: template.id,
+        name: template.name,
+        status: template.status,
+        lastEdited: template.updatedAt,
+        hoursSinceEdit: Math.round((now.getTime() - template.updatedAt.getTime()) / (1000 * 60 * 60) * 100) / 100,
+        isFirstTime: isFirstTime,
+        timeDifferenceSeconds: Math.round(timeDifference / 1000)
+      }
+    });
+
+  } catch (error: any) {
+    console.error("Error checking template editability:", error);
+    res.status(500).json({
+      error: "Failed to check template editability",
       details: error.message
     });
   }

@@ -116,28 +116,56 @@ export const createKeyword = async (req: Request, res: Response) => {
 
 export const getAllKeywords = async (req: Request, res: Response) => {
   try {
-    //console.log("hit");
+    // ✅ Extract query parameters for pagination and search
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const search = req.query.search as string || '';
+
+    // Calculate skip value for pagination
+    const skip = (page - 1) * limit;
+
+    // ✅ Build search conditions - only search by keyword name (value)
+    const searchConditions: any = {
+      userId: req.user.userId,
+    };
+
+    if (search) {
+      searchConditions.value = {
+        contains: search,
+        mode: 'insensitive',
+      };
+    }
+
+    // ✅ Get total count for pagination metadata
+    const totalCount = await prisma.keyword.count({
+      where: searchConditions,
+    });
+
+    // ✅ Fetch keywords with pagination and search
     const keywords = await prisma.keyword.findMany({
-      where: { userId: req.user.userId },
+      where: searchConditions,
+      skip,
+      take: limit,
+      orderBy: { id: 'desc' }, // Order by newest first
       include: {
         replyMaterials: {
           include: {
             replyMaterial: {
-              select: { id: true, type: true, name: true, fileUrl: true }, // Only select necessary fields
+              select: { id: true, type: true, name: true, fileUrl: true },
             },
           },
         },
         routingMaterials: {
           include: {
             routingMaterial: {
-              select: { id: true, type: true, materialName: true }, // Include only required fields
+              select: { id: true, type: true, materialName: true },
             },
           },
         },
-        chatbot: { // ✅ Include chatbot details
-          select: { id: true, name: true }, // Fetch chatbot ID and Name
+        chatbot: {
+          select: { id: true, name: true },
         },
-        keywordTemplates: { // ✅ Include templates
+        keywordTemplates: {
           include: { template: { select: { id: true, name: true } } },
         },
       },
@@ -150,7 +178,7 @@ export const getAllKeywords = async (req: Request, res: Response) => {
       triggered: 0, // Placeholder for trigger count
       matchType: keyword.matchType,
       fuzzyPercent: keyword.fuzzyPercent,
-      chatbot: keyword.chatbot ? { // ✅ Include chatbot if available
+      chatbot: keyword.chatbot ? {
         id: keyword.chatbot.id,
         name: keyword.chatbot.name,
       } : null,
@@ -173,7 +201,29 @@ export const getAllKeywords = async (req: Request, res: Response) => {
       ],
     }));
 
-    res.status(200).json(formattedKeywords);
+    // ✅ Calculate pagination metadata
+    const totalPages = Math.ceil(totalCount / limit);
+    const hasNextPage = page < totalPages;
+    const hasPrevPage = page > 1;
+
+    // ✅ Return paginated response with metadata
+    res.status(200).json({
+      data: formattedKeywords,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalCount,
+        limit,
+        hasNextPage,
+        hasPrevPage,
+        nextPage: hasNextPage ? page + 1 : null,
+        prevPage: hasPrevPage ? page - 1 : null,
+      },
+      search: {
+        query: search,
+        resultsCount: formattedKeywords.length,
+      },
+    });
   } catch (error) {
     console.error("Error fetching Keywords:", error);
     res.status(500).json({ error: "Failed to fetch Keywords" });

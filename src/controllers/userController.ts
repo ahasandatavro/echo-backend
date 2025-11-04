@@ -32,6 +32,9 @@ export const getUsers = async (req: Request, res: Response): Promise<void> => {
     const where: any = {};
     if (selectedPhoneNumberId) {
       where.selectedPhoneNumberId = selectedPhoneNumberId;
+    } else {
+      // If no selectedPhoneNumberId, return only the current user
+      where.id = user.userId;
     }
     if (search) {
       where.OR = [
@@ -420,11 +423,112 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
 // Delete user
 export const deleteUser = async (req: Request, res: Response): Promise<void> => {
   try {
-    await prisma.user.delete({
-      where: { id: parseInt(req.params.id) },
+    const userId = parseInt(req.params.id);
+    
+    // Use a transaction to ensure all deletions succeed or none do
+    await prisma.$transaction(async (tx) => {
+      // Delete related records in the correct order to avoid foreign key constraints
+      
+      // 1. Delete package subscriptions first (they reference payments)
+      await tx.packageSubscription.deleteMany({
+        where: { userId }
+      });
+      
+      // 2. Delete payments
+      await tx.payment.deleteMany({
+        where: { userId }
+      });
+      
+      // 3. Delete billing information
+      await tx.billingInformation.deleteMany({
+        where: { userId }
+      });
+      
+      // 4. Delete hubspot integration
+      await tx.hubspotIntegration.deleteMany({
+        where: { userId }
+      });
+      
+      // 5. Delete media files
+      await tx.media.deleteMany({
+        where: { userId }
+      });
+      
+      // 6. Delete templates
+      await tx.template.deleteMany({
+        where: { userId }
+      });
+      
+      // 7. Delete keywords
+      await tx.keyword.deleteMany({
+        where: { userId }
+      });
+      
+      // 8. Delete rules
+      await tx.rule.deleteMany({
+        where: { userId }
+      });
+      
+      // 9. Delete chatbots
+      await tx.chatbot.deleteMany({
+        where: { ownerId: userId }
+      });
+      
+      // 10. Delete business accounts (this will cascade to phone numbers)
+      await tx.businessAccount.deleteMany({
+        where: { userId }
+      });
+      
+      // 11. Delete notification settings
+      await tx.notificationSetting.deleteMany({
+        where: { userId }
+      });
+      
+      // 12. Delete contacts created by this user
+      await tx.contact.updateMany({
+        where: { createdById: userId },
+        data: { createdById: null }
+      });
+      
+      // 13. Delete contacts owned by this user
+      await tx.contact.deleteMany({
+        where: { userId }
+      });
+      
+      // 14. Delete conversations
+      await tx.conversation.deleteMany({
+        where: { userId }
+      });
+      
+      // 15. Delete chat status history records where user is assigned or changed by
+      await tx.chatStatusHistory.deleteMany({
+        where: {
+          OR: [
+            { assignedToUserId: userId },
+            { changedById: userId }
+          ]
+        }
+      });
+      
+      // 16. Delete routing materials assigned to user
+      await tx.routingMaterial.deleteMany({
+        where: { assignedUserId: userId }
+      });
+      
+      // 17. Delete broadcasts
+      await tx.broadcast.deleteMany({
+        where: { userId }
+      });
+      
+      // 18. Finally, delete the user
+      await tx.user.delete({
+        where: { id: userId }
+      });
     });
+    
     res.json({ message: "User deleted successfully" });
   } catch (error) {
+    console.error("Error deleting user:", error);
     res.status(500).json({ error: "Error deleting user" });
   }
 };
