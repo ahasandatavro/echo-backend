@@ -506,35 +506,71 @@ export const getMessagingAnalytics = async (req: Request, res: Response) => {
       });
     }
 
-    // 1. Get daily messaging limit from Meta API
+    // 1. Get daily messaging limit from database first, then Meta API as fallback
     let dailyMessagingLimit = { current: 0, total: 250, percentage: 0 };
-    try {
-      const limitResponse = await axios.get(
-        `https://graph.facebook.com/v22.0/${selectedWabaId}/phone_numbers`,
-        { 
-          headers: { Authorization: `Bearer ${accessToken}` } 
-        }
-      );
+    
+    // First, try to get the messaging limit tier from database
+    const businessPhoneNumber = await prisma.businessPhoneNumber.findFirst({
+      where: { metaPhoneNumberId: selectedPhoneNumberId },
+      select: { id: true, messagingLimitTier: true }
+    });
 
-      // Extract limit information from response
-      if (limitResponse.data && limitResponse.data.data) {
-        const phoneNumberData = limitResponse.data.data.find(
-          (phone: any) => phone.id === selectedPhoneNumberId
+    if (!businessPhoneNumber) {
+      return res.status(404).json({ 
+        success: false,
+        message: "Business phone number not found." 
+      });
+    }
+
+    if (businessPhoneNumber.messagingLimitTier) {
+      // Map the tier from database to actual limits
+      const tierMapping: Record<string, number> = {
+        'TIER_50': 50,
+        'TIER_250': 250,
+        'TIER_1K': 1000,
+        'TIER_10K': 10000,
+        'TIER_100K': 100000,
+        'TIER_UNLIMITED': 999999
+      };
+      
+      const totalLimit = tierMapping[businessPhoneNumber.messagingLimitTier] || 250;
+      dailyMessagingLimit = {
+        current: 0, // We don't track current usage in DB, so default to 0
+        total: totalLimit,
+        percentage: 0
+      };
+      
+      console.log(`Using messaging limit from database: ${businessPhoneNumber.messagingLimitTier} (${totalLimit} messages)`);
+    } else {
+      // Fallback to Meta API if not found in database
+      try {
+        const limitResponse = await axios.get(
+          `https://graph.facebook.com/v22.0/${selectedWabaId}/phone_numbers`,
+          { 
+            headers: { Authorization: `Bearer ${accessToken}` } 
+          }
         );
-        
-        if (phoneNumberData) {
-          // Meta API might return limit info in different formats
-          // For now, using default values and calculating percentage
-          dailyMessagingLimit = {
-            current: phoneNumberData.messaging_limit?.current || 0,
-            total: phoneNumberData.messaging_limit?.total || 250,
-            percentage: Math.round(((phoneNumberData.messaging_limit?.current || 0) / (phoneNumberData.messaging_limit?.total || 250)) * 100)
-          };
+
+        // Extract limit information from response
+        if (limitResponse.data && limitResponse.data.data) {
+          const phoneNumberData = limitResponse.data.data.find(
+            (phone: any) => phone.id === selectedPhoneNumberId
+          );
+          
+          if (phoneNumberData) {
+            // Meta API might return limit info in different formats
+            // For now, using default values and calculating percentage
+            dailyMessagingLimit = {
+              current: phoneNumberData.messaging_limit?.current || 0,
+              total: phoneNumberData.messaging_limit?.total || 250,
+              percentage: Math.round(((phoneNumberData.messaging_limit?.current || 0) / (phoneNumberData.messaging_limit?.total || 250)) * 100)
+            };
+          }
         }
+      } catch (error) {
+        console.error("Error fetching daily messaging limit from Meta API:", error);
+        // Continue with default values
       }
-    } catch (error) {
-      console.error("Error fetching daily messaging limit:", error);
-      // Continue with default values
     }
 
     // 2. Get messaging quality from Meta API
@@ -573,19 +609,6 @@ export const getMessagingAnalytics = async (req: Request, res: Response) => {
     // 3. Calculate consecutive days from message history
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
-    // Get business phone number ID
-    const businessPhoneNumber = await prisma.businessPhoneNumber.findFirst({
-      where: { metaPhoneNumberId: selectedPhoneNumberId },
-      select: { id: true }
-    });
-
-    if (!businessPhoneNumber) {
-      return res.status(404).json({ 
-        success: false,
-        message: "Business phone number not found." 
-      });
-    }
 
     // Get all conversations for this business phone number
     const conversations = await prisma.conversation.findMany({
