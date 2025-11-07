@@ -858,7 +858,6 @@ export const getContactById = async (req: Request, res: Response) => {
   try {
     const contact = await prisma.contact.findUnique({
       where: { id: parseInt(id) },
-      include: { conversations: true },
       select: {
         id: true,
         name: true,
@@ -874,6 +873,7 @@ export const getContactById = async (req: Request, res: Response) => {
         subscribed: true,
         favorite: true,
         latestChatStatusId: true,
+        conversations: true,
         lastMessageTime: true,
         ticketStatus: true,
         timerEndTime: true,
