@@ -609,7 +609,7 @@ export const getAllSubscribedContacts = async (req: Request, res: Response) => {
     }
 
     // Get query parameters
-    const { favorite, search, page = '1', limit = '10' } = req.query;
+    const { favorite, search, page = '1', limit = '10', filters } = req.query;
     const pageNumber = parseInt(page as string, 10);
     const limitNumber = parseInt(limit as string, 10);
     const offset = (pageNumber - 1) * limitNumber;
@@ -642,6 +642,96 @@ export const getAllSubscribedContacts = async (req: Request, res: Response) => {
       };
     }
 
+    // ✅ NEW: Parse and build attribute filters
+    let attributeFilters: any = {};
+    if (filters && typeof filters === 'string') {
+      try {
+        const parsedFilters = JSON.parse(filters);
+        if (Array.isArray(parsedFilters) && parsedFilters.length > 0) {
+          const filterConditions = parsedFilters.map((filter: any) => {
+            const { attribute, operation, value } = filter;
+            
+            // Handle standard fields (name, phoneNumber, source, subscribed, sendSMS, etc.)
+            const standardFields = ['name', 'phoneNumber', 'source', 'subscribed', 'sendSMS', 'favorite', 'ticketStatus'];
+            
+            if (standardFields.includes(attribute)) {
+              // Filter on standard fields
+              switch (operation) {
+                case 'contains':
+                  return { [attribute]: { contains: value, mode: 'insensitive' } };
+                case 'does_not_contain':
+                  return { NOT: { [attribute]: { contains: value, mode: 'insensitive' } } };
+                case 'equal':
+                  return { [attribute]: value };
+                case 'does_not_equal':
+                  return { NOT: { [attribute]: value } };
+                case 'exists':
+                  return { [attribute]: { not: null } };
+                case 'does_not_exist':
+                  return { [attribute]: null };
+                case 'is_true':
+                  return { [attribute]: true };
+                case 'is_false':
+                  return { [attribute]: false };
+                case 'greater_than':
+                  return { [attribute]: { gt: value } };
+                case 'less_than':
+                  return { [attribute]: { lt: value } };
+                case 'greater_than_or_equal':
+                  return { [attribute]: { gte: value } };
+                case 'less_than_or_equal':
+                  return { [attribute]: { lte: value } };
+                default:
+                  return {};
+              }
+            } else {
+              // Filter on custom attributes (JSON field)
+              // Prisma JSON filtering: https://www.prisma.io/docs/concepts/components/prisma-client/working-with-fields/working-with-json-fields
+              switch (operation) {
+                case 'contains':
+                  return { attributes: { path: [attribute], string_contains: value } };
+                case 'does_not_contain':
+                  return { NOT: { attributes: { path: [attribute], string_contains: value } } };
+                case 'equal':
+                  return { attributes: { path: [attribute], equals: value } };
+                case 'does_not_equal':
+                  return { NOT: { attributes: { path: [attribute], equals: value } } };
+                case 'exists':
+                  return { attributes: { path: [attribute], not: null } };
+                case 'does_not_exist':
+                  return { OR: [
+                    { attributes: { path: [attribute], equals: null } },
+                    { attributes: { equals: {} } }
+                  ]};
+                case 'is_true':
+                  return { attributes: { path: [attribute], equals: true } };
+                case 'is_false':
+                  return { attributes: { path: [attribute], equals: false } };
+                case 'greater_than':
+                  return { attributes: { path: [attribute], gt: value } };
+                case 'less_than':
+                  return { attributes: { path: [attribute], lt: value } };
+                case 'greater_than_or_equal':
+                  return { attributes: { path: [attribute], gte: value } };
+                case 'less_than_or_equal':
+                  return { attributes: { path: [attribute], lte: value } };
+                default:
+                  return {};
+              }
+            }
+          }).filter((condition: any) => Object.keys(condition).length > 0);
+
+          // Combine all filter conditions with AND logic
+          if (filterConditions.length > 0) {
+            attributeFilters = { AND: filterConditions };
+          }
+        }
+      } catch (error) {
+        console.error('Error parsing filters:', error);
+        // Continue without filters if parsing fails
+      }
+    }
+
     // Step 1: Get business phone number ID for conversation contacts
     let businessPhone = null;
     let conversationContactIds: number[] = [];
@@ -663,7 +753,7 @@ export const getAllSubscribedContacts = async (req: Request, res: Response) => {
       }
     }
 
-    // Step 3: Fetch ALL created contacts (no pagination here)
+    // Step 3: Fetch ALL created contacts (no pagination here) - ✅ WITH ATTRIBUTE FILTERS
     const allCreatedContacts = await prisma.contact.findMany({
       where: {
         createdById: {
@@ -672,6 +762,7 @@ export const getAllSubscribedContacts = async (req: Request, res: Response) => {
         subscribed: true,
         ...favoriteFilter,
         ...searchFilter,
+        ...attributeFilters, // ✅ Apply attribute filters
       },
       select: {
         id: true,
@@ -690,7 +781,7 @@ export const getAllSubscribedContacts = async (req: Request, res: Response) => {
       },
     });
 
-    // Step 4: Fetch ALL conversation contacts that aren't already in created contacts
+    // Step 4: Fetch ALL conversation contacts that aren't already in created contacts - ✅ WITH ATTRIBUTE FILTERS
     const existingContactIds = new Set(allCreatedContacts.map(c => c.id));
     const uniqueConversationContactIds = conversationContactIds.filter(id => !existingContactIds.has(id));
     
@@ -702,6 +793,7 @@ export const getAllSubscribedContacts = async (req: Request, res: Response) => {
           subscribed: true,
           ...favoriteFilter,
           ...searchFilter,
+          ...attributeFilters, // ✅ Apply attribute filters
         },
         select: {
           id: true,
