@@ -189,6 +189,7 @@ export const processBroadcastInteraction = async (messageData: any) => {
                     }
                   }
                 });
+                
               }
             }
           }
@@ -291,6 +292,27 @@ export const processBroadcastInteraction = async (messageData: any) => {
                 ...errorData
               }
             });
+
+            // Update the message brodcastStatus
+            const templateMessage = await prisma.message.findFirst({
+              where: {
+                contactId: contact.id,
+                messageType: "template",
+                text: recentBroadcast.broadcast.templateName
+              },
+              orderBy: {
+                createdAt: 'desc'
+              }
+            });
+
+            if (templateMessage) {
+              await prisma.message.update({
+                where: {id: templateMessage.id},
+                data: {
+                  brodcastStatus: recipientStatus
+                }
+              });
+            }
           }
         }
       }
