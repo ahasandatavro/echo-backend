@@ -470,7 +470,7 @@ export const updateContactAttributesForMultiContacts = async (req: Request, res:
 export const rotateToken = (req: Request, res: Response) => { res.sendStatus(501); };
 // POST /:tenantId/api/v1/addContact/:whatsappNumber
 export const addContact = async (req: Request, res: Response) => {
-  const { name, source, tags, attributes } = req.body;
+  const { name, source, tags, attributes,allowBroadcast, allowSMS  } = req.body;
   const { phoneNumberId, whatsappNumber } = req.params;
   try {
     // find the user who has selectedPhoneNumberId equal to phoneNumberId
@@ -508,6 +508,8 @@ export const addContact = async (req: Request, res: Response) => {
         createdById: contactUserId,
         tags: tags || [],
         attributes: parsedAttributes,
+        subscribed: allowBroadcast ?? false,  // Map allowBroadcast -> subscribed
+        sendSMS: allowSMS ?? false, 
       },
     });
 

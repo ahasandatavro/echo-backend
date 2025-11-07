@@ -17,7 +17,8 @@ import {
   getChatbotsQueryValidation,
   getMediaQueryValidation,
   getMessagesQueryValidation,
-  getMessageTemplatesQueryValidation
+  getMessageTemplatesQueryValidation,
+  addContactValidation
 } from '../utils/joiSchemas';
 
 const router = express.Router();
@@ -50,7 +51,12 @@ router.get("/getMedia",
 router.post("/:phoneNumberId/updateContactAttributes/:whatsappNumber", apiV1Controller.updateContactAttributes);
 router.post("/:phoneNumberId/updateContactAttributesForMultiContacts", apiV1Controller.updateContactAttributesForMultiContacts);
 router.post("/:phoneNumberId/api/v1/rotateToken", apiV1Controller.rotateToken);
-router.post("/:phoneNumberId/addContact/:whatsappNumber", apiV1Controller.addContact);
+router.post("/:phoneNumberId/addContact/:whatsappNumber", 
+  validatePathParams(phoneNumberIdValidation),
+  validatePathParams(whatsappNumberPathValidation),
+  validateRequest(addContactValidation),
+  apiV1Controller.addContact
+);
 router.post("/:phoneNumberId/sendSessionFile/:whatsappNumber", 
   validatePathParams(phoneNumberIdValidation),
   validatePathParams(whatsappNumberPathValidation),

@@ -16,14 +16,14 @@ export const billingInformationValidation = Joi.object({
 });
 
 // WhatsApp number pattern validation
-const whatsappNumberPattern = /^[0-9]\d{1,14}$/;
+const whatsappNumberPattern = /^[0-9]\d{12,14}$/;
 const templateNamePattern = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
 
 // 1. Chatbot Start Validation
 export const chatbotStartValidation = Joi.object({
   whatsappNumber: Joi.string().pattern(whatsappNumberPattern).required()
     .messages({
-      'string.pattern.base': 'WhatsApp number must be in international format without + or 00'
+      'string.pattern.base': 'WhatsApp number must be in international format without + or 00 and must be 13-15 digits including country code'
     }),
   chatbotId: Joi.alternatives().try(
     Joi.string().min(1),
@@ -254,7 +254,7 @@ export const phoneNumberIdValidation = Joi.object({
 export const whatsappNumberPathValidation = Joi.object({
   whatsappNumber: Joi.string().pattern(whatsappNumberPattern).required()
     .messages({
-      'string.pattern.base': 'WhatsApp number must be in international format without + or 00'
+      'string.pattern.base': 'WhatsApp number must be in international format without + or 00 and must be 13-15 digits including country code'
     })
 });
 
@@ -361,5 +361,45 @@ export const getMessageTemplatesQueryValidation = Joi.object({
   language: Joi.string().pattern(/^[a-z]{2}_[A-Z]{2}$/).optional()
     .messages({
       'string.pattern.base': 'Language must be in ISO format (e.g., en_US, es_ES)'
+    })
+});
+
+// Add Contact Body Validation
+export const addContactValidation = Joi.object({
+  name: Joi.string().min(1).max(255).optional()
+    .messages({
+      'string.min': 'Name cannot be empty',
+      'string.max': 'Name cannot exceed 255 characters'
+    }),
+  source: Joi.string().max(100).optional()
+    .messages({
+      'string.max': 'Source cannot exceed 100 characters'
+    }),
+  tags: Joi.array().items(Joi.string()).optional()
+    .messages({
+      'array.base': 'Tags must be an array of strings'
+    }),
+  attributes: Joi.alternatives().try(
+    Joi.string().custom((value, helpers) => {
+      try {
+        JSON.parse(value);
+        return value;
+      } catch (error) {
+        return helpers.error('any.invalid');
+      }
+    }),
+    Joi.object().pattern(Joi.string(), Joi.any())
+  ).optional()
+    .messages({
+      'any.invalid': 'Attributes must be valid JSON string or object',
+      'object.base': 'Attributes must be an object with key-value pairs'
+    }),
+  allowBroadcast: Joi.boolean().optional()
+    .messages({
+      'boolean.base': 'allowBroadcast must be a boolean value'
+    }),
+  allowSMS: Joi.boolean().optional()
+    .messages({
+      'boolean.base': 'allowSMS must be a boolean value'
     })
 });
