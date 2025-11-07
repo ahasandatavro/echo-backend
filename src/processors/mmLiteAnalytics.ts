@@ -298,7 +298,7 @@ export const processBroadcastInteraction = async (messageData: any) => {
               where: {
                 contactId: contact.id,
                 messageType: "template",
-                text: recentBroadcast.broadcast.templateName
+                text: "Template: " + recentBroadcast.broadcast.templateName 
               },
               orderBy: {
                 createdAt: 'desc'
