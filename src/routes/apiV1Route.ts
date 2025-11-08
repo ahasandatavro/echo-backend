@@ -13,6 +13,7 @@ import {
   assignTeamValidation,
   phoneNumberIdValidation,
   whatsappNumberPathValidation,
+  whatsappNumberQueryValidation,
   getContactsQueryValidation,
   getChatbotsQueryValidation,
   getMediaQueryValidation,
@@ -71,6 +72,7 @@ router.post("/:phoneNumberId/sendSessionMessage/:whatsappNumber",
 );
 router.post("/:phoneNumberId/sendTemplateMessage", 
   validatePathParams(phoneNumberIdValidation),
+  validateQueryParams(whatsappNumberQueryValidation),
   validateRequest(sendTemplateMessageValidation),
   apiV1Controller.sendTemplateMessage
 );
@@ -85,11 +87,13 @@ router.post("/:phoneNumberId/sendTemplateMessagesCSV",
 );
 router.post("/:phoneNumberId/sendInteractiveButtonsMessage", 
   validatePathParams(phoneNumberIdValidation),
+  validateQueryParams(whatsappNumberQueryValidation),
   validateRequest(sendInteractiveButtonMessageValidation),
   apiV1Controller.sendInteractiveButtonsMessage
 );
 router.post("/:phoneNumberId/sendInteractiveListMessage", 
   validatePathParams(phoneNumberIdValidation),
+  validateQueryParams(whatsappNumberQueryValidation),
   validateRequest(sendInteractiveListMessageValidation),
   apiV1Controller.sendInteractiveListMessage
 );

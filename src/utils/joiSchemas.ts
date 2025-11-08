@@ -92,11 +92,22 @@ export const sendInteractiveButtonMessageValidation = Joi.object({
       otherwise: Joi.forbidden()
     }),
     media: Joi.when('type', {
-      is: Joi.string().valid('image', 'video', 'document'),
-      then: Joi.object({
-        url: Joi.string().uri().required()
-      }).required(),
-      otherwise: Joi.forbidden()
+      is: 'text',
+      then: Joi.forbidden().messages({
+        'any.unknown': 'Media object is not allowed when type is "text". Please remove the media object.'
+      }),
+      otherwise: Joi.when('type', {
+        is: Joi.string().valid('image', 'video', 'document'),
+        then: Joi.object({
+          url: Joi.string().uri().required().messages({
+            'string.uri': 'Media URL must be a valid URI',
+            'any.required': 'Media URL is required when type is image, video, or document'
+          })
+        }).required().messages({
+          'any.required': 'Media object with URL is required when type is image, video, or document'
+        }),
+        otherwise: Joi.forbidden()
+      })
     }),
     fileName: Joi.when('type', {
       is: 'document',
@@ -255,6 +266,14 @@ export const whatsappNumberPathValidation = Joi.object({
   whatsappNumber: Joi.string().pattern(whatsappNumberPattern).required()
     .messages({
       'string.pattern.base': 'WhatsApp number must be in international format without + or 00 and must be 13-15 digits including country code'
+    })
+});
+
+export const whatsappNumberQueryValidation = Joi.object({
+  whatsappNumber: Joi.string().pattern(whatsappNumberPattern).required()
+    .messages({
+      'string.pattern.base': 'WhatsApp number must be in international format without + or 00 and must be 13-15 digits including country code',
+      'any.required': 'WhatsApp number is required as a query parameter'
     })
 });
 
