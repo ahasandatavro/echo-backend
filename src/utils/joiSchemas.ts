@@ -210,7 +210,9 @@ export const assignOperatorValidation = Joi.object({
 
 // 8. Assign Team Validation (query parameters)
 export const assignTeamValidation = Joi.object({
-  whatsappNumber: Joi.string().pattern(whatsappNumberPattern).required(),
+  whatsappNumber: Joi.string().pattern(whatsappNumberPattern).required().messages({
+    'string.pattern.base': 'WhatsApp number must be in international format without + or 00 and must be 13-15 digits including country code'
+  }),
   teams: Joi.alternatives().try(
     Joi.string().min(1),
     Joi.array().items(Joi.string().min(1)).min(1)

@@ -1079,20 +1079,60 @@ export const assignTeam = async (req: Request, res: Response) => {
       return res.status(400).json({ error: "teams must be a non-empty array of team names" });
     }
 
-    // Fetch team IDs by name
+    // Find user who owns this phoneNumberId
+    const userWithPhoneNumber = await prisma.user.findFirst({
+      where: { selectedPhoneNumberId: phoneNumberId },
+      select: { 
+        id: true,
+        teams: {
+          select: { id: true }
+        }
+      }
+    });
+
+    if (!userWithPhoneNumber) {
+      return res.status(404).json({ error: "User with the specified phoneNumberId not found" });
+    }
+
+    // Get the team IDs that belong to this user
+    const userTeamIds = userWithPhoneNumber.teams.map(team => team.id);
+
+    if (userTeamIds.length === 0) {
+      return res.status(403).json({ error: "User has no teams assigned. Cannot assign teams to contact." });
+    }
+
+    // Fetch team IDs by name, ensuring they belong to the user's teams
     const teamRecords = await prisma.team.findMany({
       where: {
-        OR: teamNames.map((teamName: string) =>
-          teamName === "Default Team"
-            ? { defaultTeam: true }
-            : { name: teamName }
-        ),
+        AND: [
+          {
+            id: { in: userTeamIds } // Only teams that belong to the user
+          },
+          {
+            OR: teamNames.map((teamName: string) =>
+              teamName === "Default Team"
+                ? { defaultTeam: true }
+                : { name: teamName }
+            )
+          }
+        ]
       },
-      select: { id: true },
+      select: { id: true, name: true },
     });
     const teamIds = teamRecords.map((team) => ({ id: team.id }));
+    
     if (teamIds.length === 0) {
-      return res.status(404).json({ error: "No matching teams found" });
+      return res.status(404).json({ error: "No matching teams found that belong to this user" });
+    }
+
+    // Check if all requested teams were found
+    if (teamRecords.length < teamNames.length) {
+      const foundTeamNames = teamRecords.map(t => t.name);
+      const missingTeams = teamNames.filter(name => !foundTeamNames.includes(name));
+      return res.status(404).json({ 
+        error: "Some teams not found or do not belong to this user", 
+        missingTeams 
+      });
     }
 
     // Update assigned teams in the Contact model
