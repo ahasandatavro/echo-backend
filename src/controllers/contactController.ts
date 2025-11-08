@@ -2096,6 +2096,14 @@ export const sendMessageController = async (req: Request, res: Response) => {
         messageContent = {
           message: { url: fileUrl, name: fileUrl.split("/").pop() },
         };
+        await sendMessage(
+          contact.phoneNumber,
+          { type: messageType, ...messageContent },
+          chatbotId,
+          user.userId,
+          false,
+          dbUser.selectedPhoneNumberId
+        )
       }
 
       // Send message to WhatsApp using your existing function
