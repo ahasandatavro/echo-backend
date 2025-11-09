@@ -7,6 +7,8 @@ import { brodcastTemplate } from "../processors/template/templateProcessor";
 import { broadcastTemplate } from "./templateController";
 import { notifyAgent } from "../helpers";
 import { prisma } from "../models/prismaClient";
+import { razorpayService } from '../services/razorpay.service';
+import { validatePackagePricing } from '../utils/packageUtils';
 
 // Helper to parse date as UTC if no timezone is present
 function parseAsUTC(dateStr: string): Date {
@@ -1370,4 +1372,113 @@ export const checkoutButtonTemplate = (req: Request, res: Response) => { res.sen
 // GET /:tenantId/api/v1/order_details/:referenceId
 export const getOrderDetailsByReferenceId = (req: Request, res: Response) => { res.sendStatus(501); };
 // GET /:tenantId/api/v1/payment_status/:referenceId
-export const getPaymentStatusByReferenceId = (req: Request, res: Response) => { res.sendStatus(501); }; 
+export const getPaymentStatusByReferenceId = (req: Request, res: Response) => { res.sendStatus(501); };
+
+// -------------------- Payment API --------------------
+// POST /:phoneNumberId/payments/create-order
+export const createOrder = async (req: Request, res: Response) => {
+  try {
+    const { phoneNumberId } = req.params;
+    const { amount, currency, packageName, packageDuration } = req.body;
+
+    if (!phoneNumberId) {
+      return res.status(400).json({ error: 'phoneNumberId is required' });
+    }
+
+    if (!amount || !packageName || !packageDuration) {
+      return res.status(400).json({ error: 'Amount, package name, and package duration are required' });
+    }
+
+    if (packageDuration !== 'monthly' && packageDuration !== 'yearly') {
+      return res.status(400).json({ error: 'Package duration must be either monthly or yearly' });
+    }
+
+    // Find the user with the given selectedPhoneNumberId
+    const user = await prisma.user.findFirst({
+      where: {
+        selectedPhoneNumberId: phoneNumberId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found for the given phoneNumberId" });
+    }
+
+    // Validate package pricing against configured packages
+    const validation = validatePackagePricing(packageName, amount, packageDuration);
+    
+    if (!validation.isValid) {
+      return res.status(400).json({ 
+        error: validation.error,
+        expectedAmount: validation.expectedAmount
+      });
+    }
+
+    const order = await razorpayService.createOrder(amount, user.id, packageName, packageDuration, currency);
+    res.json(order);
+  } catch (error) {
+    console.error('Error creating order:', error);
+    res.status(500).json({ error: 'Error creating order' });
+  }
+};
+
+// POST /:phoneNumberId/payments/verify-payment
+export const verifyPayment = async (req: Request, res: Response) => {
+  try {
+    const { phoneNumberId } = req.params;
+    const { paymentId, orderId, signature } = req.body;
+
+    if (!phoneNumberId) {
+      return res.status(400).json({ error: 'phoneNumberId is required' });
+    }
+
+    if (!paymentId || !orderId || !signature) {
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+
+    // Find the user with the given selectedPhoneNumberId
+    const user = await prisma.user.findFirst({
+      where: {
+        selectedPhoneNumberId: phoneNumberId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found for the given phoneNumberId" });
+    }
+
+    const isValid = await razorpayService.verifyPayment(paymentId, orderId, signature);
+    
+    if (isValid) {
+      // Fetch the updated payment record to get card information
+      const payment = await razorpayService.getPaymentDetails(orderId);
+      
+      res.json({ 
+        status: 'success', 
+        message: 'Payment verified successfully',
+        payment: {
+          id: payment.id,
+          orderId: payment.orderId,
+          paymentId: payment.paymentId,
+          amount: payment.amount,
+          currency: payment.currency,
+          status: payment.status,
+          lastFourDigits: payment.lastFourDigits,
+          cardType: payment.cardType,
+          createdAt: payment.createdAt
+        }
+      });
+    } else {
+      res.status(400).json({ status: 'error', message: 'Payment verification failed' });
+    }
+  } catch (error) {
+    console.error('Error verifying payment:', error);
+    res.status(500).json({ error: 'Error verifying payment' });
+  }
+}; 

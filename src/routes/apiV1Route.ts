@@ -19,7 +19,9 @@ import {
   getMediaQueryValidation,
   getMessagesQueryValidation,
   getMessageTemplatesQueryValidation,
-  addContactValidation
+  addContactValidation,
+  createOrderValidation,
+  verifyPaymentValidation
 } from '../utils/joiSchemas';
 
 const router = express.Router();
@@ -131,5 +133,17 @@ router.post("/:phoneNumberId/order_status_template", apiV1Controller.orderStatus
 router.post("/:phoneNumberId/checkout_button_template", apiV1Controller.checkoutButtonTemplate);
 router.get("/:phoneNumberId/order_details/:referenceId", apiV1Controller.getOrderDetailsByReferenceId);
 router.get("/:phoneNumberId/payment_status/:referenceId", apiV1Controller.getPaymentStatusByReferenceId);
+
+// -------------------- Payment API --------------------
+router.post('/:phoneNumberId/payments/create-order', 
+  validatePathParams(phoneNumberIdValidation),
+  validateRequest(createOrderValidation),
+  apiV1Controller.createOrder
+);
+router.post('/:phoneNumberId/payments/verify-payment', 
+  validatePathParams(phoneNumberIdValidation),
+  validateRequest(verifyPaymentValidation),
+  apiV1Controller.verifyPayment
+);
 
 export default router; 
