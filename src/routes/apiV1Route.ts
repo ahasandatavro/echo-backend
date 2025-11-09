@@ -67,7 +67,7 @@ router.post("/:phoneNumberId/sendSessionFile/:whatsappNumber",
 router.post("/:phoneNumberId/sendSessionMessage/:whatsappNumber", 
   validatePathParams(phoneNumberIdValidation),
   validatePathParams(whatsappNumberPathValidation),
-  validateRequest(sendSessionMessageValidation),
+  validateQueryParams(sendSessionMessageValidation),
   apiV1Controller.sendSessionMessage
 );
 router.post("/:phoneNumberId/sendTemplateMessage", 

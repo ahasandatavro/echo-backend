@@ -34,12 +34,16 @@ export const chatbotStartValidation = Joi.object({
     })
 });
 
-// 2. Send Session Message Validation
+// 2. Send Session Message Validation (Query Parameters)
 export const sendSessionMessageValidation = Joi.object({
-  text: Joi.string().min(1).max(4096).required()
+  message: Joi.string().min(1).max(4096).required()
     .messages({
       'string.min': 'Message text cannot be empty',
       'string.max': 'Message text cannot exceed 4096 characters'
+    }),
+  replyContextId: Joi.string().optional()
+    .messages({
+      'string.base': 'Reply context ID must be a string'
     }),
   fileUrl: Joi.string().uri().optional()
     .messages({
