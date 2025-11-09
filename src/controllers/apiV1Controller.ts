@@ -312,22 +312,36 @@ export const getContacts = async (req: Request, res: Response) => {
 // GET /:tenantId/api/v1/getMedia
 export const getMedia = async (req: Request, res: Response) => {
   const fileName = req.query.fileName as string;
-  const user: any = req.user;
+  const phoneNumberId = req.params.phoneNumberId as string;
 
   if (!fileName) {
     return res.status(400).json({ message: "fileName query parameter is required" });
   }
 
-  if (!user || !user.userId) {
-    return res.status(401).json({ message: "User authentication required" });
+  if (!phoneNumberId) {
+    return res.status(400).json({ message: "phoneNumberId is required" });
   }
 
   try {
+    // Find the user with the given selectedPhoneNumberId
+    const user = await prisma.user.findFirst({
+      where: {
+        selectedPhoneNumberId: phoneNumberId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found for the given phoneNumberId" });
+    }
+
     // Check if the media exists in the database for this user
     const mediaRecord = await prisma.media.findFirst({
       where: {
         fileName: fileName,
-        userId: user.userId,
+        userId: user.id,
       },
     });
 

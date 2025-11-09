@@ -58,24 +58,11 @@ export const uploadMedia = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    const fileUrl = await uploadFileToDigitalOceanHelper(file);
-    const media = await prisma.media.create({
-      data: {
-        fileName: file.originalname,
-        fileType: file.mimetype,
-        fileSize: file.size,
-        url: fileUrl,
-        userId: dbUser?.id as number,
-        businessPhoneNumberId: bp?.id,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-    });
+    const fileUrl = await uploadFileToDigitalOceanHelper(file, dbUser.id);
 
     res.status(200).json({
       message: "File uploaded successfully",
       fileUrl: fileUrl,
-      mediaId: media.id,
       limitInfo: {
         currentCount: limitCheck.currentCount + 1,
         maxAllowed: limitCheck.maxAllowed,

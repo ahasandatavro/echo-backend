@@ -383,8 +383,8 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
     if (req.file) {
       const file = req.file;
       try{
-        
-        fileUrl = await uploadFileToDigitalOceanHelper(file);
+        const userId = parseInt(req.params.id);
+        fileUrl = await uploadFileToDigitalOceanHelper(file, userId);
       }
       catch(error){
         console.error("Error uploading file to DigitalOcean:", error);

@@ -2027,9 +2027,10 @@ export const sendMessageController = async (req: Request, res: Response) => {
     if (!contact) {
       return res.status(404).json({ error: "Contact not found" });
     }
+    
     let fileUrl = "";
     if (req.file) {
-      fileUrl = await uploadFileToDigitalOceanHelper(req.file);
+      fileUrl = await uploadFileToDigitalOceanHelper(req.file, user.userId);
     }
     // ✅ Handle WhatsApp Template Messages
     let savedMessage;

@@ -470,7 +470,9 @@ export const createTemplate = async (req: Request, res: Response) => {
 
       if ((component.type === "HEADER" || component.type === "header") && file) {
         let fileUrl = "";
-        try{ fileUrl = await uploadFileToDigitalOceanHelper(file);}
+        try{ 
+          fileUrl = await uploadFileToDigitalOceanHelper(file, user.userId);
+        }
         catch(error){
           console.error("Error uploading media to DigitalOcean:", error);
         }
@@ -1451,10 +1453,7 @@ export const createBroadcast = async (req: Request, res: Response) => {
       scheduledDateTime,
       templateParameters
     } = req.body;
-    let fileUrl = "";
-    if (req.file) {
-      fileUrl = await uploadFileToDigitalOceanHelper(req.file);
-    }
+    
     const dbUser = await prisma.user.findFirst({
       where: { id: user.userId },
       select: { id: true, selectedPhoneNumberId: true },
@@ -1469,6 +1468,11 @@ export const createBroadcast = async (req: Request, res: Response) => {
     const bp = await prisma.businessPhoneNumber.findFirst({
       where: { metaPhoneNumberId: phoneNumberId }
     });
+    
+    let fileUrl = "";
+    if (req.file) {
+      fileUrl = await uploadFileToDigitalOceanHelper(req.file, dbUser.id);
+    }
 
     const businessAccount = await prisma.businessAccount.findFirst({
       where: { id: bp?.businessAccountId }

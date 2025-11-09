@@ -44,7 +44,8 @@ router.get("/:phoneNumberId/getContacts",
   validateQueryParams(getContactsQueryValidation),
   apiV1Controller.getContacts
 );
-router.get("/getMedia", 
+router.get("/:phoneNumberId/getMedia", 
+  validatePathParams(phoneNumberIdValidation),
   validateQueryParams(getMediaQueryValidation),
   apiV1Controller.getMedia
 );
