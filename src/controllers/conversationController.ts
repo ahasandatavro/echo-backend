@@ -234,3 +234,118 @@ const bp=await prisma.businessPhoneNumber.findFirst({
     });
   }
 };
+
+/**
+ * Delete the latest conversation for a contact and all its related data
+ */
+export const deleteConversation = async (req: Request, res: Response) => {
+  try {
+    const reqUser: any = req.user;
+    const { contactId } = req.params;
+    const contactIdInt = parseInt(contactId);
+
+    if (isNaN(contactIdInt)) {
+      return res.status(400).json({ message: "Invalid contact ID" });
+    }
+
+    // Get user's selected phone number
+    const dbUser = await prisma.user.findUnique({
+      where: { id: reqUser.userId },
+      select: { selectedPhoneNumberId: true },
+    });
+
+    const selectedPhoneNumberId = dbUser?.selectedPhoneNumberId;
+    
+    if (!selectedPhoneNumberId) {
+      return res.status(400).json({ message: "No phone number selected for this user." });
+    }
+
+    // Find the business phone number
+    const businessPhoneNumber = await prisma.businessPhoneNumber.findFirst({
+      where: {
+        metaPhoneNumberId: selectedPhoneNumberId
+      }
+    });
+
+    if (!businessPhoneNumber) {
+      return res.status(404).json({ message: "Business phone number not found" });
+    }
+
+    // Check if contact exists
+    const contact = await prisma.contact.findUnique({
+      where: { id: contactIdInt },
+    });
+
+    if (!contact) {
+      return res.status(404).json({ message: "Contact not found" });
+    }
+
+    // Find the latest conversation for this contact and phone number
+    const conversation = await prisma.conversation.findFirst({
+      where: {
+        contactId: contactIdInt,
+        businessPhoneNumberId: businessPhoneNumber.id,
+      },
+      include: {
+        messages: true,
+        variables: true,
+        nodeVisits: true,
+        ChatStatusHistory: true,
+      },
+      orderBy: {
+        createdAt: 'desc', // Get the latest conversation
+      },
+    });
+
+    if (!conversation) {
+      return res.status(404).json({ message: "No conversation found for this contact" });
+    }
+
+    // Delete conversation and all related data in a transaction
+    await prisma.$transaction(async (tx) => {
+      // Delete all messages related to this conversation
+      await tx.message.deleteMany({
+        where: { conversationId: conversation.id },
+      });
+
+      // Delete all variables related to this conversation
+      await tx.variable.deleteMany({
+        where: { conversationId: conversation.id },
+      });
+
+      // Delete all node visits related to this conversation
+      await tx.nodeVisit.deleteMany({
+        where: { conversationId: conversation.id },
+      });
+
+      // Delete all chat status history related to this conversation
+      await tx.chatStatusHistory.deleteMany({
+        where: { conversationId: conversation.id },
+      });
+
+      // Finally, delete the conversation itself
+      await tx.conversation.delete({
+        where: { id: conversation.id },
+      });
+    });
+
+    res.json({
+      message: "Conversation and all related data deleted successfully",
+      deletedConversationId: conversation.id,
+      contactId: contactIdInt,
+      phoneNumberId: selectedPhoneNumberId,
+      deletedRecords: {
+        messages: conversation.messages.length,
+        variables: conversation.variables.length,
+        nodeVisits: conversation.nodeVisits.length,
+        chatStatusHistory: conversation.ChatStatusHistory.length,
+      },
+    });
+  } catch (error) {
+    console.error("Error deleting conversation:", error);
+    res.status(500).json({
+      error: "Failed to delete conversation",
+      details: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+};
