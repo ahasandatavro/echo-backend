@@ -391,7 +391,7 @@ export const getAllImportedContacts = async (req: Request, res: Response) => {
     if (filters && typeof filters === 'string') {
       try {
         const parsedFilters = JSON.parse(filters);
-        const andConditions: any[] = [];
+        const filterConditions: any[] = [];
         
         for (const filter of parsedFilters) {
           const { attribute, operation, value } = filter;
@@ -418,7 +418,7 @@ export const getAllImportedContacts = async (req: Request, res: Response) => {
                 condition = { [attribute]: null };
                 break;
             }
-            if (Object.keys(condition).length > 0) andConditions.push(condition);
+            if (Object.keys(condition).length > 0) filterConditions.push(condition);
           } else if (attribute === 'subscribed' || attribute === 'sendSMS') {
             let condition: any = {};
             switch (operation) {
@@ -432,7 +432,7 @@ export const getAllImportedContacts = async (req: Request, res: Response) => {
                 condition = { [attribute]: value === 'true' };
                 break;
             }
-            if (Object.keys(condition).length > 0) andConditions.push(condition);
+            if (Object.keys(condition).length > 0) filterConditions.push(condition);
           } else {
             let condition: any = {};
             const attributePath = `attributes.${attribute}`;
@@ -456,12 +456,12 @@ export const getAllImportedContacts = async (req: Request, res: Response) => {
                 condition = { OR: [{ attributes: null }, { NOT: { attributes: { path: [attribute] } } }] };
                 break;
             }
-            if (Object.keys(condition).length > 0) andConditions.push(condition);
+            if (Object.keys(condition).length > 0) filterConditions.push(condition);
           }
         }
         
-        if (andConditions.length > 0) {
-          attributeFilters = { AND: andConditions };
+        if (filterConditions.length > 0) {
+          attributeFilters = { OR: filterConditions };
         }
       } catch (error) {
         console.error('Error parsing filters:', error);
@@ -721,9 +721,9 @@ export const getAllSubscribedContacts = async (req: Request, res: Response) => {
             }
           }).filter((condition: any) => Object.keys(condition).length > 0);
 
-          // Combine all filter conditions with AND logic
+          // Combine all filter conditions with OR logic
           if (filterConditions.length > 0) {
-            attributeFilters = { AND: filterConditions };
+            attributeFilters = { OR: filterConditions };
           }
         }
       } catch (error) {
