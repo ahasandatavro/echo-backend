@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { razorpayService } from '../services/razorpay.service';
-import { validatePackagePricing } from '../utils/packageUtils';
+import { validatePackagePricing, checkForDowngrade } from '../utils/packageUtils';
 
 export const paymentController = {
   async createOrder(req: Request, res: Response) {
@@ -23,6 +23,16 @@ export const paymentController = {
         return res.status(400).json({ 
           error: validation.error,
           expectedAmount: validation.expectedAmount
+        });
+      }
+
+      // Check if the user is trying to downgrade from a higher active plan
+      const downgradeCheck = await checkForDowngrade(user.userId, packageName);
+      
+      if (downgradeCheck.isDowngrade) {
+        return res.status(400).json({ 
+          error: downgradeCheck.error,
+          currentPackage: downgradeCheck.currentPackage
         });
       }
 
