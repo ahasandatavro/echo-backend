@@ -1234,7 +1234,7 @@ export const updateContact = async (req: Request, res: Response) => {
 
     // Check if attributes changed and trigger rules
     if (attributesChanged) {
-      const phoneNumberId = await getUserPhoneNumberId(contactUserId);
+      const phoneNumberId = bp?.metaPhoneNumberId as string;
       if (phoneNumberId) {
         if (newAttributesAdded) {
           // If new attributes are added, trigger attributeAdded rule
