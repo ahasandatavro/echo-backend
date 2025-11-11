@@ -13,11 +13,15 @@ import {
   assignTeamValidation,
   phoneNumberIdValidation,
   whatsappNumberPathValidation,
+  whatsappNumberQueryValidation,
   getContactsQueryValidation,
   getChatbotsQueryValidation,
   getMediaQueryValidation,
   getMessagesQueryValidation,
-  getMessageTemplatesQueryValidation
+  getMessageTemplatesQueryValidation,
+  addContactValidation,
+  createOrderValidation,
+  verifyPaymentValidation
 } from '../utils/joiSchemas';
 
 const router = express.Router();
@@ -42,7 +46,8 @@ router.get("/:phoneNumberId/getContacts",
   validateQueryParams(getContactsQueryValidation),
   apiV1Controller.getContacts
 );
-router.get("/getMedia", 
+router.get("/:phoneNumberId/getMedia", 
+  validatePathParams(phoneNumberIdValidation),
   validateQueryParams(getMediaQueryValidation),
   apiV1Controller.getMedia
 );
@@ -50,7 +55,12 @@ router.get("/getMedia",
 router.post("/:phoneNumberId/updateContactAttributes/:whatsappNumber", apiV1Controller.updateContactAttributes);
 router.post("/:phoneNumberId/updateContactAttributesForMultiContacts", apiV1Controller.updateContactAttributesForMultiContacts);
 router.post("/:phoneNumberId/api/v1/rotateToken", apiV1Controller.rotateToken);
-router.post("/:phoneNumberId/addContact/:whatsappNumber", apiV1Controller.addContact);
+router.post("/:phoneNumberId/addContact/:whatsappNumber", 
+  validatePathParams(phoneNumberIdValidation),
+  validatePathParams(whatsappNumberPathValidation),
+  validateRequest(addContactValidation),
+  apiV1Controller.addContact
+);
 router.post("/:phoneNumberId/sendSessionFile/:whatsappNumber", 
   validatePathParams(phoneNumberIdValidation),
   validatePathParams(whatsappNumberPathValidation),
@@ -60,11 +70,12 @@ router.post("/:phoneNumberId/sendSessionFile/:whatsappNumber",
 router.post("/:phoneNumberId/sendSessionMessage/:whatsappNumber", 
   validatePathParams(phoneNumberIdValidation),
   validatePathParams(whatsappNumberPathValidation),
-  validateRequest(sendSessionMessageValidation),
+  validateQueryParams(sendSessionMessageValidation),
   apiV1Controller.sendSessionMessage
 );
 router.post("/:phoneNumberId/sendTemplateMessage", 
   validatePathParams(phoneNumberIdValidation),
+  validateQueryParams(whatsappNumberQueryValidation),
   validateRequest(sendTemplateMessageValidation),
   apiV1Controller.sendTemplateMessage
 );
@@ -79,11 +90,13 @@ router.post("/:phoneNumberId/sendTemplateMessagesCSV",
 );
 router.post("/:phoneNumberId/sendInteractiveButtonsMessage", 
   validatePathParams(phoneNumberIdValidation),
+  validateQueryParams(whatsappNumberQueryValidation),
   validateRequest(sendInteractiveButtonMessageValidation),
   apiV1Controller.sendInteractiveButtonsMessage
 );
 router.post("/:phoneNumberId/sendInteractiveListMessage", 
   validatePathParams(phoneNumberIdValidation),
+  validateQueryParams(whatsappNumberQueryValidation),
   validateRequest(sendInteractiveListMessageValidation),
   apiV1Controller.sendInteractiveListMessage
 );
@@ -120,5 +133,17 @@ router.post("/:phoneNumberId/order_status_template", apiV1Controller.orderStatus
 router.post("/:phoneNumberId/checkout_button_template", apiV1Controller.checkoutButtonTemplate);
 router.get("/:phoneNumberId/order_details/:referenceId", apiV1Controller.getOrderDetailsByReferenceId);
 router.get("/:phoneNumberId/payment_status/:referenceId", apiV1Controller.getPaymentStatusByReferenceId);
+
+// -------------------- Payment API --------------------
+router.post('/:phoneNumberId/payments/create-order', 
+  validatePathParams(phoneNumberIdValidation),
+  validateRequest(createOrderValidation),
+  apiV1Controller.createOrder
+);
+router.post('/:phoneNumberId/payments/verify-payment', 
+  validatePathParams(phoneNumberIdValidation),
+  validateRequest(verifyPaymentValidation),
+  apiV1Controller.verifyPayment
+);
 
 export default router; 

@@ -37,7 +37,10 @@ export const convertHtmlToWhatsAppText = (html: string): string => {
 };
 
 
-export const uploadFileToDigitalOceanHelper = async (file: Express.Multer.File): Promise<string> => {
+export const uploadFileToDigitalOceanHelper = async (
+  file: Express.Multer.File,
+  userId: number
+): Promise<string> => {
   const fileKey = `${Date.now()}-${file.originalname}`;
   const uploadParams = {
     Bucket: process.env.DO_SPACES_BUCKET || "",
@@ -48,8 +51,24 @@ export const uploadFileToDigitalOceanHelper = async (file: Express.Multer.File):
   };
 
   try {
+    // Upload to Digital Ocean Spaces
     const result = await s3.upload(uploadParams).promise();
-    return result.Location;
+    const fileUrl = result.Location;
+
+    // Save to media table
+    await prisma.media.create({
+      data: {
+        fileName: file.originalname,
+        fileType: file.mimetype,
+        fileSize: file.size,
+        url: fileUrl,
+        userId: userId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+
+    return fileUrl;
   } catch (error) {
     console.error("Error uploading to DigitalOcean Spaces:", error);
     throw new Error("File upload failed");

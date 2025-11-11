@@ -129,7 +129,7 @@ export const createNewConversation = async (req: Request, res: Response) => {
     let fileUrl = "";
     if (req.file) {
       try {
-        fileUrl = await uploadFileToDigitalOceanHelper(req.file);
+        fileUrl = await uploadFileToDigitalOceanHelper(req.file, reqUser.userId);
       } catch (error) {
         console.error("Error uploading file:", error);
         return res.status(500).json({ message: "Failed to upload header image" });

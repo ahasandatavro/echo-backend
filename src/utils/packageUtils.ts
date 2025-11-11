@@ -71,6 +71,57 @@ export function validatePackagePricing(
   return { isValid: true };
 }
 
+// Check if the requested package is a downgrade from the user's current active plan
+export async function checkForDowngrade(
+  userId: number, 
+  requestedPackageName: string
+): Promise<{ isDowngrade: boolean; currentPackage?: string; error?: string }> {
+  try {
+    // Define package hierarchy (higher index = higher tier)
+    const packageHierarchy = ['Free', 'Growth', 'Pro', 'Business'];
+    
+    // Get user's active subscription
+    const activeSubscription = await prisma.packageSubscription.findFirst({
+      where: {
+        userId,
+        isActive: true,
+        startDate: {
+          lte: new Date()
+        },
+        endDate: {
+          gte: new Date()
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    // If no active subscription, not a downgrade
+    if (!activeSubscription) {
+      return { isDowngrade: false };
+    }
+
+    const currentPackageName = activeSubscription.packageName;
+    const currentPackageIndex = packageHierarchy.indexOf(currentPackageName);
+    const requestedPackageIndex = packageHierarchy.indexOf(requestedPackageName);
+
+    // Check if the requested package is lower than the current package
+    if (requestedPackageIndex < currentPackageIndex) {
+      return {
+        isDowngrade: true,
+        currentPackage: currentPackageName,
+        error: `Cannot downgrade from ${currentPackageName} to ${requestedPackageName}. You currently have an active ${currentPackageName} plan. Please wait for your current plan to expire or contact support.`
+      };
+    }
+
+    return { isDowngrade: false, currentPackage: currentPackageName };
+  } catch (error) {
+    console.error('Error checking for downgrade:', error);
+    throw error;
+  }
+}
+
 // Default package configuration (pricing only)
 function getDefaultPackages(): PackagePricing[] {
   return [

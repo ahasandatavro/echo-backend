@@ -169,8 +169,10 @@ router.post('/', upload.single('file'), async (req: Request, res: Response) => {
     // For file-based types, automatically use the file's name and upload it to DO Spaces
     if (type !== MaterialType.TEXT && type !== "CONTACT_ATTRIBUTES" && req.file) {
       name = req.file.originalname;
-      //fileUrl = await uploadFileToDigitalOcean(req.file);
-      fileUrl = await uploadFileToDigitalOceanHelper(req.file);
+      fileUrl = await uploadFileToDigitalOceanHelper(
+        req.file,
+        (req.user as any).userId
+      );
     }
     if (type === "CONTACT_ATTRIBUTES") {
       // Assume req.body.contactAttributes contains your attribute data (as JSON or a string)

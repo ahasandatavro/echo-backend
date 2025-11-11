@@ -36,16 +36,73 @@ const axiosInstance = axios.create({
 export const getAllTemplates = async (req: Request, res: Response) => {
   try {
     const user: any = req.user;
+    
+    // Get query parameters
+    const { 
+      search, 
+      sortBy = 'Latest', 
+      category, 
+      language, 
+      status,
+      page = '1',
+      limit = '10'
+    } = req.query;
+
     const userRecord = await prisma.user.findUnique({
       where: { id: user.userId },
       select: {
         selectedWabaId: true,
       },
     });
-    //send latests templates first
+
+    // Build where clause for filtering
+    const whereClause: any = {
+      userId: user.userId,
+      wabaId: userRecord?.selectedWabaId,
+    };
+
+    // Add search filter (searches in name, category, language, status)
+    if (search && typeof search === 'string') {
+      whereClause.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { category: { contains: search, mode: 'insensitive' } },
+        { language: { contains: search, mode: 'insensitive' } },
+        { status: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    // Add specific filters
+    if (category && typeof category === 'string') {
+      whereClause.category = category;
+    }
+    if (language && typeof language === 'string') {
+      whereClause.language = language;
+    }
+    if (status && typeof status === 'string') {
+      whereClause.status = status;
+    }
+
+    // Determine sort order
+    const orderBy = sortBy === 'Oldest' 
+      ? { updatedAt: 'asc' as const } 
+      : { updatedAt: 'desc' as const };
+
+    // Calculate pagination
+    const pageNum = parseInt(page as string, 10);
+    const limitNum = parseInt(limit as string, 10);
+    const skip = (pageNum - 1) * limitNum;
+
+    // Get total count for pagination
+    const total = await prisma.template.count({
+      where: whereClause,
+    });
+
+    // Fetch templates with filters, sorting, and pagination
     const templates = await prisma.template.findMany({
-      where: { userId: user.userId, wabaId: userRecord?.selectedWabaId },
-      orderBy: { updatedAt: 'desc' },
+      where: whereClause,
+      orderBy: orderBy,
+      skip: skip,
+      take: limitNum,
     });
 
     const formattedTemplates = templates.map((tmpl: any) => {
@@ -63,7 +120,7 @@ export const getAllTemplates = async (req: Request, res: Response) => {
           status: tmpl.status,
           category: tmpl.category,
           id: tmpl.id.toString(),
-          lastUpdated:tmpl.updatedAt.toISOString().split("T")[0]
+          lastUpdated: tmpl.updatedAt.toISOString().split("T")[0]
         };
       }
       return {
@@ -72,22 +129,30 @@ export const getAllTemplates = async (req: Request, res: Response) => {
         name: tmpl.name,
         language: tmpl.language,
         status: tmpl.status,
-        rejectedReason: tmpl.rejectionError||"",
+        rejectedReason: tmpl.rejectionError || "",
         category: tmpl.category,
         id: tmpl.id.toString(),
-        lastUpdated:tmpl.updatedAt.toISOString().split("T")[0]
+        lastUpdated: tmpl.updatedAt.toISOString().split("T")[0]
       };
     });
 
-    // Create a dummy paging object. In a real-world scenario you might generate these cursors.
+    // Create a paging object
     const paging = {
       cursors: {
         before: "MAZDZD",
         after: "MjQZD",
       },
+      total: total,
+      page: pageNum,
+      limit: limitNum,
+      totalPages: Math.ceil(total / limitNum),
     };
 
-    res.status(200).json({ data: formattedTemplates, paging });
+    res.status(200).json({ 
+      data: formattedTemplates, 
+      paging,
+      total // For backward compatibility
+    });
   } catch (error: any) {
     res.status(500).json({
       error: "Failed to fetch templates",
@@ -405,7 +470,9 @@ export const createTemplate = async (req: Request, res: Response) => {
 
       if ((component.type === "HEADER" || component.type === "header") && file) {
         let fileUrl = "";
-        try{ fileUrl = await uploadFileToDigitalOceanHelper(file);}
+        try{ 
+          fileUrl = await uploadFileToDigitalOceanHelper(file, user.userId);
+        }
         catch(error){
           console.error("Error uploading media to DigitalOcean:", error);
         }
@@ -1386,10 +1453,7 @@ export const createBroadcast = async (req: Request, res: Response) => {
       scheduledDateTime,
       templateParameters
     } = req.body;
-    let fileUrl = "";
-    if (req.file) {
-      fileUrl = await uploadFileToDigitalOceanHelper(req.file);
-    }
+    
     const dbUser = await prisma.user.findFirst({
       where: { id: user.userId },
       select: { id: true, selectedPhoneNumberId: true },
@@ -1404,6 +1468,11 @@ export const createBroadcast = async (req: Request, res: Response) => {
     const bp = await prisma.businessPhoneNumber.findFirst({
       where: { metaPhoneNumberId: phoneNumberId }
     });
+    
+    let fileUrl = "";
+    if (req.file) {
+      fileUrl = await uploadFileToDigitalOceanHelper(req.file, dbUser.id);
+    }
 
     const businessAccount = await prisma.businessAccount.findFirst({
       where: { id: bp?.businessAccountId }

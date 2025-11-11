@@ -189,6 +189,7 @@ export const processBroadcastInteraction = async (messageData: any) => {
                     }
                   }
                 });
+                
               }
             }
           }
@@ -254,25 +255,28 @@ export const processBroadcastInteraction = async (messageData: any) => {
                   timestamp: new Date()
                 }
               });
-            }
 
-            // Update broadcast counts
-            const updateData: any = {};
-            if (metricType === "sent") {
-              updateData.totalSent = {increment: 1};
-            } else if (metricType === "delivered") {
-              updateData.totalDelivered = {increment: 1};
-            } else if (metricType === "read") {
-              updateData.totalRead = {increment: 1};
-            }
+              // Update broadcast counts only when creating new metric
+              const updateData: any = {};
+              if (metricType === "sent") {
+                updateData.totalSent = {increment: 1};
+              } else if (metricType === "delivered") {
+                updateData.totalDelivered = {increment: 1};
+              } else if (metricType === "read") {
+                updateData.totalRead = {increment: 1};
+              }
 
-            await prisma.broadcast.update({
-              where: {id: recentBroadcast.broadcastId},
-              data: updateData
-            });
+              await prisma.broadcast.update({
+                where: {id: recentBroadcast.broadcastId},
+                data: updateData
+              });
+            }
 
             // Update BroadcastRecipient status
             const recipientStatus = messageStatus.toUpperCase();
+            
+            console.log('Recipient Name:', contact.name || contact.phoneNumber);
+            console.log('Recipient Status:', recipientStatus);
             console.log('Message Error', messageError);
             const errorData = Array.isArray(messageError)
               ? {errorMessage: messageError.map(error => `${error.title}: ${error.message}`).join(', ')}
@@ -288,6 +292,27 @@ export const processBroadcastInteraction = async (messageData: any) => {
                 ...errorData
               }
             });
+
+            // Update the message brodcastStatus
+            const templateMessage = await prisma.message.findFirst({
+              where: {
+                contactId: contact.id,
+                messageType: "template",
+                text: "Template: " + recentBroadcast.broadcast.templateName 
+              },
+              orderBy: {
+                createdAt: 'desc'
+              }
+            });
+
+            if (templateMessage) {
+              await prisma.message.update({
+                where: {id: templateMessage.id},
+                data: {
+                  brodcastStatus: recipientStatus
+                }
+              });
+            }
           }
         }
       }

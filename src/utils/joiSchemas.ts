@@ -16,14 +16,14 @@ export const billingInformationValidation = Joi.object({
 });
 
 // WhatsApp number pattern validation
-const whatsappNumberPattern = /^[0-9]\d{1,14}$/;
+const whatsappNumberPattern = /^[0-9]\d{12,14}$/;
 const templateNamePattern = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
 
 // 1. Chatbot Start Validation
 export const chatbotStartValidation = Joi.object({
   whatsappNumber: Joi.string().pattern(whatsappNumberPattern).required()
     .messages({
-      'string.pattern.base': 'WhatsApp number must be in international format without + or 00'
+      'string.pattern.base': 'WhatsApp number must be in international format without + or 00 and must be 13-15 digits including country code'
     }),
   chatbotId: Joi.alternatives().try(
     Joi.string().min(1),
@@ -34,12 +34,16 @@ export const chatbotStartValidation = Joi.object({
     })
 });
 
-// 2. Send Session Message Validation
+// 2. Send Session Message Validation (Query Parameters)
 export const sendSessionMessageValidation = Joi.object({
-  text: Joi.string().min(1).max(4096).required()
+  message: Joi.string().min(1).max(4096).required()
     .messages({
       'string.min': 'Message text cannot be empty',
       'string.max': 'Message text cannot exceed 4096 characters'
+    }),
+  replyContextId: Joi.string().optional()
+    .messages({
+      'string.base': 'Reply context ID must be a string'
     }),
   fileUrl: Joi.string().uri().optional()
     .messages({
@@ -92,11 +96,22 @@ export const sendInteractiveButtonMessageValidation = Joi.object({
       otherwise: Joi.forbidden()
     }),
     media: Joi.when('type', {
-      is: Joi.string().valid('image', 'video', 'document'),
-      then: Joi.object({
-        url: Joi.string().uri().required()
-      }).required(),
-      otherwise: Joi.forbidden()
+      is: 'text',
+      then: Joi.forbidden().messages({
+        'any.unknown': 'Media object is not allowed when type is "text". Please remove the media object.'
+      }),
+      otherwise: Joi.when('type', {
+        is: Joi.string().valid('image', 'video', 'document'),
+        then: Joi.object({
+          url: Joi.string().uri().required().messages({
+            'string.uri': 'Media URL must be a valid URI',
+            'any.required': 'Media URL is required when type is image, video, or document'
+          })
+        }).required().messages({
+          'any.required': 'Media object with URL is required when type is image, video, or document'
+        }),
+        otherwise: Joi.forbidden()
+      })
     }),
     fileName: Joi.when('type', {
       is: 'document',
@@ -199,7 +214,9 @@ export const assignOperatorValidation = Joi.object({
 
 // 8. Assign Team Validation (query parameters)
 export const assignTeamValidation = Joi.object({
-  whatsappNumber: Joi.string().pattern(whatsappNumberPattern).required(),
+  whatsappNumber: Joi.string().pattern(whatsappNumberPattern).required().messages({
+    'string.pattern.base': 'WhatsApp number must be in international format without + or 00 and must be 13-15 digits including country code'
+  }),
   teams: Joi.alternatives().try(
     Joi.string().min(1),
     Joi.array().items(Joi.string().min(1)).min(1)
@@ -254,7 +271,15 @@ export const phoneNumberIdValidation = Joi.object({
 export const whatsappNumberPathValidation = Joi.object({
   whatsappNumber: Joi.string().pattern(whatsappNumberPattern).required()
     .messages({
-      'string.pattern.base': 'WhatsApp number must be in international format without + or 00'
+      'string.pattern.base': 'WhatsApp number must be in international format without + or 00 and must be 13-15 digits including country code'
+    })
+});
+
+export const whatsappNumberQueryValidation = Joi.object({
+  whatsappNumber: Joi.string().pattern(whatsappNumberPattern).required()
+    .messages({
+      'string.pattern.base': 'WhatsApp number must be in international format without + or 00 and must be 13-15 digits including country code',
+      'any.required': 'WhatsApp number is required as a query parameter'
     })
 });
 
@@ -361,5 +386,45 @@ export const getMessageTemplatesQueryValidation = Joi.object({
   language: Joi.string().pattern(/^[a-z]{2}_[A-Z]{2}$/).optional()
     .messages({
       'string.pattern.base': 'Language must be in ISO format (e.g., en_US, es_ES)'
+    })
+});
+
+// Add Contact Body Validation
+export const addContactValidation = Joi.object({
+  name: Joi.string().min(1).max(255).optional()
+    .messages({
+      'string.min': 'Name cannot be empty',
+      'string.max': 'Name cannot exceed 255 characters'
+    }),
+  source: Joi.string().max(100).optional()
+    .messages({
+      'string.max': 'Source cannot exceed 100 characters'
+    }),
+  tags: Joi.array().items(Joi.string()).optional()
+    .messages({
+      'array.base': 'Tags must be an array of strings'
+    }),
+  attributes: Joi.alternatives().try(
+    Joi.string().custom((value, helpers) => {
+      try {
+        JSON.parse(value);
+        return value;
+      } catch (error) {
+        return helpers.error('any.invalid');
+      }
+    }),
+    Joi.object().pattern(Joi.string(), Joi.any())
+  ).optional()
+    .messages({
+      'any.invalid': 'Attributes must be valid JSON string or object',
+      'object.base': 'Attributes must be an object with key-value pairs'
+    }),
+  allowBroadcast: Joi.boolean().optional()
+    .messages({
+      'boolean.base': 'allowBroadcast must be a boolean value'
+    }),
+  allowSMS: Joi.boolean().optional()
+    .messages({
+      'boolean.base': 'allowSMS must be a boolean value'
     })
 });

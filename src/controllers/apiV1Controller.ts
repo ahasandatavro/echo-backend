@@ -7,6 +7,8 @@ import { brodcastTemplate } from "../processors/template/templateProcessor";
 import { broadcastTemplate } from "./templateController";
 import { notifyAgent } from "../helpers";
 import { prisma } from "../models/prismaClient";
+import { razorpayService } from '../services/razorpay.service';
+import { validatePackagePricing } from '../utils/packageUtils';
 
 // Helper to parse date as UTC if no timezone is present
 function parseAsUTC(dateStr: string): Date {
@@ -312,22 +314,36 @@ export const getContacts = async (req: Request, res: Response) => {
 // GET /:tenantId/api/v1/getMedia
 export const getMedia = async (req: Request, res: Response) => {
   const fileName = req.query.fileName as string;
-  const user: any = req.user;
+  const phoneNumberId = req.params.phoneNumberId as string;
 
   if (!fileName) {
     return res.status(400).json({ message: "fileName query parameter is required" });
   }
 
-  if (!user || !user.userId) {
-    return res.status(401).json({ message: "User authentication required" });
+  if (!phoneNumberId) {
+    return res.status(400).json({ message: "phoneNumberId is required" });
   }
 
   try {
+    // Find the user with the given selectedPhoneNumberId
+    const user = await prisma.user.findFirst({
+      where: {
+        selectedPhoneNumberId: phoneNumberId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found for the given phoneNumberId" });
+    }
+
     // Check if the media exists in the database for this user
     const mediaRecord = await prisma.media.findFirst({
       where: {
         fileName: fileName,
-        userId: user.userId,
+        userId: user.id,
       },
     });
 
@@ -470,7 +486,7 @@ export const updateContactAttributesForMultiContacts = async (req: Request, res:
 export const rotateToken = (req: Request, res: Response) => { res.sendStatus(501); };
 // POST /:tenantId/api/v1/addContact/:whatsappNumber
 export const addContact = async (req: Request, res: Response) => {
-  const { name, source, tags, attributes } = req.body;
+  const { name, source, tags, attributes,allowBroadcast, allowSMS  } = req.body;
   const { phoneNumberId, whatsappNumber } = req.params;
   try {
     // find the user who has selectedPhoneNumberId equal to phoneNumberId
@@ -508,6 +524,8 @@ export const addContact = async (req: Request, res: Response) => {
         createdById: contactUserId,
         tags: tags || [],
         attributes: parsedAttributes,
+        subscribed: allowBroadcast ?? false,  // Map allowBroadcast -> subscribed
+        sendSMS: allowSMS ?? false, 
       },
     });
 
@@ -1077,20 +1095,60 @@ export const assignTeam = async (req: Request, res: Response) => {
       return res.status(400).json({ error: "teams must be a non-empty array of team names" });
     }
 
-    // Fetch team IDs by name
+    // Find user who owns this phoneNumberId
+    const userWithPhoneNumber = await prisma.user.findFirst({
+      where: { selectedPhoneNumberId: phoneNumberId },
+      select: { 
+        id: true,
+        teams: {
+          select: { id: true }
+        }
+      }
+    });
+
+    if (!userWithPhoneNumber) {
+      return res.status(404).json({ error: "User with the specified phoneNumberId not found" });
+    }
+
+    // Get the team IDs that belong to this user
+    const userTeamIds = userWithPhoneNumber.teams.map(team => team.id);
+
+    if (userTeamIds.length === 0) {
+      return res.status(403).json({ error: "User has no teams assigned. Cannot assign teams to contact." });
+    }
+
+    // Fetch team IDs by name, ensuring they belong to the user's teams
     const teamRecords = await prisma.team.findMany({
       where: {
-        OR: teamNames.map((teamName: string) =>
-          teamName === "Default Team"
-            ? { defaultTeam: true }
-            : { name: teamName }
-        ),
+        AND: [
+          {
+            id: { in: userTeamIds } // Only teams that belong to the user
+          },
+          {
+            OR: teamNames.map((teamName: string) =>
+              teamName === "Default Team"
+                ? { defaultTeam: true }
+                : { name: teamName }
+            )
+          }
+        ]
       },
-      select: { id: true },
+      select: { id: true, name: true },
     });
     const teamIds = teamRecords.map((team) => ({ id: team.id }));
+    
     if (teamIds.length === 0) {
-      return res.status(404).json({ error: "No matching teams found" });
+      return res.status(404).json({ error: "No matching teams found that belong to this user" });
+    }
+
+    // Check if all requested teams were found
+    if (teamRecords.length < teamNames.length) {
+      const foundTeamNames = teamRecords.map(t => t.name);
+      const missingTeams = teamNames.filter(name => !foundTeamNames.includes(name));
+      return res.status(404).json({ 
+        error: "Some teams not found or do not belong to this user", 
+        missingTeams 
+      });
     }
 
     // Update assigned teams in the Contact model
@@ -1314,4 +1372,113 @@ export const checkoutButtonTemplate = (req: Request, res: Response) => { res.sen
 // GET /:tenantId/api/v1/order_details/:referenceId
 export const getOrderDetailsByReferenceId = (req: Request, res: Response) => { res.sendStatus(501); };
 // GET /:tenantId/api/v1/payment_status/:referenceId
-export const getPaymentStatusByReferenceId = (req: Request, res: Response) => { res.sendStatus(501); }; 
+export const getPaymentStatusByReferenceId = (req: Request, res: Response) => { res.sendStatus(501); };
+
+// -------------------- Payment API --------------------
+// POST /:phoneNumberId/payments/create-order
+export const createOrder = async (req: Request, res: Response) => {
+  try {
+    const { phoneNumberId } = req.params;
+    const { amount, currency, packageName, packageDuration } = req.body;
+
+    if (!phoneNumberId) {
+      return res.status(400).json({ error: 'phoneNumberId is required' });
+    }
+
+    if (!amount || !packageName || !packageDuration) {
+      return res.status(400).json({ error: 'Amount, package name, and package duration are required' });
+    }
+
+    if (packageDuration !== 'monthly' && packageDuration !== 'yearly') {
+      return res.status(400).json({ error: 'Package duration must be either monthly or yearly' });
+    }
+
+    // Find the user with the given selectedPhoneNumberId
+    const user = await prisma.user.findFirst({
+      where: {
+        selectedPhoneNumberId: phoneNumberId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found for the given phoneNumberId" });
+    }
+
+    // Validate package pricing against configured packages
+    const validation = validatePackagePricing(packageName, amount, packageDuration);
+    
+    if (!validation.isValid) {
+      return res.status(400).json({ 
+        error: validation.error,
+        expectedAmount: validation.expectedAmount
+      });
+    }
+
+    const order = await razorpayService.createOrder(amount, user.id, packageName, packageDuration, currency);
+    res.json(order);
+  } catch (error) {
+    console.error('Error creating order:', error);
+    res.status(500).json({ error: 'Error creating order' });
+  }
+};
+
+// POST /:phoneNumberId/payments/verify-payment
+export const verifyPayment = async (req: Request, res: Response) => {
+  try {
+    const { phoneNumberId } = req.params;
+    const { paymentId, orderId, signature } = req.body;
+
+    if (!phoneNumberId) {
+      return res.status(400).json({ error: 'phoneNumberId is required' });
+    }
+
+    if (!paymentId || !orderId || !signature) {
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+
+    // Find the user with the given selectedPhoneNumberId
+    const user = await prisma.user.findFirst({
+      where: {
+        selectedPhoneNumberId: phoneNumberId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found for the given phoneNumberId" });
+    }
+
+    const isValid = await razorpayService.verifyPayment(paymentId, orderId, signature);
+    
+    if (isValid) {
+      // Fetch the updated payment record to get card information
+      const payment = await razorpayService.getPaymentDetails(orderId);
+      
+      res.json({ 
+        status: 'success', 
+        message: 'Payment verified successfully',
+        payment: {
+          id: payment.id,
+          orderId: payment.orderId,
+          paymentId: payment.paymentId,
+          amount: payment.amount,
+          currency: payment.currency,
+          status: payment.status,
+          lastFourDigits: payment.lastFourDigits,
+          cardType: payment.cardType,
+          createdAt: payment.createdAt
+        }
+      });
+    } else {
+      res.status(400).json({ status: 'error', message: 'Payment verification failed' });
+    }
+  } catch (error) {
+    console.error('Error verifying payment:', error);
+    res.status(500).json({ error: 'Error verifying payment' });
+  }
+}; 

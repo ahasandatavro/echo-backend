@@ -13,7 +13,7 @@ if (!process.env.MONGODB_URI) {
 const agenda = new Agenda({
   db: {
     address: process.env.MONGODB_URI,
-    collection: 'agendaJobs'
+    collection: 'agendaJobsStaging'
   },
   processEvery: '30 seconds',
   maxConcurrency: 20,

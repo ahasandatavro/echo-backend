@@ -50,6 +50,17 @@ export const createAgent = async (req: Request, res: Response) => {
             });
         }
 
+        // Check if user with this email already exists
+        const existingUser = await prisma.user.findUnique({
+            where: { email }
+        });
+
+        if (existingUser) {
+            return res.status(409).json({ 
+                error: "A user with this email already exists. Please use a different email address." 
+            });
+        }
+
         // Get the creator (User creating the Agent)
         const creator = await prisma.user.findUnique({
             where: { id: userId },
