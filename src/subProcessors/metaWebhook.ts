@@ -1009,7 +1009,7 @@ export const processMessageUpdate = async (value: any, io: any) => {
           contactId: finalContact?.id,
         },
       });
-      if (messageLength >= parseInt(process.env.FREE_PACKAGE_MESSAGE_LIMIT || "100") || sender !== dbUser?.phoneNumber) {
+      if (messageLength >= parseInt(process.env.FREE_PACKAGE_MESSAGE_LIMIT || "100")) {
         return;
       }
     }
