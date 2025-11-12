@@ -191,28 +191,26 @@ export const getUserAnalytics = async (req: Request, res: Response) => {
     const timezoneOffset = getTimezoneOffsetHours(userTimezone);
     console.log(`📊 Analytics timezone: ${userTimezone}, offset: ${timezoneOffset} hours`);
     
-    // 3. Determine the time range in user's timezone
+    // 3. Determine the time range (these are already in UTC since we use new Date())
     const now = new Date();
-    let startDate: Date, endDate: Date;
+    let startDateUTC: Date, endDateUTC: Date;
     if (timeRange === 'Last 6 months') {
-      startDate = new Date(now.getFullYear(), now.getMonth() - 5, 1);
-      endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+      startDateUTC = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+      endDateUTC = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
     } else if (timeRange === 'Last 30 days') {
-      startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-      endDate = now;
+      startDateUTC = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      endDateUTC = now;
     } else if (timeRange === 'Last 7 days') {
-      startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      endDate = now;
+      startDateUTC = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      endDateUTC = now;
     } else if (timeRange === 'This month') {
-      startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-      endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+      startDateUTC = new Date(now.getFullYear(), now.getMonth(), 1);
+      endDateUTC = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
     } else {
       return res.status(400).json({ error: 'Invalid timeRange' });
     }
     
-    // Convert user timezone dates to UTC for database query
-    const startDateUTC = new Date(startDate.getTime() - timezoneOffset * 60 * 60 * 1000);
-    const endDateUTC = new Date(endDate.getTime() - timezoneOffset * 60 * 60 * 1000);
+    console.log(`📊 Date range calculation - now: ${now.toISOString()}, range: ${timeRange}`);
     
     // 4. Find the chatbotId and businessPhoneNumberId
     const chatbot = await prisma.chatbot.findFirst({ 
@@ -234,6 +232,19 @@ export const getUserAnalytics = async (req: Request, res: Response) => {
     const businessPhoneNumberId = bp.id;
     
     // 5. Query all chatbot triggers in the time range
+    // First, let's check ALL triggers for this chatbot to debug
+    const allTriggersDebug = await prisma.conversationChatbotTrigger.findMany({
+      where: {
+        chatbotId,
+        businessPhoneNumberId,
+      },
+      take: 10,
+      orderBy: { triggeredAt: 'desc' }
+    });
+    console.log(`🔍 DEBUG: All recent triggers for chatbot ${chatbotId}:`, 
+      allTriggersDebug.map(t => ({ id: t.id, triggeredAt: t.triggeredAt.toISOString(), userType: t.userType }))
+    );
+    
     const triggers = await prisma.conversationChatbotTrigger.findMany({
       where: {
         chatbotId,
@@ -248,18 +259,32 @@ export const getUserAnalytics = async (req: Request, res: Response) => {
     });
     
     console.log(`📊 Found ${triggers.length} triggers for chatbot ${chatbotId}`);
+    console.log(`📊 Query params: chatbotId=${chatbotId}, businessPhoneNumberId=${businessPhoneNumberId}`);
+    console.log(`📊 Date range (UTC): ${startDateUTC.toISOString()} to ${endDateUTC.toISOString()}`);
     
     // 6. Fetch contacts for all unique recipients
     const uniqueRecipients = [...new Set(triggers.map(t => t.conversation.recipient))];
+    console.log(`📊 Unique recipients: ${uniqueRecipients.length}`, uniqueRecipients);
+    
     const contacts = await prisma.contact.findMany({
       where: { phoneNumber: { in: uniqueRecipients } },
     });
     const contactMap = new Map(contacts.map(c => [c.phoneNumber, c]));
+    console.log(`📊 Contacts found: ${contacts.length}`);
     
     // 7. Filter by country and attributes
     const filteredTriggers = triggers.filter((trigger) => {
       const contact = contactMap.get(trigger.conversation.recipient);
-      if (!contact) return false;
+      
+      // If no filters are applied and no contact exists, still include the trigger
+      if (!contact) {
+        if (countries.length === 0 && Object.keys(attributes).length === 0) {
+          console.log(`⚠️ No contact found for ${trigger.conversation.recipient}, but no filters applied - including trigger`);
+          return true; // Include if no filters
+        }
+        console.log(`⚠️ No contact found for ${trigger.conversation.recipient} - excluding trigger`);
+        return false; // Exclude if filters need to be applied
+      }
       
       // Country filter
       if (countries.length > 0) {
@@ -305,7 +330,8 @@ export const getUserAnalytics = async (req: Request, res: Response) => {
       // Convert UTC timestamp to user's timezone
       const utcTime = trigger.triggeredAt;
       const userTime = new Date(utcTime.getTime() + timezoneOffset * 60 * 60 * 1000);
-      const hour = userTime.getHours();
+      const hour = userTime.getUTCHours(); // Use getUTCHours() since we shifted the timestamp
+      console.log(`🕐 Trigger at ${utcTime.toISOString()} (UTC) -> hour ${hour} in ${userTimezone}`);
       hourCounts[hour]++;
     }
     

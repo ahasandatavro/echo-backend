@@ -53,7 +53,8 @@ export const processChatFlow = async (chatbotId: number, recipient: string, agen
       );
       
       // Determine user type: check if user has ANY previous messages on this business phone
-      // (either from other chatbots OR manual conversations without chatbot)
+      // A "new user" has never interacted with this business phone before
+      // An "existing user" has sent messages before (regardless of chatbot)
       let userType = 'new';
       if (businessPhoneNumberId) {
         const previousMessages = await prisma.message.findFirst({
@@ -61,16 +62,33 @@ export const processChatFlow = async (chatbotId: number, recipient: string, agen
             conversation: {
               recipient,
               businessPhoneNumberId,
-              OR: [
-                { chatbotId: { not: chatbotId } }, // Messages from other chatbots
-                { chatbotId: null }                 // Manual messages (no chatbot)
-              ]
             }
+          },
+          orderBy: {
+            time: 'asc' // Get the oldest message
           }
         });
+        
         if (previousMessages) {
-          userType = 'existing';
+          // If messages exist, check if this is their first chatbot trigger
+          // by checking if any messages were sent BEFORE this moment
+          const messageCountBeforeTrigger = await prisma.message.count({
+            where: {
+              conversation: {
+                recipient,
+                businessPhoneNumberId,
+              },
+              time: {
+                lt: new Date() // Messages sent before right now
+              }
+            }
+          });
+          
+          if (messageCountBeforeTrigger > 0) {
+            userType = 'existing';
+          }
         }
+        console.log(`👤 User type for ${recipient}: ${userType} (has ${previousMessages ? 'messages' : 'no messages'})`);
       }
 
       let conversationId: number;
