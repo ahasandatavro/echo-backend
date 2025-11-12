@@ -129,198 +129,6 @@ export const processMessageEchoes = async (echoData: any) => {
   }
 };
 
-// export const processBroadcastInteraction = async (messageData: any) => {
-//   try {
-//     const {messages, statuses} = messageData;
-
-//     // Process message replies for broadcast tracking
-//     if (messages && Array.isArray(messages)) {
-//       for (const message of messages) {
-//         const {from: phoneNumber, context} = message;
-
-//         // Check if this is a reply to a broadcast template
-//         if (context && context.referred_product) {
-//           const contact = await prisma.contact.findFirst({
-//             where: {phoneNumber}
-//           });
-
-//           if (contact) {
-//             // Find recent broadcast recipient
-//             const recentBroadcast = await prisma.broadcastRecipient.findFirst({
-//               where: {
-//                 contactId: contact.id,
-//                 createdAt: {
-//                   gte: new Date(Date.now() - 24 * 60 * 60 * 1000) // Last 24 hours
-//                 }
-//               },
-//               include: {broadcast: true},
-//               orderBy: {createdAt: 'desc'}
-//             });
-
-//             if (recentBroadcast) {
-//               // Check if this reply metric already exists for this broadcast and contact
-//               const existingReplyMetric = await prisma.broadcastMetric.findFirst({
-//                 where: {
-//                   broadcastId: recentBroadcast.broadcastId,
-//                   contactId: contact.id,
-//                   metricType: "replied"
-//                 }
-//               });
-
-//               // Only create metric if it doesn't already exist
-//               if (!existingReplyMetric) {
-//                 // Record reply metric
-//                 await prisma.broadcastMetric.create({
-//                   data: {
-//                     broadcastId: recentBroadcast.broadcastId,
-//                     metricType: "replied",
-//                     metricValue: 1,
-//                     contactId: contact.id,
-//                     timestamp: new Date()
-//                   }
-//                 });
-
-//                 // Update broadcast reply count
-//                 await prisma.broadcast.update({
-//                   where: {id: recentBroadcast.broadcastId},
-//                   data: {
-//                     totalReplied: {
-//                       increment: 1
-//                     }
-//                   }
-//                 });
-                
-//               }
-//             }
-//           }
-//         }
-//       }
-//     }
-
-//     // Process message status updates (delivered, read)
-//     if (statuses && Array.isArray(statuses)) {
-//       for (const status of statuses) {
-//         const {recipient_id: phoneNumber, status: messageStatus, errors: messageError} = status;
-
-//         const contact = await prisma.contact.findFirst({
-//           where: {phoneNumber}
-//         });
-
-//         if (contact) {
-//           const recentBroadcast = await prisma.broadcastRecipient.findFirst({
-//             where: {
-//               contactId: contact.id,
-//               createdAt: {
-//                 gte: new Date(Date.now() - 24 * 60 * 60 * 1000)
-//               }
-//             },
-//             include: {broadcast: true},
-//             orderBy: {createdAt: 'desc'}
-//           });
-
-//           if (recentBroadcast) {
-//             let metricType = "";
-//             switch (messageStatus) {
-//               case "sent":
-//                 metricType = "sent";
-//                 break;
-//               case "delivered":
-//                 metricType = "delivered";
-//                 break;
-//               case "read":
-//                 metricType = "read";
-//                 break;
-//               default:
-//                 metricType = "failed"
-//             }
-
-//             // Check if this metric already exists for this broadcast, contact, and metric type
-//             const existingMetric = await prisma.broadcastMetric.findFirst({
-//               where: {
-//                 broadcastId: recentBroadcast.broadcastId,
-//                 contactId: contact.id,
-//                 metricType
-//               }
-//             });
-
-//             // Only create metric if it doesn't already exist
-//             if (!existingMetric) {
-//               // Record status metric
-//               await prisma.broadcastMetric.create({
-//                 data: {
-//                   broadcastId: recentBroadcast.broadcastId,
-//                   metricType,
-//                   metricValue: 1,
-//                   contactId: contact.id,
-//                   timestamp: new Date()
-//                 }
-//               });
-
-//               // Update broadcast counts only when creating new metric
-//               const updateData: any = {};
-//               if (metricType === "sent") {
-//                 updateData.totalSent = {increment: 1};
-//               } else if (metricType === "delivered") {
-//                 updateData.totalDelivered = {increment: 1};
-//               } else if (metricType === "read") {
-//                 updateData.totalRead = {increment: 1};
-//               }
-
-//               await prisma.broadcast.update({
-//                 where: {id: recentBroadcast.broadcastId},
-//                 data: updateData
-//               });
-//             }
-
-//             // Update BroadcastRecipient status
-//             const recipientStatus = messageStatus.toUpperCase();
-            
-//             console.log('Recipient Name:', contact.name || contact.phoneNumber);
-//             console.log('Recipient Status:', recipientStatus);
-//             console.log('Message Error', messageError);
-//             const errorData = Array.isArray(messageError)
-//               ? {errorMessage: messageError.map(error => `${error.title}: ${error.message}`).join(', ')}
-//               : {};
-//             console.log('Error Data', errorData);
-//             await prisma.broadcastRecipient.update({
-//               where: {
-//                 id: recentBroadcast.id,
-//                 contactId: contact.id
-//               },
-//               data: {
-//                 status: recipientStatus,
-//                 ...errorData
-//               }
-//             });
-
-//             // Update the message brodcastStatus
-//             const templateMessage = await prisma.message.findFirst({
-//               where: {
-//                 contactId: contact.id,
-//                 messageType: "template",
-//                 text: "Template: " + recentBroadcast.broadcast.templateName 
-//               },
-//               orderBy: {
-//                 createdAt: 'desc'
-//               }
-//             });
-
-//             if (templateMessage) {
-//               await prisma.message.update({
-//                 where: {id: templateMessage.id},
-//                 data: {
-//                   brodcastStatus: recipientStatus
-//                 }
-//               });
-//             }
-//           }
-//         }
-//       }
-//     }
-//   } catch (error) {
-//     console.error("Error processing broadcast interaction:", error);
-//   }
-// };
 export const processBroadcastInteraction = async (messageData: any) => {
   try {
     const {messages, statuses} = messageData;
@@ -381,6 +189,7 @@ export const processBroadcastInteraction = async (messageData: any) => {
                     }
                   }
                 });
+                
               }
             }
           }
@@ -446,29 +255,35 @@ export const processBroadcastInteraction = async (messageData: any) => {
                   timestamp: new Date()
                 }
               });
-            }
 
-            // Update broadcast counts
-            const updateData: any = {};
-            if (metricType === "sent") {
-              updateData.totalSent = {increment: 1};
-            } else if (metricType === "delivered") {
-              updateData.totalDelivered = {increment: 1};
-            } else if (metricType === "read") {
-              updateData.totalRead = {increment: 1};
-            }
+              // Update broadcast counts only when creating new metric
+              const updateData: any = {};
+              if (metricType === "sent") {
+                updateData.totalSent = {increment: 1};
+              } else if (metricType === "delivered") {
+                updateData.totalDelivered = {increment: 1};
+              } else if (metricType === "read") {
+                updateData.totalRead = {increment: 1};
+              }
 
-            await prisma.broadcast.update({
-              where: {id: recentBroadcast.broadcastId},
-              data: updateData
-            });
+              await prisma.broadcast.update({
+                where: {id: recentBroadcast.broadcastId},
+                data: updateData
+              });
+            }
 
             // Update BroadcastRecipient status
             const recipientStatus = messageStatus.toUpperCase();
+            
+            console.log('Recipient Name:', contact.name || contact.phoneNumber);
+            console.log('Recipient Status:', recipientStatus);
             console.log('Message Error', messageError);
-            const errorData = Array.isArray(messageError)
+            
+            // Only save error messages if the status is actually failed
+            const errorData = messageStatus === 'failed' && Array.isArray(messageError) && messageError.length > 0
               ? {errorMessage: messageError.map(error => `${error.title}: ${error.message}`).join(', ')}
               : {};
+            
             console.log('Error Data', errorData);
             await prisma.broadcastRecipient.update({
               where: {
@@ -480,6 +295,27 @@ export const processBroadcastInteraction = async (messageData: any) => {
                 ...errorData
               }
             });
+
+            // Update the message brodcastStatus
+            const templateMessage = await prisma.message.findFirst({
+              where: {
+                contactId: contact.id,
+                messageType: "template",
+                text: "Template: " + recentBroadcast.broadcast.templateName 
+              },
+              orderBy: {
+                createdAt: 'desc'
+              }
+            });
+
+            if (templateMessage) {
+              await prisma.message.update({
+                where: {id: templateMessage.id},
+                data: {
+                  brodcastStatus: recipientStatus
+                }
+              });
+            }
           }
         }
       }
