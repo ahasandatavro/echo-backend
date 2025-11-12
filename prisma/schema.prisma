@@ -161,6 +161,7 @@ model BusinessPhoneNumber {
   rules                 Rule[]
   webhooks              Webhook[]
   webhookLogs           WebhookLog[]
+  chatbotTriggers       ConversationChatbotTrigger[]
 }
 
 model NotificationSetting {
@@ -382,6 +383,7 @@ model Chatbot {
   messages      Message[]      @relation("ChatbotMessages")
   nodes         Node[]         @relation("ChatbotNodes")
   variables     Variable[]
+  triggers      ConversationChatbotTrigger[]
 }
 
 model Node {
@@ -440,33 +442,52 @@ model NodeVisit {
   contact        Contact?     @relation(fields: [contactId], references: [id])
 }
 model Conversation {
-  id                     Int                  @id @default(autoincrement())
-  recipient              String
-  chatbotId              Int?
-  createdAt              DateTime             @default(now())
-  updatedAt              DateTime             @updatedAt
-  currentNodeId          Int?
-  lastNodeId             Int?
-  userId                 Int?
-  answeringQuestion      Boolean              @default(false)
-  validationFailureCount Int                  @default(0)
-  contactId              Int?
-  chatStatus             String?
-  businessPhoneNumberId  Int?
-  waitingJobId           String?              // Job ID for waiting message
-  lastAgentMessageAt     DateTime?            // Timestamp of last agent message
-  waitingMessageSent     Boolean              @default(false) // Flag to track if waiting message was sent
-  noResponse24hJobId     String?              // Job ID for 24-hour no response action
-  lastCustomerMessageAt  DateTime?            // Timestamp of last customer message
-  noResponse24hSent      Boolean              @default(false) // Flag to track if 24h action was sent
-  ChatStatusHistory      ChatStatusHistory[]
-  businessPhoneNumber    BusinessPhoneNumber? @relation(fields: [businessPhoneNumberId], references: [id])
-  chatbot                Chatbot?             @relation(fields: [chatbotId], references: [id])
-  contact                Contact?             @relation(fields: [contactId], references: [id])
-  user                   User?                @relation(fields: [userId], references: [id])
-  messages               Message[]
-  variables              Variable[]
-  nodeVisits NodeVisit[]
+id                     Int                  @id @default(autoincrement())
+recipient              String
+chatbotId              Int?
+createdAt              DateTime             @default(now())
+updatedAt              DateTime             @updatedAt
+currentNodeId          Int?
+lastNodeId             Int?
+userId                 Int?
+answeringQuestion      Boolean              @default(false)
+validationFailureCount Int                  @default(0)
+contactId              Int?
+chatStatus             String?
+businessPhoneNumberId  Int?
+waitingJobId           String?              // Job ID for waiting message
+lastAgentMessageAt     DateTime?            // Timestamp of last agent message
+waitingMessageSent     Boolean              @default(false) // Flag to track if waiting message was sent
+noResponse24hJobId     String?              // Job ID for 24-hour no response action
+lastCustomerMessageAt  DateTime?            // Timestamp of last customer message
+noResponse24hSent      Boolean              @default(false) // Flag to track if 24h action was sent
+ChatStatusHistory      ChatStatusHistory[]
+businessPhoneNumber    BusinessPhoneNumber? @relation(fields: [businessPhoneNumberId], references: [id])
+chatbot                Chatbot?             @relation(fields: [chatbotId], references: [id])
+contact                Contact?             @relation(fields: [contactId], references: [id])
+user                   User?                @relation(fields: [userId], references: [id])
+messages               Message[]
+variables              Variable[]
+nodeVisits             NodeVisit[]
+chatbotTriggers        ConversationChatbotTrigger[]
+}
+
+model ConversationChatbotTrigger {
+  id                   Int          @id @default(autoincrement())
+  conversationId       Int
+  chatbotId            Int
+  triggeredAt          DateTime     @default(now())
+  userType             String       // 'new' or 'existing'
+  businessPhoneNumberId Int?
+  
+  conversation         Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  chatbot              Chatbot      @relation(fields: [chatbotId], references: [id], onDelete: Cascade)
+  businessPhoneNumber  BusinessPhoneNumber? @relation(fields: [businessPhoneNumberId], references: [id])
+  
+  @@index([conversationId])
+  @@index([chatbotId, triggeredAt])
+  @@index([businessPhoneNumberId, chatbotId, triggeredAt])
+  @@index([userType])
 }
 
 model Keyword {

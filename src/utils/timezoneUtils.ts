@@ -243,7 +243,7 @@ function convertTimeFromUTC(timeString: string, userTimezone: string): string {
  * @param timezone - IANA timezone identifier
  * @returns Offset in hours (positive for ahead of UTC, negative for behind)
  */
-function getTimezoneOffsetHours(timezone: string): number {
+export function getTimezoneOffsetHours(timezone: string): number {
   try {
     // Use JavaScript's Intl API to get the actual timezone offset
     // This is more accurate than hardcoded values and handles DST automatically

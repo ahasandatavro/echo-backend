@@ -4,6 +4,7 @@ import { Request, Response } from "express";
 import axios from "axios";
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
 import { prisma } from "../models/prismaClient";
+import { getUserTimezone, getTimezoneOffsetHours } from "../utils/timezoneUtils";
 
 export const getAnalytics = async (req: Request, res: Response) => {
   try {
@@ -173,7 +174,24 @@ export const getUserAnalytics = async (req: Request, res: Response) => {
         return res.status(400).json({ error: 'Invalid attributes JSON' });
       }
     }
-    // 2. Determine the time range
+    
+    // 2. Get the current user and their timezone
+    const user: any = req.user;
+    const dbUser = await prisma.user.findFirst({
+      where: { id: user.userId },
+      select: { selectedPhoneNumberId: true },
+    });
+    if (!dbUser || !dbUser.selectedPhoneNumberId) {
+      return res.status(400).json({ error: 'User does not have a selectedPhoneNumberId' });
+    }
+    const selectedPhoneNumberId = dbUser.selectedPhoneNumberId;
+    
+    // Get user's timezone
+    const userTimezone = await getUserTimezone(user.userId);
+    const timezoneOffset = getTimezoneOffsetHours(userTimezone);
+    console.log(`📊 Analytics timezone: ${userTimezone}, offset: ${timezoneOffset} hours`);
+    
+    // 3. Determine the time range in user's timezone
     const now = new Date();
     let startDate: Date, endDate: Date;
     if (timeRange === 'Last 6 months') {
@@ -191,52 +209,58 @@ export const getUserAnalytics = async (req: Request, res: Response) => {
     } else {
       return res.status(400).json({ error: 'Invalid timeRange' });
     }
-    // 3. Get the current user's selectedPhoneNumberId from JWT
-    const user: any = req.user;
-    const dbUser = await prisma.user.findFirst({
-      where: { id: user.userId },
-      select: { selectedPhoneNumberId: true },
+    
+    // Convert user timezone dates to UTC for database query
+    const startDateUTC = new Date(startDate.getTime() - timezoneOffset * 60 * 60 * 1000);
+    const endDateUTC = new Date(endDate.getTime() - timezoneOffset * 60 * 60 * 1000);
+    
+    // 4. Find the chatbotId and businessPhoneNumberId
+    const chatbot = await prisma.chatbot.findFirst({ 
+      where: { id: parseInt(chatbotName) }, 
+      select: { id: true } 
     });
-    if (!dbUser || !dbUser.selectedPhoneNumberId) {
-      return res.status(400).json({ error: 'User does not have a selectedPhoneNumberId' });
-    }
-    // Convert selectedPhoneNumberId to number if possible
-    const selectedPhoneNumberId = (dbUser.selectedPhoneNumberId);
- 
-    // 4. Find the chatbotId by chatbot name
-    const chatbot = await prisma.chatbot.findFirst({ where: { id: parseInt(chatbotName) }, select: { id: true } });
     if (!chatbot) {
       return res.status(404).json({ error: 'Chatbot not found' });
     }
     const chatbotId = chatbot.id;
-    const bp=await prisma.businessPhoneNumber.findFirst({where:{metaPhoneNumberId:selectedPhoneNumberId},select:{id:true}});
-    if(!bp){
+    
+    const bp = await prisma.businessPhoneNumber.findFirst({
+      where: { metaPhoneNumberId: selectedPhoneNumberId },
+      select: { id: true }
+    });
+    if (!bp) {
       return res.status(404).json({ error: 'Business Phone Number not found' });
     }
-    const businessPhoneNumberId=bp.id;
-    // 5. Query all conversations with filters
-    const conversations = await prisma.conversation.findMany({
+    const businessPhoneNumberId = bp.id;
+    
+    // 5. Query all chatbot triggers in the time range
+    const triggers = await prisma.conversationChatbotTrigger.findMany({
       where: {
         chatbotId,
-        businessPhoneNumberId: businessPhoneNumberId,
-        OR: [
-          { createdAt: { gte: startDate, lte: endDate } },
-          { updatedAt: { gte: startDate, lte: endDate } }
-        ],
+        businessPhoneNumberId,
+        triggeredAt: { gte: startDateUTC, lte: endDateUTC },
       },
-      // Remove include: { contact: true },
+      include: {
+        conversation: {
+          select: { recipient: true }
+        }
+      }
     });
-    // For each conversation, fetch the contact by phoneNumber (recipient)
-    const conversationsWithContact = await Promise.all(
-      conversations.map(async (conv) => {
-        const contact = await prisma.contact.findFirst({ where: { phoneNumber: conv.recipient } });
-        return { ...conv, contact };
-      })
-    );
-    // 6. Filter by country and attributes
-    const filteredConversations = conversationsWithContact.filter((conv) => {
-      const contact = conv.contact;
+    
+    console.log(`📊 Found ${triggers.length} triggers for chatbot ${chatbotId}`);
+    
+    // 6. Fetch contacts for all unique recipients
+    const uniqueRecipients = [...new Set(triggers.map(t => t.conversation.recipient))];
+    const contacts = await prisma.contact.findMany({
+      where: { phoneNumber: { in: uniqueRecipients } },
+    });
+    const contactMap = new Map(contacts.map(c => [c.phoneNumber, c]));
+    
+    // 7. Filter by country and attributes
+    const filteredTriggers = triggers.filter((trigger) => {
+      const contact = contactMap.get(trigger.conversation.recipient);
       if (!contact) return false;
+      
       // Country filter
       if (countries.length > 0) {
         let phone = contact.phoneNumber;
@@ -250,6 +274,7 @@ export const getUserAnalytics = async (req: Request, res: Response) => {
           return false;
         }
       }
+      
       // Attributes filter (AND logic)
       let contactAttrs: Record<string, any> = {};
       if (contact.attributes && typeof contact.attributes === 'object' && !Array.isArray(contact.attributes)) {
@@ -261,88 +286,30 @@ export const getUserAnalytics = async (req: Request, res: Response) => {
       }
       return true;
     });
-    // 7. User Type Filtering
-    let finalConversations: typeof filteredConversations = [];
     
-    if (userType === 'All Users') {
-      // Include all conversations
-      finalConversations = filteredConversations;
-    } else if (userType === 'New Users') {
-      // Get all conversations for this businessPhoneNumberId (across all chatbots)
-      const allConversationsForBusiness = await prisma.conversation.findMany({
-        where: {
-          businessPhoneNumberId: businessPhoneNumberId,
-          OR: [
-            { createdAt: { gte: startDate, lte: endDate } },
-            { updatedAt: { gte: startDate, lte: endDate } }
-          ],
-        },
-      });
-      
-      // Group conversations by contact phone number across all chatbots
-      const convsByContactPhone: Record<string, any[]> = {};
-      for (const conv of allConversationsForBusiness) {
-        if (!convsByContactPhone[conv.recipient]) {
-          convsByContactPhone[conv.recipient] = [];
-        }
-        convsByContactPhone[conv.recipient].push(conv);
-      }
-      
-      // Get contacts who have conversations ONLY with this chatbot (no other chatbots)
-      const newUserContactPhones = Object.keys(convsByContactPhone).filter(phone => {
-        const convs = convsByContactPhone[phone];
-        // Check if this contact has conversations with ONLY this chatbot
-        const uniqueChatbotIds = [...new Set(convs.map(c => c.chatbotId))];
-        return uniqueChatbotIds.length === 1 && uniqueChatbotIds[0] === chatbotId;
-      });
-      
-      // Filter conversations to only include those from new users
-      finalConversations = filteredConversations.filter(conv => 
-        newUserContactPhones.includes(conv.recipient)
-      );
+    // 8. User Type Filtering (now stored in trigger!)
+    let finalTriggers = filteredTriggers;
+    if (userType === 'New Users') {
+      finalTriggers = filteredTriggers.filter(t => t.userType === 'new');
     } else if (userType === 'Returning Users') {
-      // Get all conversations for this businessPhoneNumberId (across all chatbots)
-      const allConversationsForBusiness = await prisma.conversation.findMany({
-        where: {
-          businessPhoneNumberId: businessPhoneNumberId,
-          OR: [
-            { createdAt: { gte: startDate, lte: endDate } },
-            { updatedAt: { gte: startDate, lte: endDate } }
-          ],
-        },
-      });
-      
-      // Group conversations by contact phone number across all chatbots
-      const convsByContactPhone: Record<string, any[]> = {};
-      for (const conv of allConversationsForBusiness) {
-        if (!convsByContactPhone[conv.recipient]) {
-          convsByContactPhone[conv.recipient] = [];
-        }
-        convsByContactPhone[conv.recipient].push(conv);
-      }
-      
-      // Get contacts who have conversations with multiple chatbots (including current one)
-      const returningContactPhones = Object.keys(convsByContactPhone).filter(phone => {
-        const convs = convsByContactPhone[phone];
-        // Check if this contact has conversations with multiple chatbots
-        const uniqueChatbotIds = [...new Set(convs.map(c => c.chatbotId))];
-        return uniqueChatbotIds.length > 1;
-      });
-      
-      // Filter conversations to only include those from returning contacts
-      finalConversations = filteredConversations.filter(conv => 
-        returningContactPhones.includes(conv.recipient)
-      );
-    } else {
+      finalTriggers = filteredTriggers.filter(t => t.userType === 'existing');
+    } else if (userType !== 'All Users') {
       return res.status(400).json({ error: 'Invalid userType' });
     }
-    // 8. Aggregate by hour
+    
+    console.log(`📊 After filtering: ${finalTriggers.length} triggers (userType: ${userType})`);
+    
+    // 9. Aggregate by hour (convert to user's timezone)
     const hourCounts = Array(24).fill(0);
-    for (const conv of finalConversations) {
-      const hour = conv.updatedAt.getHours();
+    for (const trigger of finalTriggers) {
+      // Convert UTC timestamp to user's timezone
+      const utcTime = trigger.triggeredAt;
+      const userTime = new Date(utcTime.getTime() + timezoneOffset * 60 * 60 * 1000);
+      const hour = userTime.getHours();
       hourCounts[hour]++;
     }
-    // 9. Format response
+    
+    // 10. Format response
     const labels = [
       '12 AM', '1 AM', '2 AM', '3 AM', '4 AM', '5 AM', '6 AM', '7 AM', '8 AM', '9 AM', '10 AM', '11 AM',
       '12 PM', '1 PM', '2 PM', '3 PM', '4 PM', '5 PM', '6 PM', '7 PM', '8 PM', '9 PM', '10 PM', '11 PM'

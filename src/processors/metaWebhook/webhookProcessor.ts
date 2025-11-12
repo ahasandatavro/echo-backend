@@ -35,6 +35,13 @@ export const processChatFlow = async (chatbotId: number, recipient: string, agen
         await sendMessage(recipient, "Chatbot start node not configured.", chatbotData?.id, 1);
         return;
       }
+      
+      // Get business phone number
+      const businessPhone = await prisma.businessPhoneNumber.findFirst({
+        where: {metaPhoneNumberId: agentPhoneNumberId},
+      });
+      const businessPhoneNumberId = businessPhone?.id;
+      
       // Fetch all conversations for the recipient
       const recipientConversations = await prisma.conversation.findMany({
         where: {recipient},
@@ -44,18 +51,42 @@ export const processChatFlow = async (chatbotId: number, recipient: string, agen
       const matchingConversation = recipientConversations.find(
         (conversation) => conversation.chatbotId === chatbotId
       );
+      
+      // Determine user type: check if user has ANY previous messages on this business phone
+      // (either from other chatbots OR manual conversations without chatbot)
+      let userType = 'new';
+      if (businessPhoneNumberId) {
+        const previousMessages = await prisma.message.findFirst({
+          where: {
+            conversation: {
+              recipient,
+              businessPhoneNumberId,
+              OR: [
+                { chatbotId: { not: chatbotId } }, // Messages from other chatbots
+                { chatbotId: null }                 // Manual messages (no chatbot)
+              ]
+            }
+          }
+        });
+        if (previousMessages) {
+          userType = 'existing';
+        }
+      }
 
+      let conversationId: number;
       if (!matchingConversation) {
         // Create a new conversation if no match found
         console.log(`No matching conversation for recipient ${recipient} and chatbotId ${chatbotId}. Creating a new one.`);
-        await prisma.conversation.create({
+        const newConversation = await prisma.conversation.create({
           data: {
             recipient,
             chatbotId,
             currentNodeId: startNode.id,
             lastNodeId: null,
+            businessPhoneNumberId,
           },
         });
+        conversationId = newConversation.id;
       } else {
         // Update the existing conversation
         console.log(`Matching conversation found for recipient ${recipient} and chatbotId ${chatbotId}. Updating it.`);
@@ -66,7 +97,19 @@ export const processChatFlow = async (chatbotId: number, recipient: string, agen
             lastNodeId: null, // Reset lastNodeId
           },
         });
+        conversationId = matchingConversation.id;
       }
+      
+      // Log the chatbot trigger
+      await prisma.conversationChatbotTrigger.create({
+        data: {
+          conversationId,
+          chatbotId,
+          userType,
+          businessPhoneNumberId,
+        },
+      });
+      console.log(`✅ Logged chatbot trigger: chatbotId=${chatbotId}, userType=${userType}`);
 
       // Start processing the chatbot flow
       await processNode(
