@@ -339,7 +339,7 @@ export const getUserAnalytics = async (req: Request, res: Response) => {
     // 8. Aggregate by hour
     const hourCounts = Array(24).fill(0);
     for (const conv of finalConversations) {
-      const hour = conv.createdAt.getHours();
+      const hour = conv.updatedAt.getHours();
       hourCounts[hour]++;
     }
     // 9. Format response
