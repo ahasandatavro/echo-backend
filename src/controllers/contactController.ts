@@ -2282,8 +2282,14 @@ export const importContacts = async (req: Request, res: Response) => {
         return { isValid: false, error: 'Phone number is required' };
       }
 
+      // ✅ Clean Excel formula format (e.g., ="12345")
+      let cleanPhone = phone.trim();
+      if (cleanPhone.startsWith('="') && cleanPhone.endsWith('"')) {
+        cleanPhone = cleanPhone.slice(2, -1); // Remove =" at start and " at end
+      }
+      
       // Remove all spaces, dashes, parentheses, plus signs
-      const cleanPhone = phone.replace(/[\s\-().+]/g, '');
+      cleanPhone = cleanPhone.replace(/[\s\-().+]/g, '');
       
       // Check if it contains only digits
       if (!/^\d+$/.test(cleanPhone)) {
@@ -2337,8 +2343,17 @@ export const importContacts = async (req: Request, res: Response) => {
 
       // Check if contact already exists
       if (contactData.phoneNumber) {
+        // ✅ Clean phone number before checking existence
+        let cleanPhone = contactData.phoneNumber;
+        if (typeof cleanPhone === 'string') {
+          if (cleanPhone.startsWith('="') && cleanPhone.endsWith('"')) {
+            cleanPhone = cleanPhone.slice(2, -1);
+          }
+          cleanPhone = cleanPhone.replace(/[\s\-().+]/g, '');
+        }
+
         const existingContact = await prisma.contact.findFirst({
-          where: { phoneNumber: contactData.phoneNumber }
+          where: { phoneNumber: cleanPhone }
         });
         
         if (!existingContact) {
@@ -2422,8 +2437,16 @@ export const importContacts = async (req: Request, res: Response) => {
             throw new Error("Name and phone number are required");
           }
 
-          // Clean the phone number for storage
-          const cleanPhone = contactData.phoneNumber.replace(/[\s\-().+]/g, '');
+          // ✅ Clean the phone number for storage (handle Excel formula format)
+          let cleanPhone = contactData.phoneNumber;
+          if (typeof cleanPhone === 'string') {
+            // Remove Excel formula format if present
+            if (cleanPhone.startsWith('="') && cleanPhone.endsWith('"')) {
+              cleanPhone = cleanPhone.slice(2, -1);
+            }
+            // Remove formatting characters
+            cleanPhone = cleanPhone.replace(/[\s\-().+]/g, '');
+          }
           contactData.phoneNumber = cleanPhone;
 
           // Assign default userId if none is provided
