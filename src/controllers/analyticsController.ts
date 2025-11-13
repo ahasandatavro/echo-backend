@@ -397,24 +397,15 @@ export const getChatbotAnalytics = async (req: Request, res: Response) => {
     }
     const businessPhoneNumberId = bp.id;
     
-    // 3. Get chatbots that had conversations within the time range for this business phone number
-    let chatbotWhere: any = {};
-    if (chatbotId && chatbotId !== 'all') {
-      chatbotWhere = { id: parseInt(chatbotId as string, 10) };
-    }
-    
-    // Get chatbots owned by the user that have conversations in the time range
-    const chatbotsWithConversations = await prisma.chatbot.findMany({
+    // 3. Get chatbots owned by the user that have triggers in the time range
+    const chatbotsWithTriggers = await prisma.chatbot.findMany({
       where: {
         ownerId: dbUser.id,
         ...(chatbotId && chatbotId !== 'all' ? { id: parseInt(chatbotId as string, 10) } : {}),
-        conversations: {
+        triggers: {
           some: {
             businessPhoneNumberId: businessPhoneNumberId,
-            OR: [
-              { createdAt: { gte: startDate, lte: endDate } },
-              { updatedAt: { gte: startDate, lte: endDate } }
-            ]
+            triggeredAt: { gte: startDate, lte: endDate }
           }
         }
       },
@@ -424,47 +415,72 @@ export const getChatbotAnalytics = async (req: Request, res: Response) => {
       }
     });
     
-    const chatbots = chatbotsWithConversations;
-    // 3. For each chatbot, calculate analytics
-    const analytics = await Promise.all(chatbots.map(async (chatbot) => {
+    console.log(`📊 getChatbotAnalytics - Found ${chatbotsWithTriggers.length} chatbots with triggers`);
+    
+    // 4. For each chatbot, calculate analytics
+    const analytics = await Promise.all(chatbotsWithTriggers.map(async (chatbot) => {
       // Get all nodes for this chatbot
       const nodes = await prisma.node.findMany({ where: { chatId: chatbot.id } });
       const totalNodes = nodes.length;
-      // Get all conversations for this chatbot in time range
-      const conversations = await prisma.conversation.findMany({
+      
+      // Get all triggers for this chatbot in time range
+      const triggers = await prisma.conversationChatbotTrigger.findMany({
         where: {
           chatbotId: chatbot.id,
-          createdAt: { gte: startDate, lte: endDate },
+          businessPhoneNumberId,
+          triggeredAt: { gte: startDate, lte: endDate }
         },
-        include: { contact: true },
+        include: {
+          conversation: {
+            select: { 
+              recipient: true,
+              lastNodeId: true
+            }
+          }
+        }
       });
-      // Unique users (contacts)
-      const userMap = new Map();
-      conversations.forEach((conv) => {
-        if (conv.recipient) userMap.set(conv.recipient, conv);
+      
+      // Count unique users from triggers
+      const uniqueRecipients = new Set<string>();
+      const conversationMap = new Map(); // recipient -> conversation data
+      
+      triggers.forEach((trigger) => {
+        const recipient = trigger.conversation.recipient;
+        uniqueRecipients.add(recipient);
+        // Keep the most recent conversation state for each user
+        if (!conversationMap.has(recipient)) {
+          conversationMap.set(recipient, trigger.conversation);
+        }
       });
-      const totalUsers = userMap.size;
+      
+      const totalUsers = uniqueRecipients.size;
+      
       // Completed users: those whose lastNodeId equals the last node in the flow
       let completedUsers = 0;
       let dropoffUsers = 0;
       let lastNodeId: number | undefined = undefined;
+      
       if (nodes.length > 0) {
         // Heuristic: last node = node with no outgoing edges
         const nodeIds = nodes.map((n) => n.id);
         const edges = await prisma.edge.findMany({ where: { chatId: chatbot.id } });
         const sourceIds = new Set(edges.map((e) => e.sourceId));
         const lastNodes = nodeIds.filter((id) => !sourceIds.has(id));
-        lastNodeId = lastNodes.length>= 1 ? lastNodes[0] : undefined;
+        lastNodeId = lastNodes.length >= 1 ? lastNodes[0] : undefined;
       }
-      userMap.forEach((conv) => {
+      
+      // Check completion status for each unique user
+      conversationMap.forEach((conv) => {
         if (lastNodeId && conv.lastNodeId === lastNodeId) {
           completedUsers++;
         } else {
           dropoffUsers++;
         }
       });
+      
       const completedPercentage = totalUsers > 0 ? Math.round((completedUsers / totalUsers) * 100) : 0;
       const dropoffRate = totalUsers > 0 ? Math.round((dropoffUsers / totalUsers) * 100) : 0;
+      
       return {
         id: chatbot.id.toString(),
         name: chatbot.name,
@@ -476,6 +492,8 @@ export const getChatbotAnalytics = async (req: Request, res: Response) => {
         dropoffRate,
       };
     }));
+    
+    console.log(`📊 Analytics result:`, analytics);
     res.json({ analytics });
   } catch (error) {
     console.error('Error in getChatbotAnalytics:', error);

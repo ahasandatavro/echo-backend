@@ -52,12 +52,13 @@ export const processChatFlow = async (chatbotId: number, recipient: string, agen
         (conversation) => conversation.chatbotId === chatbotId
       );
       
-      // Determine user type: check if user has ANY previous messages on this business phone
-      // A "new user" has never interacted with this business phone before
-      // An "existing user" has sent messages before (regardless of chatbot)
+      // Determine user type: check if user has messages from a PREVIOUS session
+      // A "new user" is interacting for the first time (messages are very recent, < 2 minutes old)
+      // An "existing user" has older messages (indicates prior interaction)
       let userType = 'new';
       if (businessPhoneNumberId) {
-        const previousMessages = await prisma.message.findFirst({
+        // Get the oldest message for this user on this business phone
+        const oldestMessage = await prisma.message.findFirst({
           where: {
             conversation: {
               recipient,
@@ -69,26 +70,15 @@ export const processChatFlow = async (chatbotId: number, recipient: string, agen
           }
         });
         
-        if (previousMessages) {
-          // If messages exist, check if this is their first chatbot trigger
-          // by checking if any messages were sent BEFORE this moment
-          const messageCountBeforeTrigger = await prisma.message.count({
-            where: {
-              conversation: {
-                recipient,
-                businessPhoneNumberId,
-              },
-              time: {
-                lt: new Date() // Messages sent before right now
-              }
-            }
-          });
-          
-          if (messageCountBeforeTrigger > 0) {
+        if (oldestMessage) {
+          // If the oldest message is more than 2 minutes old, they're an existing user
+          // This indicates they've had a previous conversation/session
+          const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
+          if (oldestMessage.time < twoMinutesAgo) {
             userType = 'existing';
           }
         }
-        console.log(`👤 User type for ${recipient}: ${userType} (has ${previousMessages ? 'messages' : 'no messages'})`);
+        console.log(`👤 User type for ${recipient}: ${userType} (oldest message: ${oldestMessage ? oldestMessage.time.toISOString() : 'none'})`);
       }
 
       let conversationId: number;

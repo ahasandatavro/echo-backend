@@ -2733,29 +2733,26 @@ export const getContactsAnalytics = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'chatbot and timeRange are required' });
     }
 
-    // 1. Determine allowed userIds (created by user or their agents)
+    // 1. Get user's business phone number
     const dbUser = await prisma.user.findFirst({
       where: { id: user.userId },
-      select: { id: true, agent: true, createdById: true },
+      select: { id: true, agent: true, createdById: true, selectedPhoneNumberId: true },
     });
-    let userIdsToInclude: number[] = [];
-    if (dbUser.agent) {
-      const agents = await prisma.user.findMany({
-        where: { createdById: dbUser.createdById || undefined, agent: true },
-        select: { id: true },
-      });
-      userIdsToInclude = [
-        ...agents.map(a => a.id),
-        dbUser.createdById!,
-        dbUser.id,
-      ];
-    } else {
-      const agents = await prisma.user.findMany({
-        where: { createdById: dbUser.id, agent: true },
-        select: { id: true },
-      });
-      userIdsToInclude = [dbUser.id, ...agents.map(a => a.id)];
+    
+    if (!dbUser || !dbUser.selectedPhoneNumberId) {
+      return res.status(400).json({ error: 'User does not have a selectedPhoneNumberId' });
     }
+    
+    const bp = await prisma.businessPhoneNumber.findFirst({
+      where: { metaPhoneNumberId: dbUser.selectedPhoneNumberId },
+      select: { id: true }
+    });
+    
+    if (!bp) {
+      return res.status(404).json({ error: 'Business Phone Number not found' });
+    }
+    
+    const businessPhoneNumberId = bp.id;
 
     // 2. Time range filter
     let fromDate: Date;
@@ -2770,76 +2767,63 @@ export const getContactsAnalytics = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Invalid timeRange' });
     }
 
-    // 3. Find conversations for chatbotId, in time range, with allowed contacts
-    const conversations = await prisma.conversation.findMany({
+    // 3. Query chatbot triggers in the time range
+    const triggers = await prisma.conversationChatbotTrigger.findMany({
       where: {
         chatbotId: Number(chatbotId),
-        createdAt: { gte: fromDate },
-        OR: [
-          { contact: { createdById: { in: userIdsToInclude } } },
-          { contactId: null }, // allow recipient fallback
-        ],
+        businessPhoneNumberId,
+        triggeredAt: { gte: fromDate },
       },
-      select: { contactId: true, recipient: true },
-    });
-    if (conversations.length === 0) {
-      return res.json({ contacts: [], total: 0, page, limit });
-    }
-
-    // 4. Resolve contacts: by contactId or by recipient (phoneNumber)
-    const contactIdSet = new Set<number>();
-    const recipientPhones: Set<string> = new Set();
-    for (const conv of conversations) {
-      if (conv.contactId) {
-        contactIdSet.add(conv.contactId);
-      } else if (conv.recipient) {
-        recipientPhones.add(conv.recipient);
+      include: {
+        conversation: {
+          select: { recipient: true }
+        }
       }
-    }
-    // Fetch contacts by contactId
-    let contactsById = [];
-    if (contactIdSet.size > 0) {
-      contactsById = await prisma.contact.findMany({
-        where: { id: { in: Array.from(contactIdSet) } },
-        select: {
-          id: true,
-          name: true,
-          phoneNumber: true,
-          subscribed: true,
-          sendSMS: true,
-          source: true,
-          attributes: true,
-          createdAt: true,
-          updatedAt: true,
-        },
+    });
+    
+    console.log(`📊 getContactsAnalytics - Found ${triggers.length} triggers for chatbot ${chatbotId}, businessPhoneNumberId ${businessPhoneNumberId}`);
+    console.log(`📊 Date range: ${fromDate.toISOString()} to ${now.toISOString()}`);
+    console.log(`📊 Trigger details:`, triggers.map(t => ({
+      id: t.id,
+      chatbotId: t.chatbotId,
+      userType: t.userType,
+      recipient: t.conversation.recipient,
+      triggeredAt: t.triggeredAt.toISOString()
+    })));
+    
+    if (triggers.length === 0) {
+      return res.json({ 
+        contacts: [], 
+        total: 0, 
+        page, 
+        limit,
+        userDistribution: { newUsers: 0, existingUsers: 0 }
       });
     }
-    // Fetch contacts by phoneNumber (recipient)
-    let contactsByPhone = [];
-    if (recipientPhones.size > 0) {
-      contactsByPhone = await prisma.contact.findMany({
-        where: { phoneNumber: { in: Array.from(recipientPhones) } },
-        select: {
-          id: true,
-          name: true,
-          phoneNumber: true,
-          subscribed: true,
-          sendSMS: true,
-          source: true,
-          attributes: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      });
-    }
-    // Merge and deduplicate contacts
-    const allContactsMap = new Map<string, any>();
-    for (const c of [...contactsById, ...contactsByPhone]) {
-      allContactsMap.set(String(c.id), c);
-    }
-    let contacts = Array.from(allContactsMap.values());
 
-    // 5. Filter by country code if provided
+    // 4. Get unique recipients from triggers
+    const uniqueRecipients = [...new Set(triggers.map(t => t.conversation.recipient))];
+    console.log(`📊 Unique recipients: ${uniqueRecipients.length}`, uniqueRecipients);
+    
+    // 5. Fetch contacts by phone numbers
+    let contacts = await prisma.contact.findMany({
+      where: { phoneNumber: { in: uniqueRecipients } },
+      select: {
+        id: true,
+        name: true,
+        phoneNumber: true,
+        subscribed: true,
+        sendSMS: true,
+        source: true,
+        attributes: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+    
+    console.log(`📊 Contacts found: ${contacts.length}`, contacts.map(c => c.phoneNumber));
+
+    // 6. Filter by country code if provided
     if (countries.length > 0) {
       contacts = contacts.filter(contact => {
         if (!contact.phoneNumber) return false;
@@ -2855,7 +2839,7 @@ export const getContactsAnalytics = async (req: Request, res: Response) => {
       });
     }
 
-    // 6. Filter by attributes (all key-value pairs must match)
+    // 7. Filter by attributes (all key-value pairs must match)
     if (attributes && Object.keys(attributes).length > 0) {
       contacts = contacts.filter(contact => {
         const attr = contact.attributes || {};
@@ -2866,11 +2850,37 @@ export const getContactsAnalytics = async (req: Request, res: Response) => {
       });
     }
 
-    // 7. Pagination
+    // 8. Calculate user distribution (new vs existing)
+    const contactPhoneSet = new Set(contacts.map(c => c.phoneNumber));
+    console.log(`📊 Contact phone numbers after filtering:`, Array.from(contactPhoneSet));
+    
+    const relevantTriggers = triggers.filter(t => contactPhoneSet.has(t.conversation.recipient));
+    console.log(`📊 Relevant triggers after contact filter: ${relevantTriggers.length}`, relevantTriggers.map(t => ({
+      recipient: t.conversation.recipient,
+      userType: t.userType
+    })));
+    
+    // Get unique users (count each user only once, even if they triggered multiple times)
+    const uniqueUsersByType = new Map<string, string>(); // phone -> userType
+    for (const trigger of relevantTriggers) {
+      const phone = trigger.conversation.recipient;
+      if (!uniqueUsersByType.has(phone)) {
+        uniqueUsersByType.set(phone, trigger.userType);
+      }
+    }
+    
+    console.log(`📊 Unique users by type:`, Array.from(uniqueUsersByType.entries()));
+    
+    const newUsersCount = Array.from(uniqueUsersByType.values()).filter(type => type === 'new').length;
+    const existingUsersCount = Array.from(uniqueUsersByType.values()).filter(type => type === 'existing').length;
+    
+    console.log(`📊 User distribution - New: ${newUsersCount}, Existing: ${existingUsersCount}`);
+
+    // 9. Pagination
     const total = contacts.length;
     const pagedContacts = contacts.slice((page - 1) * limit, page * limit);
 
-    // 8. Format response
+    // 10. Format response
     const formatted = pagedContacts.map(contact => {
       let countryCode = undefined;
       if (contact.phoneNumber) {
@@ -2904,6 +2914,10 @@ export const getContactsAnalytics = async (req: Request, res: Response) => {
       total,
       page,
       limit,
+      userDistribution: {
+        newUsers: newUsersCount,
+        existingUsers: existingUsersCount,
+      }
     });
   } catch (error) {
     console.error('Error in getContactsAnalytics:', error);
@@ -2934,29 +2948,26 @@ export const getUsersAnalytics = async (req, res) => {
       return res.status(400).json({ error: 'chatbot and timeRange are required' });
     }
 
-    // 1. Determine allowed userIds (created by user or their agents)
+    // 1. Get user's business phone number
     const dbUser = await prisma.user.findFirst({
       where: { id: user.userId },
-      select: { id: true, agent: true, createdById: true },
+      select: { selectedPhoneNumberId: true },
     });
-    let userIdsToInclude = [];
-    if (dbUser.agent) {
-      const agents = await prisma.user.findMany({
-        where: { createdById: dbUser.createdById || undefined, agent: true },
-        select: { id: true },
-      });
-      userIdsToInclude = [
-        ...agents.map(a => a.id),
-        dbUser.createdById,
-        dbUser.id,
-      ];
-    } else {
-      const agents = await prisma.user.findMany({
-        where: { createdById: dbUser.id, agent: true },
-        select: { id: true },
-      });
-      userIdsToInclude = [dbUser.id, ...agents.map(a => a.id)];
+    
+    if (!dbUser || !dbUser.selectedPhoneNumberId) {
+      return res.status(400).json({ error: 'User does not have a selectedPhoneNumberId' });
     }
+    
+    const bp = await prisma.businessPhoneNumber.findFirst({
+      where: { metaPhoneNumberId: dbUser.selectedPhoneNumberId },
+      select: { id: true }
+    });
+    
+    if (!bp) {
+      return res.status(404).json({ error: 'Business Phone Number not found' });
+    }
+    
+    const businessPhoneNumberId = bp.id;
 
     // 2. Time range filter
     let fromDate;
@@ -2971,156 +2982,51 @@ export const getUsersAnalytics = async (req, res) => {
       return res.status(400).json({ error: 'Invalid timeRange' });
     }
 
-    // 3. Find all conversations for this chatbot, accessible contacts
-    const conversations = await prisma.conversation.findMany({
+    // 3. Query chatbot triggers in the time range
+    const triggers = await prisma.conversationChatbotTrigger.findMany({
       where: {
         chatbotId: Number(chatbotId),
-        OR: [
-          { contact: { createdById: { in: userIdsToInclude } } },
-          { contactId: null },
-        ],
+        businessPhoneNumberId,
+        triggeredAt: { gte: fromDate },
       },
-      select: { contactId: true, recipient: true, createdAt: true },
-    });
-    // 4. Resolve contacts: by contactId or by recipient (phoneNumber)
-    const contactIdSet = new Set();
-    const recipientPhones = new Set();
-    for (const conv of conversations) {
-      if (conv.contactId) {
-        contactIdSet.add(conv.contactId);
-      } else if (conv.recipient) {
-        recipientPhones.add(conv.recipient);
+      include: {
+        conversation: {
+          select: { recipient: true }
+        }
       }
-    }
-    // Fetch contacts by contactId
-    let contactsById = [];
-    if (contactIdSet.size > 0) {
-      contactsById = await prisma.contact.findMany({
-        where: { id: { in: Array.from(contactIdSet) } },
-        select: { id: true, phoneNumber: true },
+    });
+    
+    console.log(`📊 getUsersAnalytics - Found ${triggers.length} triggers for chatbot ${chatbotId}`);
+    console.log(`📊 Trigger user types:`, triggers.map(t => ({ recipient: t.conversation.recipient, userType: t.userType })));
+    
+    if (triggers.length === 0) {
+      return res.json({ 
+        existingUsers: 0, 
+        newUsers: 0, 
+        totalUsers: 0 
       });
     }
-    // Fetch contacts by phoneNumber (recipient)
-    let contactsByPhone = [];
-    if (recipientPhones.size > 0) {
-      contactsByPhone = await prisma.contact.findMany({
-        where: { phoneNumber: { in: Array.from(recipientPhones) } },
-        select: { id: true, phoneNumber: true },
-      });
-    }
-    // Map phoneNumber to contactId for quick lookup
-    const phoneToContactId = new Map();
-    for (const c of [...contactsById, ...contactsByPhone]) {
-      if (c.phoneNumber) phoneToContactId.set(c.phoneNumber, c.id);
-    }
-    // Build a map: contactId -> all conversation dates
-    const contactConvoDates = {};
-    for (const conv of conversations) {
-      let cid = conv.contactId;
-      if (!cid && conv.recipient) {
-        cid = phoneToContactId.get(conv.recipient);
-      }
-      if (cid) {
-        if (!contactConvoDates[cid]) contactConvoDates[cid] = [];
-        contactConvoDates[cid].push(conv.createdAt);
+
+    // 4. Count unique users by type (each user counted once, even if triggered multiple times)
+    const uniqueUsersByType = new Map<string, string>(); // phone -> userType
+    for (const trigger of triggers) {
+      const phone = trigger.conversation.recipient;
+      if (!uniqueUsersByType.has(phone)) {
+        uniqueUsersByType.set(phone, trigger.userType);
       }
     }
-    // 5. Get business account ID for the current chatbot
-    const chatbot = await prisma.chatbot.findUnique({
-      where: { id: Number(chatbotId) },
-      select: { ownerId: true },
-    });
     
-    if (!chatbot) {
-      return res.status(404).json({ error: 'Chatbot not found' });
-    }
+    console.log(`📊 Unique users:`, Array.from(uniqueUsersByType.entries()));
     
-    const businessAccount = await prisma.businessAccount.findFirst({
-      where: { userId: chatbot.ownerId },
-      select: { id: true },
-    });
-    
-    if (!businessAccount) {
-      return res.status(404).json({ error: 'Business account not found' });
-    }
-    
-    const businessAccountId = businessAccount.id;
-    
-    // 6. Get all phone numbers for this business account
-    const businessPhoneNumbers = await prisma.businessPhoneNumber.findMany({
-      where: { businessAccountId },
-      select: { id: true },
-    });
-    
-    const businessPhoneNumberIds = businessPhoneNumbers.map(bp => bp.id);
-    
-    // 7. Classify users
-    let newUsers = 0, existingUsers = 0;
-    
-    for (const [contactId, convoDates] of Object.entries(contactConvoDates)) {
-      // Sort dates ascending
-      convoDates.sort((a, b) => a.getTime() - b.getTime());
-      const hasInRange = convoDates.some(d => d >= fromDate);
-      
-             if (hasInRange) {
-         // Check if this contact has communicated with other chatbots under the same business account within the current time range
-         const otherConversations = await prisma.conversation.findMany({
-           where: {
-             AND: [
-               { businessPhoneNumberId: { in: businessPhoneNumberIds } },
-               {
-                 OR: [
-                   { createdAt: { gte: fromDate } },
-                   { updatedAt: { gte: fromDate } }
-                 ]
-               },
-               {
-                 OR: [
-                   { contactId: parseInt(contactId) },
-                   { recipient: { in: contactsById.filter(c => c.id === parseInt(contactId)).map(c => c.phoneNumber).filter(Boolean) } }
-                 ]
-               }
-             ]
-           },
-           select: { createdAt: true },
-         });
-         
-         // Check if this contact has communicated with other chatbots before the current time range
-         const previousConversations = await prisma.conversation.findMany({
-           where: {
-             AND: [
-               { businessPhoneNumberId: { in: businessPhoneNumberIds } },
-               { chatbotId: { not: Number(chatbotId) } },
-               {
-                OR: [
-                  { createdAt: { gte: fromDate } },
-                  { updatedAt: { gte: fromDate } }
-                ]
-              },
-               {
-                 OR: [
-                   { contactId: parseInt(contactId) },
-                   { recipient: { in: contactsById.filter(c => c.id === parseInt(contactId)).map(c => c.phoneNumber).filter(Boolean) } }
-                 ]
-               }
-             ]
-           },
-           select: { createdAt: true },
-         });
-         
-         // If they have communicated with other chatbots before the time range, they are existing users
-         if (previousConversations.length > 0) {
-           existingUsers++;
-         } else {
-           newUsers++;
-         }
-       }
-    }
-    const totalUsers = Object.keys(contactConvoDates).length;
+    const newUsersCount = Array.from(uniqueUsersByType.values()).filter(type => type === 'new').length;
+    const existingUsersCount = Array.from(uniqueUsersByType.values()).filter(type => type === 'existing').length;
+    const totalUsers = uniqueUsersByType.size;
     
     // Convert to percentages
-    const existingUsersPercentage = totalUsers > 0 ? Math.round((existingUsers / totalUsers) * 100) : 0;
-    const newUsersPercentage = totalUsers > 0 ? Math.round((newUsers / totalUsers) * 100) : 0;
+    const existingUsersPercentage = totalUsers > 0 ? Math.round((existingUsersCount / totalUsers) * 100) : 0;
+    const newUsersPercentage = totalUsers > 0 ? Math.round((newUsersCount / totalUsers) * 100) : 0;
+    
+    console.log(`📊 Final counts - New: ${newUsersCount} (${newUsersPercentage}%), Existing: ${existingUsersCount} (${existingUsersPercentage}%), Total: ${totalUsers}`);
     
     res.json({ 
       existingUsers: existingUsersPercentage, 
