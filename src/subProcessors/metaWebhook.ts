@@ -21,6 +21,7 @@ import {validateUserResponse} from "../helpers/validation";
 import {findMatchingKeyword} from "../utils/keywordMatcher";
 import axios from "axios";
 import {bump} from "../helpers";
+import {broadcastTemplate} from "../controllers/templateController";
 
 // Webhook Logging Functions
 export const logWebhookCall = async (
@@ -1173,7 +1174,15 @@ const processRuleForMessage = async (
   // Step 2: Perform the action (same as before)
   switch (actionType) {
     case "sendTemplate":
-      await sendTemplate(sender, actionData.templateId, 0, {}, phoneNumberId);
+      await broadcastTemplate(
+        sender, 
+        actionData.templateId, 
+        0, // chatbotId
+        0, // broadcastId (not a broadcast, just a rule action)
+        phoneNumberId,
+        actionData.templateParameters || {},
+        actionData.headerImageUrl || ""
+      );
       break;
     case "sendMessage": {
       const {messageType, replyId} = actionData;
