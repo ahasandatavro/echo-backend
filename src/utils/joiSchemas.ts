@@ -16,14 +16,14 @@ export const billingInformationValidation = Joi.object({
 });
 
 // WhatsApp number pattern validation
-const whatsappNumberPattern = /^[0-9]\d{12,14}$/;
+const whatsappNumberPattern = /^[0-9]\d{11,14}$/;
 const templateNamePattern = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
 
 // 1. Chatbot Start Validation
 export const chatbotStartValidation = Joi.object({
   whatsappNumber: Joi.string().pattern(whatsappNumberPattern).required()
     .messages({
-      'string.pattern.base': 'WhatsApp number must be in international format without + or 00 and must be 13-15 digits including country code'
+      'string.pattern.base': 'WhatsApp number must be in international format without + or 00 and must be 12-15 digits including country code'
     }),
   chatbotId: Joi.alternatives().try(
     Joi.string().min(1),
@@ -215,7 +215,7 @@ export const assignOperatorValidation = Joi.object({
 // 8. Assign Team Validation (query parameters)
 export const assignTeamValidation = Joi.object({
   whatsappNumber: Joi.string().pattern(whatsappNumberPattern).required().messages({
-    'string.pattern.base': 'WhatsApp number must be in international format without + or 00 and must be 13-15 digits including country code'
+    'string.pattern.base': 'WhatsApp number must be in international format without + or 00 and must be 12-15 digits including country code'
   }),
   teams: Joi.alternatives().try(
     Joi.string().min(1),
@@ -271,14 +271,14 @@ export const phoneNumberIdValidation = Joi.object({
 export const whatsappNumberPathValidation = Joi.object({
   whatsappNumber: Joi.string().pattern(whatsappNumberPattern).required()
     .messages({
-      'string.pattern.base': 'WhatsApp number must be in international format without + or 00 and must be 13-15 digits including country code'
+      'string.pattern.base': 'WhatsApp number must be in international format without + or 00 and must be 12-15 digits including country code'
     })
 });
 
 export const whatsappNumberQueryValidation = Joi.object({
   whatsappNumber: Joi.string().pattern(whatsappNumberPattern).required()
     .messages({
-      'string.pattern.base': 'WhatsApp number must be in international format without + or 00 and must be 13-15 digits including country code',
+      'string.pattern.base': 'WhatsApp number must be in international format without + or 00 and must be 12-15 digits including country code',
       'any.required': 'WhatsApp number is required as a query parameter'
     })
 });
