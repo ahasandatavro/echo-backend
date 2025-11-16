@@ -1,4 +1,4 @@
-import { prisma } from '../models/prismaClient';
+import { prisma, Role } from '../models/prismaClient';
 import { Request, Response } from "express";
 import bcrypt from 'bcrypt';
 import { sendWelcomeEmail, generateVerificationToken } from "../services/emailService";
@@ -8,7 +8,7 @@ import crypto from 'crypto';
 // Create Agent
 export const createAgent = async (req: Request, res: Response) => {
     try {
-        const { email, firstName, lastName, contactEmail, phoneNumber } = req.body;
+        const { email, firstName, lastName, contactEmail, phoneNumber, role } = req.body;
         const reqUser: any = req.user;
         const userPackage = reqUser.activeSubscription.packageName;
         const userId = reqUser.userId; // Assuming middleware extracts logged-in user's ID
@@ -61,6 +61,13 @@ export const createAgent = async (req: Request, res: Response) => {
             });
         }
 
+        // Prevent creating agents with superAdmin role
+        if (role === Role.SUPERADMIN) {
+            return res.status(403).json({ 
+                error: "Forbidden: Cannot create agents with superAdmin role." 
+            });
+        }
+
         // Get the creator (User creating the Agent)
         const creator = await prisma.user.findUnique({
             where: { id: userId },
@@ -86,6 +93,7 @@ export const createAgent = async (req: Request, res: Response) => {
                 lastName,
                 contactEmail,
                 phoneNumber,
+                role: role || Role.USER, // Set role from request body or default to USER
                 agent: true, // Mark as an agent
                 createdById: userId, // Link to creator
                 selectedPhoneNumberId: creator.selectedPhoneNumberId,

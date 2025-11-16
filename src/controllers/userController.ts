@@ -6,7 +6,7 @@ import FormData from "form-data";
 import { json } from "body-parser";
 import jwt from "jsonwebtoken";
 import { uploadFileToDigitalOceanHelper } from "../helpers";
-import { prisma } from "../models/prismaClient";
+import { prisma, Role } from "../models/prismaClient";
 interface UserResponse {
   id: number;
   firstName?: string;
@@ -373,6 +373,21 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
 export const updateUser = async (req: Request, res: Response): Promise<void> => {
   try {
     const { firstName, lastName, phoneNumber, role } = req.body;
+    
+    // Get the authenticated user making the request
+    const authUser: any = req.user;
+    const requestingUser = await prisma.user.findUnique({
+      where: { id: authUser.userId },
+      select: { role: true }
+    });
+    
+    // Check if superAdmin is trying to create another superAdmin
+    if (requestingUser?.role === Role.SUPERADMIN && role === Role.SUPERADMIN) {
+      res.status(403).json({ 
+        error: "Forbidden: Super admins cannot  update users to superAdmin role" 
+      });
+      return;
+    }
     
     // role can be optional, if not found don't update it. keep the existing role
     const roleToUpdate = role ? role : undefined;
