@@ -329,6 +329,7 @@ export const getMedia = async (req: Request, res: Response) => {
     const user = await prisma.user.findFirst({
       where: {
         selectedPhoneNumberId: phoneNumberId,
+        agent: false,
       },
       select: {
         id: true,
