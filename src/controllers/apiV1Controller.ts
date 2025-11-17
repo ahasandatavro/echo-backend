@@ -326,25 +326,26 @@ export const getMedia = async (req: Request, res: Response) => {
 
   try {
     // Find the user with the given selectedPhoneNumberId
-    const user = await prisma.user.findFirst({
-      where: {
-        selectedPhoneNumberId: phoneNumberId,
-        agent: false,
-      },
-      select: {
-        id: true,
-      },
-    });
+    // const user = await prisma.user.findFirst({
+    //   where: {
+    //     selectedPhoneNumberId: phoneNumberId,
+    //     agent: false,
+    //   },
+    //   select: {
+    //     id: true,
+    //   },
+    // });
 
-    if (!user) {
-      return res.status(404).json({ message: "User not found for the given phoneNumberId" });
+    const reqUser: any = req.user;
+    if(!reqUser || !reqUser.userId) {
+      return res.status(401).json({ message: "User authentication required" });
     }
 
     // Check if the media exists in the database for this user
     const mediaRecord = await prisma.media.findFirst({
       where: {
         fileName: fileName,
-        userId: user.id,
+        userId: reqUser.userId,
       },
     });
 
