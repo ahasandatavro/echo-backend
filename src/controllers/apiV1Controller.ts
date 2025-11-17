@@ -1184,7 +1184,7 @@ export const updateChatStatus = async (req: Request, res: Response) => {
   try {
     const { phoneNumberId } = req.params;
     const { whatsappNumber, ticketStatus } = req.body;
-    const allowedStatuses = ["Open", "Solved", "Pending", "Block"];
+    const allowedStatuses = ["Open", "Solved", "Pending", "Expired"];
     const user: any = req.user;
 
     if (!phoneNumberId || !whatsappNumber || !ticketStatus) {
