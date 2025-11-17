@@ -75,7 +75,7 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
       metaPhoneNumberId: true,
     }
   });
-  const dbUser = await prisma.user.findFirst({where: {selectedPhoneNumberId: businessPhoneNumber?.metaPhoneNumberId}})
+  const dbUser = await prisma.user.findFirst({where: {selectedPhoneNumberId: businessPhoneNumber?.metaPhoneNumberId,agent: false}})
   const defaultActionSettings = await prisma.defaultActionSettings.findUnique({
     where: {
       businessPhoneNumberId: businessPhoneNumber?.id,
@@ -153,7 +153,7 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
 
         // Get user's timezone for working hours check
         const user = await prisma.user.findFirst({
-          where: {selectedPhoneNumberId: agentPhoneNumberId},
+          where: {selectedPhoneNumberId: agentPhoneNumberId,agent: false},
           include: {businessAccount: true}
         });
         const userTimezone = user?.businessAccount?.[0]?.timeZone || 'UTC';

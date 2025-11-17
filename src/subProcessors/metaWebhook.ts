@@ -982,7 +982,7 @@ export const processMessageUpdate = async (value: any, io: any) => {
     where: {metaPhoneNumberId: phoneNumberId || ""},
   });
   const dbUser = await prisma.user.findFirst({
-    where: {selectedPhoneNumberId: phoneNumberId},
+    where: {selectedPhoneNumberId: phoneNumberId,agent: false},
   });
   const packageSubscription = await prisma.packageSubscription.findFirst({
     where: {userId: dbUser?.id, isActive: true},
