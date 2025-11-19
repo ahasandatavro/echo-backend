@@ -322,9 +322,30 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
                 if (!contactRecord) {
                   throw new Error(`Contact with phoneNumber ${recipient} not found.`);
                 }
+                
+                // Find conversationId
+                let conversationId: number | null = null;
+                if (agentPhoneNumberId) {
+                  const businessPhone = await prisma.businessPhoneNumber.findFirst({
+                    where: { metaPhoneNumberId: agentPhoneNumberId },
+                    select: { id: true },
+                  });
+                  if (businessPhone) {
+                    const conversation = await prisma.conversation.findFirst({
+                      where: {
+                        contactId: contactRecord.id,
+                        businessPhoneNumberId: businessPhone.id,
+                      },
+                      select: { id: true },
+                    });
+                    conversationId = conversation?.id || null;
+                  }
+                }
+                
                 await prisma.chatStatusHistory.create({
                   data: {
                     contactId: contactRecord?.id || 0,
+                    conversationId,
                     newStatus: "Assigned",
                     type: "assignmentChanged",
                     note: `Assigned to agent ${routingMaterial.assignedUser.email}`,
@@ -364,9 +385,30 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
                     if (!contactRecord) {
                       throw new Error(`Contact with phoneNumber ${recipient} not found.`);
                     }
+                    
+                    // Find conversationId
+                    let conversationId: number | null = null;
+                    if (agentPhoneNumberId) {
+                      const businessPhone = await prisma.businessPhoneNumber.findFirst({
+                        where: { metaPhoneNumberId: agentPhoneNumberId },
+                        select: { id: true },
+                      });
+                      if (businessPhone) {
+                        const conversation = await prisma.conversation.findFirst({
+                          where: {
+                            contactId: contactRecord.id,
+                            businessPhoneNumberId: businessPhone.id,
+                          },
+                          select: { id: true },
+                        });
+                        conversationId = conversation?.id || null;
+                      }
+                    }
+                    
                     await prisma.chatStatusHistory.create({
                       data: {
                         contactId: contactRecord?.id || 0,
+                        conversationId,
                         newStatus: "Assigned",
                         type: "assignmentChanged",
                         note: `Assigned to Team: ${routingMaterial.team.name}`,
@@ -389,9 +431,30 @@ export const processKeyword = async (text: string, recipient: String, agentPhone
               if (!contactRecord) {
                 throw new Error(`Contact with phoneNumber ${recipient} not found.`);
               }
+              
+              // Find conversationId
+              let conversationId: number | null = null;
+              if (agentPhoneNumberId) {
+                const businessPhone = await prisma.businessPhoneNumber.findFirst({
+                  where: { metaPhoneNumberId: agentPhoneNumberId },
+                  select: { id: true },
+                });
+                if (businessPhone) {
+                  const conversation = await prisma.conversation.findFirst({
+                    where: {
+                      contactId: contactRecord.id,
+                      businessPhoneNumberId: businessPhone.id,
+                    },
+                    select: { id: true },
+                  });
+                  conversationId = conversation?.id || null;
+                }
+              }
+              
               await prisma.chatStatusHistory.create({
                 data: {
                   contactId: contactRecord?.id || 0,
+                  conversationId,
                   newStatus: "Notified",
                   type: "notification",
                   note: `New notification from ${recipient}`,
@@ -581,9 +644,30 @@ const checkAndSendDefaultMaterial = async (
           userId: assignedAgent.id,
         },
       });
+      
+      // Find conversationId
+      let conversationId: number | null = null;
+      if (agentPhoneNumberId) {
+        const businessPhone = await prisma.businessPhoneNumber.findFirst({
+          where: { metaPhoneNumberId: agentPhoneNumberId },
+          select: { id: true },
+        });
+        if (businessPhone) {
+          const conversation = await prisma.conversation.findFirst({
+            where: {
+              contactId: contact.id,
+              businessPhoneNumberId: businessPhone.id,
+            },
+            select: { id: true },
+          });
+          conversationId = conversation?.id || null;
+        }
+      }
+      
       await prisma.chatStatusHistory.create({
         data: {
           contactId: contact.id,
+          conversationId,
           newStatus: "Assigned",
           type: "assignmentChanged",
           note: `Assigned to agent ${assignedAgent?.email}`,

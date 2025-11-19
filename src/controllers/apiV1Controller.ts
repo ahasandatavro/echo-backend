@@ -1047,9 +1047,24 @@ export const assignOperator = async (req: Request, res: Response) => {
       },
     });
     const contact = await prisma.contact.findFirst({ where: { phoneNumber: whatsappNumber as string }, select: { id: true } });
+    
+    // Find businessPhoneNumberId and conversationId
+    const businessPhone = await prisma.businessPhoneNumber.findFirst({
+      where: { metaPhoneNumberId: phoneNumberId },
+      select: { id: true },
+    });
+    const conversation = businessPhone ? await prisma.conversation.findFirst({
+      where: {
+        contactId: contact?.id,
+        businessPhoneNumberId: businessPhone.id,
+      },
+      select: { id: true },
+    }) : null;
+    
     await prisma.chatStatusHistory.create({
       data: {
         contactId: contact?.id||0,
+        conversationId: conversation?.id || null,
         newStatus: "Assigned",
         type: "assignmentChanged",
         note: `Assigned to agent ${user?.email}`,
@@ -1158,6 +1173,20 @@ export const assignTeam = async (req: Request, res: Response) => {
     if (!contact) {
       return res.status(404).json({ error: `Contact with phoneNumber ${whatsappNumber} not found.` });
     }
+    
+    // Find businessPhoneNumberId and conversationId
+    const businessPhone = await prisma.businessPhoneNumber.findFirst({
+      where: { metaPhoneNumberId: phoneNumberId },
+      select: { id: true },
+    });
+    const conversation = businessPhone ? await prisma.conversation.findFirst({
+      where: {
+        contactId: contact.id,
+        businessPhoneNumberId: businessPhone.id,
+      },
+      select: { id: true },
+    }) : null;
+    
     await prisma.contact.update({
       where: { id: contact.id },
       data: { assignedTeams: { set: teamIds } },
@@ -1167,6 +1196,7 @@ export const assignTeam = async (req: Request, res: Response) => {
     await prisma.chatStatusHistory.create({
       data: {
         contactId: contact.id,
+        conversationId: conversation?.id || null,
         newStatus: "Assigned",
         type: "assignmentChanged",
         note: `Assigned to Teams: ${teamNames.join(", ")}`,
@@ -1231,6 +1261,7 @@ export const updateChatStatus = async (req: Request, res: Response) => {
       await prisma.chatStatusHistory.create({
         data: {
           contactId: contact.id,
+          conversationId: conversation?.id || null,
           previousStatus: contact.ticketStatus,
           newStatus: ticketStatus,
           type: "statusChanged",

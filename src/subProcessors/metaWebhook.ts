@@ -1034,9 +1034,29 @@ export const processMessageUpdate = async (value: any, io: any) => {
       },
     });
 
+    // Find conversationId
+    let conversationId: number | null = null;
+    if (phoneNumberId) {
+      const businessPhone = await prisma.businessPhoneNumber.findFirst({
+        where: { metaPhoneNumberId: phoneNumberId },
+        select: { id: true },
+      });
+      if (businessPhone) {
+        const conversation = await prisma.conversation.findFirst({
+          where: {
+            contactId: finalContact.id,
+            businessPhoneNumberId: businessPhone.id,
+          },
+          select: { id: true },
+        });
+        conversationId = conversation?.id || null;
+      }
+    }
+    
     await prisma.chatStatusHistory.create({
       data: {
         contactId: finalContact.id,
+        conversationId,
         newStatus: "Assigned",
         type: "assignmentChanged",
         note: `Assigned to bot`,
@@ -1216,9 +1236,29 @@ const processRuleForMessage = async (
           data: {userId: selected.id},
         });
         if (contact) {
+          // Find conversationId
+          let conversationId: number | null = null;
+          if (phoneNumberId) {
+            const businessPhone = await prisma.businessPhoneNumber.findFirst({
+              where: { metaPhoneNumberId: phoneNumberId },
+              select: { id: true },
+            });
+            if (businessPhone) {
+              const conversation = await prisma.conversation.findFirst({
+                where: {
+                  contactId: contact.id,
+                  businessPhoneNumberId: businessPhone.id,
+                },
+                select: { id: true },
+              });
+              conversationId = conversation?.id || null;
+            }
+          }
+          
           await prisma.chatStatusHistory.create({
             data: {
               contactId: contact?.id,
+              conversationId,
               previousStatus: contact?.ticketStatus,
               newStatus: "Assigned",
               type: "assignmentChanged",
@@ -1251,9 +1291,29 @@ const processRuleForMessage = async (
               },
             });
             if (contact) {
+              // Find conversationId
+              let conversationId: number | null = null;
+              if (phoneNumberId) {
+                const businessPhone = await prisma.businessPhoneNumber.findFirst({
+                  where: { metaPhoneNumberId: phoneNumberId },
+                  select: { id: true },
+                });
+                if (businessPhone) {
+                  const conversation = await prisma.conversation.findFirst({
+                    where: {
+                      contactId: contact.id,
+                      businessPhoneNumberId: businessPhone.id,
+                    },
+                    select: { id: true },
+                  });
+                  conversationId = conversation?.id || null;
+                }
+              }
+              
               await prisma.chatStatusHistory.create({
                 data: {
                   contactId: contact?.id,
+                  conversationId,
                   previousStatus: contact?.ticketStatus,
                   newStatus: "TeamAssigned",
                   type: "assignmentChanged",
@@ -2360,9 +2420,29 @@ const processRuleForNodeAction = async (
           data: {userId: selected.id},
         });
 
+        // Find conversationId
+        let conversationId: number | null = null;
+        if (phoneNumberId) {
+          const businessPhone = await prisma.businessPhoneNumber.findFirst({
+            where: { metaPhoneNumberId: phoneNumberId },
+            select: { id: true },
+          });
+          if (businessPhone) {
+            const conversation = await prisma.conversation.findFirst({
+              where: {
+                contactId: contact.id,
+                businessPhoneNumberId: businessPhone.id,
+              },
+              select: { id: true },
+            });
+            conversationId = conversation?.id || null;
+          }
+        }
+        
         await prisma.chatStatusHistory.create({
           data: {
             contactId: contact.id,
+            conversationId,
             previousStatus: contact.ticketStatus,
             newStatus: "Assigned",
             type: "assignmentChanged",
@@ -2394,9 +2474,29 @@ const processRuleForNodeAction = async (
             },
           });
 
+          // Find conversationId
+          let conversationId: number | null = null;
+          if (phoneNumberId) {
+            const businessPhone = await prisma.businessPhoneNumber.findFirst({
+              where: { metaPhoneNumberId: phoneNumberId },
+              select: { id: true },
+            });
+            if (businessPhone) {
+              const conversation = await prisma.conversation.findFirst({
+                where: {
+                  contactId: contact.id,
+                  businessPhoneNumberId: businessPhone.id,
+                },
+                select: { id: true },
+              });
+              conversationId = conversation?.id || null;
+            }
+          }
+          
           await prisma.chatStatusHistory.create({
             data: {
               contactId: contact.id,
+              conversationId,
               previousStatus: contact.ticketStatus,
               newStatus: "TeamAssigned",
               type: "assignmentChanged",

@@ -36,10 +36,18 @@ export const solveConversation = async (req:Request, res:Response) => {
   try {
     const { contactId } = req.params;
 
+    // Find conversationId
+    const conversation = await prisma.conversation.findFirst({
+      where: { contactId: parseInt(contactId) },
+      select: { id: true },
+      orderBy: { updatedAt: 'desc' },
+    });
+
     // Create a new chat status history record
     const newStatus = await prisma.chatStatusHistory.create({
       data: {
         contactId: parseInt(contactId),
+        conversationId: conversation?.id || null,
         newStatus: "SOLVED",
       },
     });
@@ -74,10 +82,18 @@ export const updateExpiredConversations = async () => {
     });
 
     for (const conv of expiredConversations) {
+      // Find conversationId
+      const conversation = await prisma.conversation.findFirst({
+        where: { contactId: conv.contactId },
+        select: { id: true },
+        orderBy: { updatedAt: 'desc' },
+      });
+
       // Create an EXPIRED status entry
       const newStatus = await prisma.chatStatusHistory.create({
         data: {
           contactId: conv.contactId,
+          conversationId: conversation?.id || null,
           newStatus: "EXPIRED",
         },
       });

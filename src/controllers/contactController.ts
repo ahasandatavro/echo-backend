@@ -1762,8 +1762,12 @@ export const removeTag = async (req: Request, res: Response) => {
 export const getChatHistory = async (req: Request, res: Response) => {
   const { contactId } = req.params;
   try {
+    const user: any = req.user;
+    const dbUser = await prisma.user.findFirst({ where: { id: user.userId } });
+    const bp = await prisma.businessPhoneNumber.findFirst({ where: { metaPhoneNumberId: dbUser?.selectedPhoneNumberId } });
+    const conversation = await prisma.conversation.findFirst({ where: { contactId: parseInt(contactId), businessPhoneNumberId: bp?.id } });
     const chatHistory = await prisma.chatStatusHistory.findMany({
-      where: { contactId: parseInt(contactId) },
+      where: { contactId: parseInt(contactId), conversationId: conversation?.id },
       include: {
         changedBy: { select: { email: true } },
         assignedToUser: { select: { email: true } },
@@ -1827,6 +1831,25 @@ export const updateChatStatusAndAssignment = async (req: Request, res: Response)
       teamNames = teams.map(team => team.name);
     }
 
+    // Find conversationId
+    let conversationId: number | null = null;
+    if (dbUser?.selectedPhoneNumberId) {
+      const businessPhone = await prisma.businessPhoneNumber.findFirst({
+        where: { metaPhoneNumberId: dbUser.selectedPhoneNumberId },
+        select: { id: true },
+      });
+      if (businessPhone) {
+        const conversation = await prisma.conversation.findFirst({
+          where: {
+            contactId: parseInt(id),
+            businessPhoneNumberId: businessPhone.id,
+          },
+          select: { id: true },
+        });
+        conversationId = conversation?.id || null;
+      }
+    }
+
     // 🔁 Only log statusChanged if status has actually changed
     const historyEntries: any[] = [];
     const statusChanged = contact.ticketStatus !== newStatus;
@@ -1834,6 +1857,7 @@ export const updateChatStatusAndAssignment = async (req: Request, res: Response)
     if (statusChanged) {
       historyEntries.push({
         contactId: parseInt(id),
+        conversationId,
         previousStatus: contact.ticketStatus,
         newStatus,
         type: "statusChanged",
@@ -1857,6 +1881,7 @@ export const updateChatStatusAndAssignment = async (req: Request, res: Response)
     if (assignmentNote) {
       historyEntries.push({
         contactId: parseInt(id),
+        conversationId,
         newStatus: "Assigned",
         type: "assignmentChanged",
         changedById: dbUser.id,
