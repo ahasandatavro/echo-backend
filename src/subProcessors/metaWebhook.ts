@@ -1048,16 +1048,16 @@ export const processMessageUpdate = async (value: any, io: any) => {
   }
   if (!finalContact) return;
   if (packageSubscription) {
-    if (packageSubscription.packageName === "Free") {
-      const messageLength = await prisma.message.count({
-        where: {
-          contactId: finalContact?.id,
-        },
-      });
-      if (messageLength >= parseInt(process.env.FREE_PACKAGE_MESSAGE_LIMIT || "100")) {
-        return;
-      }
-    }
+    // if (packageSubscription.packageName === "Free") {
+    //   const messageLength = await prisma.message.count({
+    //     where: {
+    //       contactId: finalContact?.id,
+    //     },
+    //   });
+    //   if (messageLength >= parseInt(process.env.FREE_PACKAGE_MESSAGE_LIMIT || "100")) {
+    //     return;
+    //   }
+    // }
   }
   let notifyEmails: Set<string> = new Set();
 
