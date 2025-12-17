@@ -21,6 +21,7 @@ import {
   getBasicAttributes,
   getOrGenerateApiKey,
   rotateApiKey,
+  checkMetaVerificationStatus,
 } from "../controllers/userController"
 import multer from "multer";
 import { authenticateJWT } from "../middlewares/authMiddleware";
@@ -30,6 +31,7 @@ const router = express.Router();
 
 router.get("/", getUsers);
 router.get("/contacts", getContacts);
+router.get("/meta-verification-status", authenticateJWT, checkMetaVerificationStatus);
 router.get("/email/:email", getUserByEmail);
 router.post("/email/:email",upload.single("file"),updateUserByEmail);
 router.post("/", createUser);

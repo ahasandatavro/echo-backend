@@ -388,8 +388,7 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
       });
       return;
     }
-    
-    // role can be optional, if not found don't update it. keep the existing role
+      // role can be optional, if not found don't update it. keep the existing role
     const roleToUpdate = role ? role : undefined;
     
     let fileUrl = null;
@@ -611,6 +610,7 @@ export const getContacts = async (req: Request, res: Response): Promise<void> =>
         subscription: phone.subscription || "",
       })),
       selectedPhoneNumberId: loggedInUser.selectedPhoneNumberId || "",
+      selectedWabaId: loggedInUser.selectedWabaId || "",
     }));
 
     res.status(200).json(groupedContacts);
@@ -650,6 +650,154 @@ export const updateSelectedContact = async (req: Request, res: Response): Promis
   } catch (error: any) {
     console.error("Error updating selected contact:", error);
     res.status(500).json({ error: "Internal server error" });
+  }
+};
+//check meta verification status
+export const checkMetaVerificationStatus = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const user: any = req.user;
+
+    // Strong guard so Prisma never receives undefined
+    const rawUserId = user?.userId;
+    const userId =
+      typeof rawUserId === "number"
+        ? rawUserId
+        : typeof rawUserId === "string"
+        ? parseInt(rawUserId, 10)
+        : NaN;
+
+    if (!userId || Number.isNaN(userId)) {
+      res.status(401).json({
+        error: "Unauthorized",
+        message: "Invalid or missing user context",
+      });
+      return;
+    }
+
+    const dbUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        selectedWabaId: true,
+        selectedPhoneNumberId: true,
+        metaBusinessToken: true,
+      },
+    });
+
+    if (!dbUser) {
+      res.status(404).json({
+        error: "User not found",
+        message: "The user account could not be found",
+      });
+      return;
+    }
+
+    if (!dbUser.selectedWabaId || !dbUser.selectedPhoneNumberId) {
+      res.status(400).json({
+        error: "WABA ID and Phone Number ID are required",
+        message: "Please ensure you have selected a WhatsApp Business Account and Phone Number",
+      });
+      return;
+    }
+
+    // Prefer token from BusinessAccount, fallback to user's metaBusinessToken
+    const businessAccount = await prisma.businessAccount.findFirst({
+      where: { metaWabaId: dbUser.selectedWabaId },
+      select: { metaAccessToken: true },
+    });
+
+    const accessToken = (businessAccount?.metaAccessToken || dbUser.metaBusinessToken || "").trim();
+    const tokenSource = businessAccount?.metaAccessToken ? "BusinessAccount" : "User";
+
+    if (!accessToken) {
+      res.status(404).json({
+        error: "Meta access token not found",
+        message: "Please reconnect your Meta account",
+      });
+      return;
+    }
+
+    console.log(`Using Meta access token from: ${tokenSource}`);
+
+    // WABA status (ONLY request fields that exist)
+    const wabaResponse = await axios.get(
+      `https://graph.facebook.com/v22.0/${dbUser.selectedWabaId}`,
+      {
+        params: {
+          // account_status removed because Meta says it does not exist
+          fields: "name,account_review_status",
+          access_token: accessToken,
+        },
+      }
+    );
+
+    // Phone number status
+    const phoneResponse = await axios.get(
+      `https://graph.facebook.com/v22.0/${dbUser.selectedPhoneNumberId}`,
+      {
+        params: {
+          fields: "verified_name,code_verification_status,display_phone_number",
+          access_token: accessToken,
+        },
+      }
+    );
+
+    const wabaReviewStatus = String(wabaResponse.data?.account_review_status || "PENDING").toUpperCase();
+
+    const phoneCodeStatus = String(phoneResponse.data?.code_verification_status || "NOT_VERIFIED").toUpperCase();
+    const phoneVerified = phoneCodeStatus === "VERIFIED";
+
+    // Practical definition for UI: approved WABA review + phone verified
+    const isVerified = wabaReviewStatus === "APPROVED" && phoneVerified;
+
+    res.status(200).json({
+      isVerified,
+
+      // Keep your key name for frontend compatibility
+      businessVerificationStatus: wabaReviewStatus,
+
+      // accountStatus removed because field is not available
+      accountStatus: null,
+
+      phoneVerified,
+      verifiedName: phoneResponse.data?.verified_name ?? null,
+      displayPhoneNumber: phoneResponse.data?.display_phone_number ?? null,
+      wabaId: dbUser.selectedWabaId,
+      phoneNumberId: dbUser.selectedPhoneNumberId,
+      businessName: wabaResponse.data?.name ?? null,
+    });
+  } catch (error: any) {
+    console.error("Error checking Meta verification status:", error);
+
+    if (error.response?.data?.error) {
+      const errorCode = error.response.data.error.code;
+      const errorMessage = error.response.data.error.message || "Meta API error";
+
+      // Token expired/invalid
+      if (errorCode === 190) {
+        res.status(401).json({
+          error: "Meta access token expired",
+          message: "Your Meta access token has expired. Please reconnect your Meta account to get a new token.",
+          code: errorCode,
+          action: "Reconnect Meta or WhatsApp Business account",
+        });
+        return;
+      }
+
+      res.status(error.response.status || 500).json({
+        error: "Failed to check verification status",
+        message: errorMessage,
+        code: errorCode,
+      });
+      return;
+    }
+
+    res.status(500).json({
+      error: "Internal server error",
+      message: error.message || "Failed to check verification status",
+    });
   }
 };
 
