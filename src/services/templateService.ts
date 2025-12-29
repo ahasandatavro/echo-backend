@@ -96,6 +96,7 @@ export async function syncTemplates(wabaId: string, reqUserId:number) {
           where: {
             name: tpl.name,
             wabaId: wabaId,
+            userId: reqUserId
           },
         });
         
