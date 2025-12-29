@@ -703,14 +703,14 @@ export const isValidWebhookRequest = (entry: any): boolean => {
   return entry && Array.isArray(entry);
 };
 
-export const  processWebhookChange = async (change: any, io: any) => {
+export const  processWebhookChange = async (change: any, io: any, wabaId?: string) => {
   // console.log("Meta event:", JSON.stringify(change, null, 2));
   switch (change.field) {
     case "message_template_status_update":
       if (change.value.reason) {
         console.log(change.value.reason);
       }
-      await updateTemplateInDb(change.value, change.value.reason);
+      await updateTemplateInDb(change.value, change.value.reason, wabaId);
       break;
 
     case "messages":
@@ -774,7 +774,7 @@ export const  processWebhookChange = async (change: any, io: any) => {
         break;
     case "template_category_update":
       // Handle template category update
-      await updateTemplateCategoryInDb(change.value);
+      await updateTemplateCategoryInDb(change.value, wabaId);
       break;
 
     // Add more cases for other fields you subscribe to
@@ -2199,7 +2199,7 @@ export const handleInvalidQuestionResponse = async (
   }
 };
 
-export const updateTemplateInDb = async (data: any, reason: string) => {
+export const updateTemplateInDb = async (data: any, reason: string, wabaId?: string) => {
   const {
     event,
     message_template_id,
@@ -2207,18 +2207,47 @@ export const updateTemplateInDb = async (data: any, reason: string) => {
     message_template_language,
   } = data;
 
-  await prisma.template.update({
-    where: {name: message_template_name},
-    data: {
-      status: event,
-      language: message_template_language,
-      updatedAt: new Date(),
-      rejectionError: reason || "",
-    },
-  });
+  try {
+    if (!message_template_name) {
+      console.log('[updateTemplateInDb] No template name found in webhook data, skipping update');
+      return;
+    }
+
+    if (!wabaId) {
+      console.log('[updateTemplateInDb] No wabaId provided, skipping update');
+      return;
+    }
+
+    // Find template by name and wabaId
+    const existingTemplate = await prisma.template.findFirst({
+      where: {
+        name: message_template_name,
+        wabaId: wabaId,
+      },
+    });
+
+    if (!existingTemplate) {
+      console.log(`[updateTemplateInDb] Template "${message_template_name}" with wabaId ${wabaId} not found in database, skipping update`);
+      return;
+    }
+
+    await prisma.template.update({
+      where: { id: existingTemplate.id },
+      data: {
+        status: event,
+        language: message_template_language,
+        updatedAt: new Date(),
+        rejectionError: reason || "",
+      },
+    });
+
+    console.log(`[updateTemplateInDb] Template "${message_template_name}" updated with status: ${event}`);
+  } catch (error) {
+    console.error(`[updateTemplateInDb] Error updating template ${message_template_name}:`, error);
+  }
 };
 
-export const updateTemplateCategoryInDb = async (data: any) => {
+export const updateTemplateCategoryInDb = async (data: any, wabaId?: string) => {
   const {
     message_template_id,
     message_template_name,
@@ -2227,24 +2256,26 @@ export const updateTemplateCategoryInDb = async (data: any) => {
   } = data;
 
   try {
-
-
-    if (!message_template_id) {
-      console.log('No template ID found in webhook data, skipping category update');
+    if (!message_template_name) {
+      console.log('[updateTemplateCategoryInDb] No template name found in webhook data, skipping category update');
       return;
     }
 
-    // First check if template exists by searching in the content field
+    if (!wabaId) {
+      console.log('[updateTemplateCategoryInDb] No wabaId provided, skipping category update');
+      return;
+    }
+
+    // Find template by name and wabaId
     const existingTemplate = await prisma.template.findFirst({
       where: {
-        content: {
-          contains: `"id":"${message_template_id}"`
-        }
+        name: message_template_name,
+        wabaId: wabaId,
       },
     });
 
     if (!existingTemplate) {
-      console.log(`Template with ID ${message_template_id} not found in database, skipping category update`);
+      console.log(`[updateTemplateCategoryInDb] Template "${message_template_name}" with wabaId ${wabaId} not found in database, skipping category update`);
       return;
     }
 
@@ -2256,9 +2287,9 @@ export const updateTemplateCategoryInDb = async (data: any) => {
       },
     });
 
-    console.log(`Template category updated for template ID ${message_template_id}: ${new_category}`);
+    console.log(`[updateTemplateCategoryInDb] Template "${message_template_name}" category updated to: ${new_category}`);
   } catch (error) {
-    console.error(`Error updating template category for template ID ${message_template_id}:`, error);
+    console.error(`[updateTemplateCategoryInDb] Error updating template category for ${message_template_name}:`, error);
   }
 };
 

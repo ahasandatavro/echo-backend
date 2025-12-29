@@ -152,8 +152,8 @@ export const brodcastTemplate = async (
           id:bp?.businessAccountId
         }
       })
-      const dbTpl = await prisma.template.findUnique({
-        where: { name: selectedTemplate , wabaId:businessAccount?.metaWabaId },
+      const dbTpl = await prisma.template.findFirst({
+        where: { name: selectedTemplate, wabaId: businessAccount?.metaWabaId },
       });
       if (!dbTpl || !dbTpl.content) {
         throw new Error(`Template "${selectedTemplate}" not found or has no content`);

@@ -1,7 +1,12 @@
 import { prisma } from "../models/prismaClient";
 import axios from "axios";
 
+/**
+ * @deprecated This function is deprecated. Use syncTemplates(wabaId, reqUserId) instead.
+ * This old function doesn't support the composite unique constraint on [name, wabaId].
+ */
 export const syncTemplatesWithWhatsApp = async () => {
+  console.warn("⚠️ syncTemplatesWithWhatsApp is deprecated. Use syncTemplates(wabaId, reqUserId) instead.");
   console.log("🔄 Syncing templates with WhatsApp API...");
 
   try {
@@ -17,11 +22,19 @@ export const syncTemplatesWithWhatsApp = async () => {
     }));
 
     for (const template of templatesData) {
-      await prisma.template.upsert({
+      // Use findFirst + update/create instead of upsert since name alone is no longer unique
+      const existing = await prisma.template.findFirst({
         where: { name: template.name },
-        update: { status: template.status },
-        create: template,
       });
+      
+      if (existing) {
+        await prisma.template.update({
+          where: { id: existing.id },
+          data: { status: template.status },
+        });
+      } else {
+        console.warn(`⚠️ Cannot create template "${template.name}" without wabaId. Skipping.`);
+      }
     }
 
     console.log("✅ Templates updated in DB");

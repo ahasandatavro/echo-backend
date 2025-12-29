@@ -2029,7 +2029,7 @@ export const sendMessageController = async (req: Request, res: Response) => {
     const user:any=req.user;
     const dbUser = await prisma.user.findFirst({
       where: { id: user.userId },
-      select: { selectedPhoneNumberId: true },
+      select: { selectedPhoneNumberId: true, selectedWabaId: true },
     });
 
     if (!dbUser) {
@@ -2063,7 +2063,7 @@ export const sendMessageController = async (req: Request, res: Response) => {
     let templateId = null;
     if (template) {
       const dbTemplate = await prisma.template.findFirst({
-        where: { name: template },
+        where: { name: template, wabaId: dbUser.selectedWabaId },
       });
 
       if (!dbTemplate) {

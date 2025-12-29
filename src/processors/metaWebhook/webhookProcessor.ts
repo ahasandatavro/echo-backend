@@ -248,8 +248,16 @@ export const processNode = async (
         }
         const selectedTemplate: string = templateData.selectedTemplate;
         if (selectedTemplate) {
+          // Get wabaId from agentPhoneNumberId for accurate template lookup
+          const bp = await prisma.businessPhoneNumber.findFirst({
+            where: { metaPhoneNumberId: agentPhoneNumberId }
+          });
+          const businessAccount = await prisma.businessAccount.findFirst({
+            where: { id: bp?.businessAccountId }
+          });
+          
           const dbTemplate = await prisma.template.findFirst({
-            where: {name: selectedTemplate},
+            where: { name: selectedTemplate, wabaId: businessAccount?.metaWabaId },
           });
 
 
@@ -2086,12 +2094,12 @@ console.error("❌ Error storing message:", error);
 };
 
 // Functions for handling webhook verification
-export const processWebhookChange = async (change: any, io: any) => {
+export const processWebhookChange = async (change: any, io: any, wabaId?: string) => {
   const statuses = change.value?.statuses;
   if (statuses) await processBroadcastStatus(statuses);
 
   if (change.field === "message_template_status_update") {
-    await updateTemplateInDb(change.value);
+    await updateTemplateInDb(change.value, wabaId);
   } else {
     await processMessageChange(change, io);
   }
@@ -2511,7 +2519,7 @@ export const processKeywordMessage = async (text: string, recipient: string, age
   }
 };
 
-export const updateTemplateInDb = async (data: any) => {
+export const updateTemplateInDb = async (data: any, wabaId?: string) => {
   // Extract the fields from the webhook payload
   const {
     event, // e.g. "APPROVED", "REJECTED"
@@ -2521,15 +2529,43 @@ export const updateTemplateInDb = async (data: any) => {
     reason,
   } = data;
 
-  // Update the template record in your database by unique name.
-  await prisma.template.update({
-    where: {name: message_template_name},
-    data: {
-      status: event,
-      language: message_template_language,
-      updatedAt: new Date(),
-    },
-  });
+  try {
+    if (!message_template_name) {
+      console.log('[updateTemplateInDb] No template name found in webhook data, skipping update');
+      return;
+    }
+
+    if (!wabaId) {
+      console.log('[updateTemplateInDb] No wabaId provided, skipping update');
+      return;
+    }
+
+    // Find template by name and wabaId
+    const existingTemplate = await prisma.template.findFirst({
+      where: {
+        name: message_template_name,
+        wabaId: wabaId,
+      },
+    });
+
+    if (!existingTemplate) {
+      console.log(`[updateTemplateInDb] Template "${message_template_name}" with wabaId ${wabaId} not found in database, skipping update`);
+      return;
+    }
+
+    await prisma.template.update({
+      where: { id: existingTemplate.id },
+      data: {
+        status: event,
+        language: message_template_language,
+        updatedAt: new Date(),
+      },
+    });
+
+    console.log(`[updateTemplateInDb] Template "${message_template_name}" updated with status: ${event}`);
+  } catch (error) {
+    console.error(`[updateTemplateInDb] Error updating template ${message_template_name}:`, error);
+  }
 };
 
 export const getNextNodeIdFromQuestion = (

@@ -32,11 +32,12 @@ export const handleIncomingMessage = async (req: Request, res: Response) => {
 
     for (const item of entry) {
       const changes = item.changes;
+      const wabaId = item.id; // WABA ID from the entry
       if (!changes || !Array.isArray(changes)) continue;
 
       for (const change of changes) {
         await triggerMyWebhooks(change);
-        await processWebhookChange(change, io);
+        await processWebhookChange(change, io, wabaId);
       }
     }
 

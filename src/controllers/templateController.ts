@@ -1146,7 +1146,9 @@ console.log("Upsert details:", {
 
 try {
   dbTemplate = await prisma.template.upsert({
-    where: { name: name, userId: user.userId, wabaId: selectedWabaId },
+    where: { 
+      name_wabaId: { name: name, wabaId: selectedWabaId }
+    },
     update: {
       status: templateContent.status,
       content: JSON.stringify(templateContent),
@@ -1478,7 +1480,7 @@ export const createBroadcast = async (req: Request, res: Response) => {
       where: { id: bp?.businessAccountId }
     });
 
-    const dbTpl = await prisma.template.findUnique({
+    const dbTpl = await prisma.template.findFirst({
       where: { name: templateName, wabaId: businessAccount?.metaWabaId },
     });
 
@@ -1609,7 +1611,7 @@ export const broadcastTemplate = async (
       where: { id: bp?.businessAccountId }
     });
 
-    const dbTpl = await prisma.template.findUnique({
+    const dbTpl = await prisma.template.findFirst({
       where: { name: selectedTemplate, wabaId: businessAccount?.metaWabaId },
     });
 
@@ -2162,10 +2164,20 @@ export const getTemplateByName = async (
 ): Promise<void> => {
   try {
     const { templateName } = req.params;
+    const user: any = req.user;
 
-    // Fetch the template record from the DB
-    const tmpl = await prisma.template.findUnique({
-      where: { name: templateName },
+    // Get user's selected wabaId for accurate template lookup
+    const userRecord = await prisma.user.findUnique({
+      where: { id: user.userId },
+      select: { selectedWabaId: true },
+    });
+
+    // Fetch the template record from the DB using composite key
+    const tmpl = await prisma.template.findFirst({
+      where: { 
+        name: templateName,
+        wabaId: userRecord?.selectedWabaId,
+      },
     });
 
     if (!tmpl) {
