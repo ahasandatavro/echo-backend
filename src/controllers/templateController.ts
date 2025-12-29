@@ -1147,7 +1147,7 @@ console.log("Upsert details:", {
 try {
   dbTemplate = await prisma.template.upsert({
     where: { 
-      name_wabaId: { name: name, wabaId: selectedWabaId }
+      name_wabaId_userId: { name: name, wabaId: selectedWabaId, userId: user.userId }
     },
     update: {
       status: templateContent.status,

@@ -546,7 +546,7 @@ model Template {
   rejectionError   String?
   templateClick    TemplateClick?
 
-  @@unique([name, wabaId])
+  @@unique([name, wabaId, userId])
 }
 
 model KeywordTemplate {

@@ -2218,21 +2218,12 @@ export const updateTemplateInDb = async (data: any, reason: string, wabaId?: str
       return;
     }
 
-    // Find template by name and wabaId
-    const existingTemplate = await prisma.template.findFirst({
+    // Update ALL templates with this name+wabaId (across all users)
+    const result = await prisma.template.updateMany({
       where: {
         name: message_template_name,
         wabaId: wabaId,
       },
-    });
-
-    if (!existingTemplate) {
-      console.log(`[updateTemplateInDb] Template "${message_template_name}" with wabaId ${wabaId} not found in database, skipping update`);
-      return;
-    }
-
-    await prisma.template.update({
-      where: { id: existingTemplate.id },
       data: {
         status: event,
         language: message_template_language,
@@ -2241,7 +2232,12 @@ export const updateTemplateInDb = async (data: any, reason: string, wabaId?: str
       },
     });
 
-    console.log(`[updateTemplateInDb] Template "${message_template_name}" updated with status: ${event}`);
+    if (result.count === 0) {
+      console.log(`[updateTemplateInDb] Template "${message_template_name}" with wabaId ${wabaId} not found in database, skipping update`);
+      return;
+    }
+
+    console.log(`[updateTemplateInDb] Template "${message_template_name}" updated with status: ${event} (${result.count} records updated)`);
   } catch (error) {
     console.error(`[updateTemplateInDb] Error updating template ${message_template_name}:`, error);
   }
@@ -2266,28 +2262,24 @@ export const updateTemplateCategoryInDb = async (data: any, wabaId?: string) => 
       return;
     }
 
-    // Find template by name and wabaId
-    const existingTemplate = await prisma.template.findFirst({
+    // Update ALL templates with this name+wabaId (across all users)
+    const result = await prisma.template.updateMany({
       where: {
         name: message_template_name,
         wabaId: wabaId,
       },
-    });
-
-    if (!existingTemplate) {
-      console.log(`[updateTemplateCategoryInDb] Template "${message_template_name}" with wabaId ${wabaId} not found in database, skipping category update`);
-      return;
-    }
-
-    await prisma.template.update({
-      where: {id: existingTemplate.id},
       data: {
         category: new_category,
         updatedAt: new Date(),
       },
     });
 
-    console.log(`[updateTemplateCategoryInDb] Template "${message_template_name}" category updated to: ${new_category}`);
+    if (result.count === 0) {
+      console.log(`[updateTemplateCategoryInDb] Template "${message_template_name}" with wabaId ${wabaId} not found in database, skipping category update`);
+      return;
+    }
+
+    console.log(`[updateTemplateCategoryInDb] Template "${message_template_name}" category updated to: ${new_category} (${result.count} records updated)`);
   } catch (error) {
     console.error(`[updateTemplateCategoryInDb] Error updating template category for ${message_template_name}:`, error);
   }

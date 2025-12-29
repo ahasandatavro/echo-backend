@@ -105,11 +105,12 @@ export async function syncTemplates(wabaId: string, reqUserId:number) {
         //     language: tpl.language,
         //   },
         // });
+        // Check if template exists for THIS user (not globally)
         const exists = await prisma.template.findFirst({
           where: {
             name: tpl.name,
             wabaId: wabaId,
-            userId: reqUserId
+            userId: reqUserId,
           },
         });
         
@@ -128,29 +129,18 @@ export async function syncTemplates(wabaId: string, reqUserId:number) {
           id: tpl.id.toString(),
         };
 
-        const user = await prisma.user.findFirst({
-          where: { selectedWabaId: wabaId, id: reqUserId },
-        });
-
-        const data: any = {
-          name: tpl.name,
-          language: tpl.language,
-          category: tpl.category,
-          status: tpl.status,
-          content: JSON.stringify(content),
-          wabaId: wabaId,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
-        
-        if (user?.id !== undefined) {
-          data.userId = user.id;
-        } else {
-
-        }
-        
         await prisma.template.create({
-          data,
+          data: {
+            name: tpl.name,
+            language: tpl.language,
+            category: tpl.category,
+            status: tpl.status,
+            content: JSON.stringify(content),
+            wabaId: wabaId,
+            userId: reqUserId,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
         });
         
         totalTemplatesCreated++;
