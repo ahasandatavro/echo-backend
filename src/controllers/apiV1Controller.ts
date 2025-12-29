@@ -134,6 +134,10 @@ export const getMessageTemplates = async (req: Request, res: Response) => {
     });
     const selectedWabaId = dbUser?.selectedWabaId;
 
+    if (!selectedWabaId) {
+      return res.status(400).json({ error: "No WABA ID selected" });
+    }
+
     // Pagination
     const size = parseInt(pageSize as string, 10);
     const page = parseInt(pageNumber as string, 10);

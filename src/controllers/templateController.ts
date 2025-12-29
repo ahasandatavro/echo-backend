@@ -1263,6 +1263,11 @@ export const deleteTemplate = async (req: Request, res: Response) => {
       select: { selectedWabaId: true },
     });
     const selectedWabaId = dbUser?.selectedWabaId;
+    
+    if (!selectedWabaId) {
+      return res.status(400).json({ error: "No WABA ID selected" });
+    }
+    
     const WHATSAPP_GRAPH_API = `${process.env.META_BASE_URL}/${selectedWabaId}/message_templates?name=`;
     const { templateName } = req.params;
     const deleteURL = `${WHATSAPP_GRAPH_API}${templateName}`;
@@ -1480,8 +1485,15 @@ export const createBroadcast = async (req: Request, res: Response) => {
       where: { id: bp?.businessAccountId }
     });
 
+    if (!businessAccount?.metaWabaId) {
+      return res.status(400).json({
+        success: false,
+        message: "No WABA ID found for this business account"
+      });
+    }
+
     const dbTpl = await prisma.template.findFirst({
-      where: { name: templateName, wabaId: businessAccount?.metaWabaId },
+      where: { name: templateName, wabaId: businessAccount.metaWabaId },
     });
 
     if (!dbTpl || !dbTpl.content) {
@@ -1611,8 +1623,12 @@ export const broadcastTemplate = async (
       where: { id: bp?.businessAccountId }
     });
 
+    if (!businessAccount?.metaWabaId) {
+      throw new Error("No WABA ID found for this business account");
+    }
+
     const dbTpl = await prisma.template.findFirst({
-      where: { name: selectedTemplate, wabaId: businessAccount?.metaWabaId },
+      where: { name: selectedTemplate, wabaId: businessAccount.metaWabaId },
     });
 
     if (!dbTpl || !dbTpl.content) {
@@ -2172,11 +2188,16 @@ export const getTemplateByName = async (
       select: { selectedWabaId: true },
     });
 
+    if (!userRecord?.selectedWabaId) {
+      res.status(400).json({ error: "No WABA ID selected" });
+      return;
+    }
+
     // Fetch the template record from the DB using composite key
     const tmpl = await prisma.template.findFirst({
       where: { 
         name: templateName,
-        wabaId: userRecord?.selectedWabaId,
+        wabaId: userRecord.selectedWabaId,
       },
     });
 

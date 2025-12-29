@@ -256,8 +256,12 @@ export const processNode = async (
             where: { id: bp?.businessAccountId }
           });
           
+          if (!businessAccount?.metaWabaId) {
+            throw new Error("No WABA ID found for this business account");
+          }
+          
           const dbTemplate = await prisma.template.findFirst({
-            where: { name: selectedTemplate, wabaId: businessAccount?.metaWabaId },
+            where: { name: selectedTemplate, wabaId: businessAccount.metaWabaId },
           });
 
 

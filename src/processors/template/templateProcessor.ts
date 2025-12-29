@@ -152,8 +152,13 @@ export const brodcastTemplate = async (
           id:bp?.businessAccountId
         }
       })
+      
+      if (!businessAccount?.metaWabaId) {
+        throw new Error("No WABA ID found for this business account");
+      }
+      
       const dbTpl = await prisma.template.findFirst({
-        where: { name: selectedTemplate, wabaId: businessAccount?.metaWabaId },
+        where: { name: selectedTemplate, wabaId: businessAccount.metaWabaId },
       });
       if (!dbTpl || !dbTpl.content) {
         throw new Error(`Template "${selectedTemplate}" not found or has no content`);
