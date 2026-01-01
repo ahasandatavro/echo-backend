@@ -56,15 +56,63 @@ export const findMatchingKeyword = (
         }
         break;
 
-      case 'FUZZY':
-        const fuzzyScore = fuzzy(normalizedText, normalizedKeyword);
-        const threshold = (keyword.fuzzyPercent || 80) / 100; // Default to 80% if not specified
+      case 'FUZZY': {
+        // 1. Guard against tiny inputs
+        if (normalizedText.length < Math.min(3, normalizedKeyword.length)) {
+          break;
+        }
+      
+        const tolerance = keyword.fuzzyPercent ?? 20; // percent mistakes allowed
+        const threshold = 1 - tolerance / 100;        // required similarity
         
-        if (fuzzyScore >= threshold) {
+        // Additional validation: check length ratio
+        const textLength = normalizedText.length;
+        const keywordLength = normalizedKeyword.length;
+        const lengthRatio = Math.min(textLength, keywordLength) / Math.max(textLength, keywordLength);
+        
+        let fuzzyScore = fuzzy(normalizedText, normalizedKeyword);
+        
+        // Fix: fast-fuzzy returns 1.0 for substring matches (e.g., "check" in "check now")
+        // We need to adjust the score based on length ratio for substring cases
+        if (fuzzyScore === 1.0 && textLength !== keywordLength) {
+          // If one is a substring of the other, use length ratio as the actual similarity
+          fuzzyScore = lengthRatio;
+        }
+        
+        // Apply stricter matching based on length ratio and fuzzy score quality
+        let adjustedThreshold = threshold;
+        
+        // For very different lengths, apply conditional strictness
+        if (lengthRatio < 0.7) {
+          // If fuzzy score is already good (>= 0.6), be more lenient with length mismatches
+          // This allows "chk nw" to match "check now" when fuzzy score is reasonable
+          if (fuzzyScore >= 0.6) {
+            // For good fuzzy scores with length mismatch, require at least 60% similarity
+            adjustedThreshold = Math.max(threshold, 0.60);
+          } else {
+            // For poor fuzzy scores with length mismatch, require at least 90% similarity
+            adjustedThreshold = Math.max(threshold, 0.90);
+          }
+        }
+        
+        // For poor fuzzy scores, apply minimum quality requirement
+        // If fuzzy score is very low (< 0.5), require at least 50% similarity regardless of tolerance
+        // This prevents matches like "chknow" vs "contact" (33% similarity) from matching
+        if (fuzzyScore < 0.5) {
+          adjustedThreshold = Math.max(adjustedThreshold, 0.50);
+        }
+        
+        // For very poor fuzzy scores (< 0.4), require even higher similarity
+        if (fuzzyScore < 0.4) {
+          adjustedThreshold = Math.max(adjustedThreshold, 0.70);
+        }
+        
+        if (fuzzyScore >= adjustedThreshold) {
           isMatch = true;
           matchScore = fuzzyScore;
         }
         break;
+      }
 
       default:
         // Fallback to exact match for unknown match types
@@ -136,15 +184,63 @@ export const findAllMatchingKeywords = (
         }
         break;
 
-      case 'FUZZY':
-        const fuzzyScore = fuzzy(normalizedText, normalizedKeyword);
-        const threshold = (keyword.fuzzyPercent || 80) / 100;
+      case 'FUZZY': {
+        // 1. Guard against tiny inputs
+        if (normalizedText.length < Math.min(3, normalizedKeyword.length)) {
+          break;
+        }
+      
+        const tolerance = keyword.fuzzyPercent ?? 20; // percent mistakes allowed
+        const threshold = 1 - tolerance / 100;        // required similarity
         
-        if (fuzzyScore >= threshold) {
+        // Additional validation: check length ratio
+        const textLength = normalizedText.length;
+        const keywordLength = normalizedKeyword.length;
+        const lengthRatio = Math.min(textLength, keywordLength) / Math.max(textLength, keywordLength);
+        
+        let fuzzyScore = fuzzy(normalizedText, normalizedKeyword);
+        
+        // Fix: fast-fuzzy returns 1.0 for substring matches (e.g., "check" in "check now")
+        // We need to adjust the score based on length ratio for substring cases
+        if (fuzzyScore === 1.0 && textLength !== keywordLength) {
+          // If one is a substring of the other, use length ratio as the actual similarity
+          fuzzyScore = lengthRatio;
+        }
+        
+        // Apply stricter matching based on length ratio and fuzzy score quality
+        let adjustedThreshold = threshold;
+        
+        // For very different lengths, apply conditional strictness
+        if (lengthRatio < 0.7) {
+          // If fuzzy score is already good (>= 0.6), be more lenient with length mismatches
+          // This allows "chk nw" to match "check now" when fuzzy score is reasonable
+          if (fuzzyScore >= 0.6) {
+            // For good fuzzy scores with length mismatch, require at least 60% similarity
+            adjustedThreshold = Math.max(threshold, 0.60);
+          } else {
+            // For poor fuzzy scores with length mismatch, require at least 90% similarity
+            adjustedThreshold = Math.max(threshold, 0.90);
+          }
+        }
+        
+        // For poor fuzzy scores, apply minimum quality requirement
+        // If fuzzy score is very low (< 0.5), require at least 50% similarity regardless of tolerance
+        // This prevents matches like "chknow" vs "contact" (33% similarity) from matching
+        if (fuzzyScore < 0.5) {
+          adjustedThreshold = Math.max(adjustedThreshold, 0.50);
+        }
+        
+        // For very poor fuzzy scores (< 0.4), require even higher similarity
+        if (fuzzyScore < 0.4) {
+          adjustedThreshold = Math.max(adjustedThreshold, 0.70);
+        }
+        
+        if (fuzzyScore >= adjustedThreshold) {
           isMatch = true;
           matchScore = fuzzyScore;
         }
         break;
+      }
 
       default:
         if (normalizedText === normalizedKeyword) {
