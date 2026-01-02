@@ -485,11 +485,13 @@ export const getAccessToken = async (
         },
       });
     }
+    const rawNumber = phoneNumberFromAPI;
 
+    // remove all plus‐signs and spaces
+    const cleanedNumber = rawNumber.replace(/[+\s]/g, "");
     const existingPhone = await prisma.businessPhoneNumber.findFirst({
       where: {
-        businessAccountId: businessAccount.id,
-        metaPhoneNumberId: phoneNumberId,
+        phoneNumber: cleanedNumber,
       },
     });
 
@@ -500,10 +502,7 @@ export const getAccessToken = async (
           error: "Phone number already exists for this business account",
         });
     }
-    const rawNumber = phoneNumberFromAPI;
-
-    // remove all plus‐signs and spaces
-    const cleanedNumber = rawNumber.replace(/[+\s]/g, "");
+  
     await prisma.businessPhoneNumber.create({
       data: {
         businessAccountId: businessAccount.id,
