@@ -25,6 +25,11 @@ export const handleIncomingMessage = async (req: Request, res: Response) => {
   try {
     const { entry } = req.body;
     const io = req.app.get("socketio");
+
+    console.log(
+      "[metaWebhook] Incoming webhook payload",
+      JSON.stringify(req.body, null, 2)
+    );
     
     if (!isValidWebhookRequest(entry)) {
       return res.status(400).send("Invalid request");

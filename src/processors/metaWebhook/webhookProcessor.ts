@@ -1582,12 +1582,39 @@ export const sendTemplate = async (
       },
     };
 
-    await axios.post(url, payload, {
+    console.log(
+      "[sendTemplate] Sending template message",
+      JSON.stringify(
+        {
+          to: recipient,
+          agentPhoneNumberId,
+          chatbotId,
+          selectedTemplate,
+          payload
+        },
+        null,
+        2
+      )
+    );
+
+    const response = await axios.post(url, payload, {
       headers: {
         Authorization: `Bearer ${metaWhatsAppAPI.accessToken}`,
         "Content-Type": "application/json",
       },
     });
+
+    console.log(
+      "[sendTemplate] WhatsApp API response",
+      JSON.stringify(
+        {
+          status: response.status,
+          data: response.data
+        },
+        null,
+        2
+      )
+    );
     await storeMessage({
       recipient,
       chatbotId,
@@ -2239,6 +2266,20 @@ export const processMessageByType = async (message: any, recipient: string, conv
 };
 
 export const processButtonReply = async (message: any, recipient: string, chatbotData: any, agentPhoneNumberId: string | undefined) => {
+  console.log(
+    "[processButtonReply] Quick reply tapped (button_reply)",
+    JSON.stringify(
+      {
+        recipient,
+        agentPhoneNumberId,
+        buttonReply: message?.interactive?.button_reply,
+        fullMessage: message
+      },
+      null,
+      2
+    )
+  );
+
   const parts = message.interactive.button_reply.id.split("_node_");
   const buttonId = "source_" + parts[0];
   const nodeId = parseInt(parts[1]);
