@@ -45,7 +45,7 @@ passport.use(
           const endDate = new Date(startDate);
           endDate.setDate(endDate.getDate() + 7);
 
-          const result = await prisma.$transaction(async (tx) => {
+          const result = await prisma.$transaction(async (tx:any) => {
             // 1. Create user
             const newUser = await tx.user.create({
               data: {

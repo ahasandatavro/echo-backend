@@ -21,7 +21,7 @@ if (process.env.NODE_ENV !== 'production') {
 if (process.env.NODE_ENV !== 'build') {
   prisma.$connect()
     .then(() => console.log('Connected to the database'))
-    .catch((error) => {
+    .catch((error:any) => {
       console.error('Failed to connect to the database:', error);
       // Only exit if not in build process
       if (process.env.NODE_ENV !== 'build') {

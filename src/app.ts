@@ -27,12 +27,14 @@ import ruleRoutes from "./routes/ruleRoute";
 import businessPhoneNumberRoutes from "./routes/businessPhoneNumberRoute";
 import paymentRoutes from "./routes/payment.routes";
 import packageRoutes from "./routes/packageRoute";
+import uploadMediaRoutes from "./routes/uploadMediaRoute";
 import { Server } from "socket.io";
-import broadcastRoutes from "./routes/broadcastRoute";
 import { authenticateJWT, authenticateJWTWithoutSubscription } from "./middlewares/authMiddleware"
 import passport from "passport";
 import multer from "multer";
 import { s3 } from "./config/s3Config";
+import https from "https";
+import apiV1Routes from "./routes/apiV1Route";
 import http from "http";
 import { prisma } from "./models/prismaClient";
 import hubspotRoutes from "./routes/hubspotRoute";
@@ -41,11 +43,16 @@ import notificationSettingsRoutes from "./routes/notificationSettingsRoute";
 import agenda, { initializeAgenda } from "./config/agenda";
 import apiV1Route from "./routes/apiV1Route";
 import billingRoutes from "./routes/billingRoute";
-import uploadMediaRoutes from "./routes/uploadMediaRoute";
+import { httpsOptions } from "./config/httpsConfig";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const server = http.createServer(app);
+
+// Create server based on available certificates
+const server = Object.keys(httpsOptions).length > 0
+  ? https.createServer(httpsOptions, app)
+  : http.createServer(app);
+
 const io = new Server(server, {
   cors: {
     origin: process.env.FRONTEND_URL, // Allow only the frontend URL
@@ -133,7 +140,7 @@ io.on("connection", (socket) => {
           select: { email: true }
         });
 
-        recipients = createdAgents.map((user) => user.email);
+        recipients = createdAgents.map((user: { email: string }) => user.email);
       } else if (sender.createdById) {
         // 🔔 If agent, notify:
         // 1. Other agents created by the same creator
@@ -153,7 +160,7 @@ io.on("connection", (socket) => {
         });
 
         recipients = [
-          ...otherAgents.map((a) => a.email),
+          ...otherAgents.map((a: { email: string }) => a.email),
           ...(creator?.email ? [creator.email] : [])
         ];
       }
@@ -192,7 +199,7 @@ io.on("connection", (socket) => {
           select: { email: true }
         });
 
-        recipients = createdAgents.map((u) => u.email);
+        recipients = createdAgents.map((u: { email: string }) => u.email);
       } else if (assignee.createdById) {
         // Notify other agents created by same creator and the creator
         const otherAgents = await prisma.user.findMany({
@@ -210,7 +217,7 @@ io.on("connection", (socket) => {
         });
 
         recipients = [
-          ...otherAgents.map((a) => a.email),
+          ...otherAgents.map((a: { email: string }) => a.email),
           ...(creator?.email ? [creator.email] : [])
         ];
       }
@@ -308,15 +315,14 @@ app.use("/defaultActionSettings",authenticateJWT, defaultActionSettingsRoutes)
 app.use('/keyword',authenticateJWT,keywordRoutes);
 app.use('/gdrive',authenticateJWT,gdriveRoutes);
 app.use('/contacts',authenticateJWT,contactRoutes);
-app.use("/broadcasts", authenticateJWT, broadcastRoutes);
 app.use("/conversations", authenticateJWT,conversationRoutes);
 app.use('/analytics', authenticateJWT,analyticsRoutes);
 app.use("/teams", authenticateJWT,teamRoutes);
-app.use("/templates", authenticateJWT,templateRoutes);
+app.use("/templates",templateRoutes);
 app.use("/whatsApp", authenticateJWT,whatsAppRoute);
 app.use("/rules", authenticateJWT, ruleRoutes);
 app.use("/hubspot",hubspotRoutes);
-app.use("/apiV1",authenticateJWT,apiV1Route);
+app.use("/apiV1",authenticateJWT,apiV1Routes);
 app.use("/payments", authenticateJWTWithoutSubscription, paymentRoutes);
 app.use("/packages", authenticateJWTWithoutSubscription, packageRoutes);
 app.use("/billing", authenticateJWTWithoutSubscription, billingRoutes);
@@ -348,6 +354,7 @@ app.post("/upload",upload.single("file"), async (req, res) => {
   }
 });
 
+
 // Initialize Agenda
 initializeAgenda().catch((error) => {
   console.error('Failed to initialize Agenda:', error);
@@ -355,6 +362,7 @@ initializeAgenda().catch((error) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+  const protocol = Object.keys(httpsOptions).length > 0 ? 'HTTPS' : 'HTTP';
+  console.log(`${protocol} Server is running on port ${PORT}`);
 });
 export { io };
