@@ -1,4 +1,4 @@
-import { Request, Response } from "express";
+import { Request, Response, RequestHandler } from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { prisma } from "../models/prismaClient";
@@ -8,6 +8,32 @@ import axios from "axios";
 import { sendWelcomeEmail, generateVerificationToken, sendPasswordResetEmail } from "../services/emailService";
 import crypto from 'crypto';
 import { generateTokens, setTokenCookies } from "../utils/tokenUtils";
+import { isGoogleOAuthConfigured } from "../config/oauthConfig";
+
+const googleOAuthDisabledPopupHtml = () => {
+  const origin = process.env.FRONTEND_URL || "";
+  return `<!DOCTYPE html>
+<html>
+<head><title>Google Auth unavailable</title></head>
+<body>
+<script>
+  if (window.opener) {
+    window.opener.postMessage({ error: 'Google sign-in is not configured on this server.' }, '${origin}');
+  }
+  window.close();
+</script>
+<p>Google sign-in is not available. You can close this window.</p>
+</body>
+</html>`;
+};
+
+const googleOAuthDisabledHandler: RequestHandler = (_req, res) => {
+  res.status(503).send(googleOAuthDisabledPopupHtml());
+};
+
+const googleOAuthDisabledJson: RequestHandler = (_req, res) => {
+  res.status(503).json({ error: "Google sign-in is not configured on this server." });
+};
 
 export const registerUser = async (req: Request, res: Response) => {
   const { email, password, firstName, lastName, phoneNumber, role } = req.body;
@@ -205,11 +231,14 @@ export const loginUser = async (req: Request, res: Response) => {
   }
 };
 
-export const googleAuth = passport.authenticate("google", {
-  scope: ["profile", "email"],
-});
+export const googleAuth = isGoogleOAuthConfigured()
+  ? passport.authenticate("google", {
+      scope: ["profile", "email"],
+    })
+  : googleOAuthDisabledJson;
 
-export const googleCallback = [
+export const googleCallback = isGoogleOAuthConfigured()
+  ? [
   passport.authenticate("google", {
     session: false,
     accessType: "offline", // Request refresh token
@@ -290,13 +319,15 @@ if(activePackage){
       // res.redirect(`${process.env.FRONTEND_URL}/#/auth/error`);
     }
   },
-];
+]
+  : [googleOAuthDisabledHandler];
 const attachOriginalUser = (req: any, res: Response, next: any) => {
   req.originalUserId = req.user.userId; // store original user before passport overwrites it
   next();
 };
 
-export const googleCallbackSheets = [
+export const googleCallbackSheets = isGoogleOAuthConfigured()
+  ? [
   attachOriginalUser,
   passport.authenticate("google-sheets", {
     session: false
@@ -363,7 +394,8 @@ export const googleCallbackSheets = [
       // res.redirect(`${process.env.FRONTEND_URL}/#/auth/error`);
     }
   },
-];
+]
+  : [googleOAuthDisabledHandler];
 
 //get metaToken
 export const getAccessToken = async (

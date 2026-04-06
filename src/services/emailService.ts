@@ -2,8 +2,14 @@ import sgMail from '@sendgrid/mail';
 import { welcomeEmailTemplate, resetPasswordEmailTemplate } from '../templates/emailTemplates';
 import crypto from 'crypto';
 
-// Initialize SendGrid with API key
-sgMail.setApiKey(process.env.SENDGRID_API_KEY || '');
+const sendgridKey = process.env.SENDGRID_API_KEY?.trim();
+if (sendgridKey?.startsWith("SG.")) {
+  sgMail.setApiKey(sendgridKey);
+} else if (sendgridKey) {
+  console.warn(
+    "[email] SENDGRID_API_KEY is set but invalid (SendGrid keys must start with \"SG.\"). Email sending may fail."
+  );
+}
 
 export const generateVerificationToken = () => {
   return crypto.randomBytes(32).toString('hex');

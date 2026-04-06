@@ -2,6 +2,9 @@ import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { prisma } from "../models/prismaClient";
 import { loginUser } from "../controllers/authController";
+import { isGoogleOAuthConfigured } from "./oauthConfig";
+
+if (isGoogleOAuthConfigured()) {
 passport.use(
   "google",
   new GoogleStrategy(
@@ -163,6 +166,11 @@ passport.use(
     }
   )
 );
+} else {
+  console.warn(
+    "[auth] Google OAuth disabled: set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to enable."
+  );
+}
 
 // Serialize user for session (if using session-based authentication)
 passport.serializeUser((user: any, done) => {
