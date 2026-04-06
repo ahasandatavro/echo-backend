@@ -95,15 +95,6 @@ export const authenticateJWT = async (req: Request, res: Response, next: NextFun
       });
 
       if (user) {
-        // Check if email is verified
-        if (!user.emailVerified) {
-          return res.status(401).json({
-            error: "EMAIL_NOT_VERIFIED",
-            message: "Please verify your email address before accessing this resource. Check your inbox for a verification link, or request a new one.",
-            code: "EMAIL_NOT_VERIFIED"
-          });
-        }
-
         // @ts-ignore: We are adding a custom property `user` to the `Request` object
         req.user = { userId: user.id, role: user.role };
         
@@ -158,15 +149,6 @@ export const authenticateJWT = async (req: Request, res: Response, next: NextFun
         return res.status(401).send('Access denied. User not found.');
       }
 
-      // Check if email is verified
-      if (!user.emailVerified) {
-        return res.status(401).json({
-          error: "EMAIL_NOT_VERIFIED",
-          message: "Please verify your email address before accessing this resource. Check your inbox for a verification link, or request a new one.",
-          code: "EMAIL_NOT_VERIFIED"
-        });
-      }
-
       // @ts-ignore: We are adding a custom property `user` to the `Request` object
       req.user = decoded;
       
@@ -211,15 +193,6 @@ export const authenticateJWT = async (req: Request, res: Response, next: NextFun
 
       if (!user) {
         return res.status(401).send('Access denied. User not found.');
-      }
-
-      // Check if email is verified
-      if (!user.emailVerified) {
-        return res.status(401).json({
-          error: "EMAIL_NOT_VERIFIED",
-          message: "Please verify your email address before accessing this resource. Check your inbox for a verification link, or request a new one.",
-          code: "EMAIL_NOT_VERIFIED"
-        });
       }
 
       // Generate new tokens

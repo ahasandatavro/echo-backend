@@ -1,9 +1,7 @@
 import { prisma, Role } from '../models/prismaClient';
 import { Request, Response } from "express";
 import bcrypt from 'bcrypt';
-import { sendWelcomeEmail, generateVerificationToken } from "../services/emailService";
 import { getAgentLimits } from "../utils/packageUtils";
-import crypto from 'crypto';
 
 // Create Agent
 export const createAgent = async (req: Request, res: Response) => {
@@ -82,8 +80,6 @@ export const createAgent = async (req: Request, res: Response) => {
             return res.status(404).json({ error: "Creator user not found" });
         }
 
-        const verificationToken = generateVerificationToken();
-
         // Create the agent and assign inherited fields
         const agent = await prisma.user.create({
             data: {
@@ -98,18 +94,10 @@ export const createAgent = async (req: Request, res: Response) => {
                 createdById: userId, // Link to creator
                 selectedPhoneNumberId: creator.selectedPhoneNumberId,
                 selectedWabaId: creator.selectedWabaId,
-                emailVerified: false,
-                verificationToken,
+                emailVerified: true,
+                verificationToken: null,
             },
         });
-
-        // Send welcome email with verification link
-        try {
-            await sendWelcomeEmail(email, firstName, verificationToken);
-        } catch (emailError) {
-            console.error('Failed to send welcome email:', emailError);
-            // Don't fail the agent creation if email fails
-        }
 
         res.status(201).json(agent);
     } catch (error) {

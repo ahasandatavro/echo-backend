@@ -5,7 +5,6 @@ import { prisma } from "../models/prismaClient";
 import passport from "passport";
 import "../config/passportConfig";
 import axios from "axios";
-import { sendWelcomeEmail, generateVerificationToken, sendPasswordResetEmail } from "../services/emailService";
 import crypto from 'crypto';
 import { generateTokens, setTokenCookies } from "../utils/tokenUtils";
 import { isGoogleOAuthConfigured } from "../config/oauthConfig";
@@ -45,7 +44,6 @@ export const registerUser = async (req: Request, res: Response) => {
       return res.status(400).send("Email already in use.");
     }
     const hashedPassword = await bcrypt.hash(password, 10);
-    const verificationToken = generateVerificationToken();
 
     // Create free payment and package subscription in a single transaction
     const startDate = new Date();
@@ -62,8 +60,8 @@ export const registerUser = async (req: Request, res: Response) => {
           lastName,
           phoneNumber,
           role: role,
-          emailVerified: false,
-          verificationToken,
+          emailVerified: true,
+          verificationToken: null,
         },
       });
 
@@ -98,15 +96,7 @@ export const registerUser = async (req: Request, res: Response) => {
       return { newUser, payment, packageSubscription };
     });
 
-    // Send welcome email with verification link
-    try {
-      await sendWelcomeEmail(result.newUser.email, result.newUser.firstName || 'User', verificationToken);
-    } catch (emailError) {
-      console.error('Failed to send welcome email:', emailError);
-      // Don't fail the registration if email fails
-    }
-
-    res.status(201).send("User Created successfully. Please check your email to verify your account.");
+    res.status(201).send("User created successfully.");
   } catch (error: unknown) {
     console.log(error);
     if (error instanceof Error) {
@@ -174,14 +164,6 @@ export const loginUser = async (req: Request, res: Response) => {
   try {
     const user = await prisma.user?.findUnique({ where: { email } });
     if (!user) return res.status(401).send("Invalid email");
-
-    if (!user.emailVerified) {
-      return res.status(401).json({
-        error: "EMAIL_NOT_VERIFIED",
-        message: "Please verify your email address before logging in. Check your inbox for a verification link, or request a new one.",
-        code: "EMAIL_NOT_VERIFIED"
-      });
-    }
 
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) return res.status(401).send("Invalid password");
@@ -664,7 +646,7 @@ export const requestPasswordReset = async (req: Request, res: Response) => {
       // Don't reveal that the email doesn't exist
       return res.status(200).json({
         success: true,
-        message: "If your email is registered, you will receive a password reset link."
+        message: "If your email is registered, your password reset request has been recorded."
       });
     }
 
@@ -679,19 +661,9 @@ export const requestPasswordReset = async (req: Request, res: Response) => {
       },
     });
 
-    try {
-      await sendPasswordResetEmail(email, user.firstName || 'User', resetToken);
-    } catch (emailError) {
-      console.error('Failed to send password reset email:', emailError);
-      return res.status(500).json({
-        success: false,
-        message: "Failed to send password reset email. Please try again later."
-      });
-    }
-
     res.status(200).json({
       success: true,
-      message: "If your email is registered, you will receive a password reset link."
+      message: "If your email is registered, your password reset request has been recorded."
     });
   } catch (error) {
     console.error("Error requesting password reset:", error);
@@ -807,48 +779,18 @@ export const resendVerificationEmail = async (req: Request, res: Response) => {
     });
 
     if (!user) {
-      // Don't reveal that the email doesn't exist
       return res.status(200).json({
         success: true,
-        message: "If your email is registered and not verified, you will receive a verification link."
-      });
-    }
-
-    if (user.emailVerified) {
-      return res.status(200).json({
-        success: true,
-        message: "Your email is already verified. You can log in now."
-      });
-    }
-
-    // Generate new verification token
-    const verificationToken = generateVerificationToken();
-
-    // Update user with new verification token
-    await prisma.user.update({
-      where: { email },
-      data: {
-        verificationToken,
-      },
-    });
-
-    // Send verification email
-    try {
-      await sendWelcomeEmail(email, user.firstName || 'User', verificationToken);
-    } catch (emailError) {
-      console.error('Failed to send verification email:', emailError);
-      return res.status(500).json({
-        success: false,
-        message: "Failed to send verification email. Please try again later."
+        message: "If your email is registered, you can sign in; email verification is not required."
       });
     }
 
     res.status(200).json({
       success: true,
-      message: "Verification email sent successfully. Please check your inbox."
+      message: "Email verification is not required. You can sign in with your account."
     });
   } catch (error) {
-    console.error("Error resending verification email:", error);
+    console.error("Error in resend verification:", error);
     res.status(500).json({
       success: false,
       message: "An error occurred while processing your request."
